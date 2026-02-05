@@ -1,5 +1,10 @@
 # EVC Team Relay
 
+[![GitHub release](https://img.shields.io/github/v/release/entire-vc/evc-team-relay-obsidian-plugin?style=flat-square)](https://github.com/entire-vc/evc-team-relay-obsidian-plugin/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+
+> **[Download Latest Release](https://github.com/entire-vc/evc-team-relay-obsidian-plugin/releases/latest)** | [Changelog](https://github.com/entire-vc/evc-team-relay-obsidian-plugin/releases)
+
 Enterprise **multiplayer mode** for Obsidian with self-hosted infrastructure.
 
 -   **Collaborate in real time** with live cursors.
