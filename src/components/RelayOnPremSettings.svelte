@@ -5,8 +5,8 @@
 
 	export let plugin: Live;
 
-	const GITHUB_REPO = "entire-vc/relay-obsidian-plugin";
-	const EVC_URL = "https://github.com/entire-vc/evc-team-relay";
+	const GITHUB_REPO = "entire-vc/evc-team-relay-obsidian-plugin";
+	const EVC_URL = "https://github.com/entire-vc";
 	const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
 
 	let stars: number | null = null;
