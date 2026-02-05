@@ -1,0 +1,454 @@
+/**
+ * Relay On-Premise Authentication Provider
+ *
+ * This provider implements authentication against the relay-onprem control plane.
+ * It replaces PocketBase authentication with custom JWT-based authentication.
+ * Supports multiple servers with independent authentication state.
+ */
+
+import { customFetch } from "../customFetch";
+import { curryLog } from "../debug";
+import type { IAuthProvider, AuthUser, AuthResponse } from "./IAuthProvider";
+import { getAuthStore, type RelayOnPremAuthData, type RelayOnPremAuthStore } from "./RelayOnPremAuthStore";
+
+interface LoginRequest {
+	email: string;
+	password: string;
+}
+
+interface LoginResponse {
+	access_token: string;
+	token_type: "bearer";
+	refresh_token?: string;
+	expires_in?: number;
+}
+
+interface RefreshTokenResponse {
+	access_token: string;
+	refresh_token: string;
+	expires_in: number;
+}
+
+interface MeResponse {
+	id: string;
+	email: string;
+	name?: string;
+	is_admin: boolean;
+	created_at: string;
+}
+
+export interface RelayOnPremAuthConfig {
+	controlPlaneUrl: string;
+	vaultName: string;
+	serverId: string;
+}
+
+export class RelayOnPremAuthProvider implements IAuthProvider {
+	private log = curryLog("[RelayOnPremAuth]");
+	private user?: AuthUser;
+	private token?: string;
+	private tokenExpiresAt: number = 0;
+	private storedRefreshToken?: string;
+	private authStore: RelayOnPremAuthStore;
+	private serverId: string;
+	private restorePromise?: Promise<void>;
+	private normalizedUrl: string;
+
+	constructor(private config: RelayOnPremAuthConfig) {
+		this.serverId = config.serverId;
+		// Normalize URL - remove trailing slashes to prevent double-slash issues
+		this.normalizedUrl = config.controlPlaneUrl.replace(/\/+$/, "");
+		// Use singleton AuthStore to prevent race conditions
+		this.authStore = getAuthStore(config.vaultName);
+		// Try to restore auth from localStorage on init
+		// Store promise so callers can await if needed
+		this.restorePromise = this.restoreAuth();
+	}
+
+	/**
+	 * Wait for auth restoration to complete.
+	 * Useful for callers that need to ensure auth state is loaded before checking.
+	 */
+	async waitForRestore(): Promise<void> {
+		if (this.restorePromise) {
+			await this.restorePromise;
+		}
+	}
+
+	/**
+	 * Get the server ID this provider is associated with
+	 */
+	getServerId(): string {
+		return this.serverId;
+	}
+
+	/**
+	 * Restore authentication from localStorage if available.
+	 * If the token is expired but we have a refresh token, attempt to refresh.
+	 */
+	private async restoreAuth(): Promise<void> {
+		this.log(`restoreAuth: serverId=${this.serverId}, vaultName=${this.config.vaultName}`);
+
+		const authData = this.authStore.load(this.serverId);
+		this.log(`restoreAuth: authData exists=${!!authData}`);
+
+		if (!authData) {
+			this.log(`restoreAuth: no stored auth data found`);
+			return;
+		}
+
+		this.log(`restoreAuth: user=${authData.user?.email}, expiresAt=${authData.expiresAt}, now=${Date.now()}, hasRefreshToken=${!!authData.refreshToken}`);
+
+		this.user = authData.user;
+		this.token = authData.token;
+		this.tokenExpiresAt = authData.expiresAt;
+		this.storedRefreshToken = authData.refreshToken;
+
+		// Check if token is still valid
+		if (this.isTokenValid()) {
+			this.log(`restoreAuth: token is valid, restored auth for ${this.user?.email} on server ${this.serverId}`);
+			return;
+		}
+
+		this.log(`restoreAuth: token expired for server ${this.serverId}`);
+
+		// Token expired - try to refresh if we have a refresh token
+		if (this.storedRefreshToken) {
+			this.log(`restoreAuth: attempting token refresh...`);
+			try {
+				await this.refreshToken();
+				this.log(`restoreAuth: token refresh successful for ${this.user?.email}`);
+				return;
+			} catch (e) {
+				this.log(`restoreAuth: token refresh failed: ${e}`);
+				// Fall through to clear auth
+			}
+		}
+
+		// No refresh token or refresh failed - clear auth
+		this.log(`restoreAuth: clearing expired/invalid auth`);
+		this.authStore.clear(this.serverId);
+		this.user = undefined;
+		this.token = undefined;
+		this.tokenExpiresAt = 0;
+		this.storedRefreshToken = undefined;
+	}
+
+	/**
+	 * Persist current authentication to localStorage
+	 */
+	private persistAuth(): void {
+		if (this.user && this.token && this.tokenExpiresAt) {
+			this.authStore.save(this.serverId, {
+				user: this.user,
+				token: this.token,
+				expiresAt: this.tokenExpiresAt,
+				refreshToken: this.storedRefreshToken,
+			});
+		}
+	}
+
+	isLoggedIn(): boolean {
+		return !!this.user && !!this.token && this.isTokenValid();
+	}
+
+	getCurrentUser(): AuthUser | undefined {
+		return this.user;
+	}
+
+	getToken(): string | undefined {
+		return this.token;
+	}
+
+	/**
+	 * Decode JWT token to get expiration time
+	 */
+	private decodeToken(token: string): { exp?: number; sub?: string } {
+		try {
+			const [, payload] = token.split(".");
+			const decoded = JSON.parse(atob(payload));
+			return decoded;
+		} catch (error) {
+			this.log("Failed to decode token:", error);
+			return {};
+		}
+	}
+
+	async loginWithPassword(email: string, password: string): Promise<AuthResponse> {
+		this.log(`Logging in as ${email} to server ${this.serverId}`);
+
+		const loginRequest: LoginRequest = {
+			email,
+			password,
+		};
+
+		try {
+			// Step 1: Login and get access token
+			const loginResponse = await customFetch(`${this.normalizedUrl}/auth/login`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(loginRequest),
+			});
+
+			if (!loginResponse.ok) {
+				const errorText = await loginResponse.text();
+				throw new Error(`Login failed: ${loginResponse.status} - ${errorText}`);
+			}
+
+			const loginData: LoginResponse = await loginResponse.json();
+			this.token = loginData.access_token;
+			this.storedRefreshToken = loginData.refresh_token;
+
+			// Decode token to get expiration, or use expires_in from response
+			const tokenPayload = this.decodeToken(this.token);
+			if (tokenPayload.exp) {
+				this.tokenExpiresAt = tokenPayload.exp * 1000; // Convert to milliseconds
+			} else if (loginData.expires_in) {
+				this.tokenExpiresAt = Date.now() + loginData.expires_in * 1000;
+			} else {
+				// Default to 1 hour
+				this.tokenExpiresAt = Date.now() + 3600 * 1000;
+			}
+
+			// Step 2: Get user information
+			const meResponse = await customFetch(`${this.normalizedUrl}/auth/me`, {
+				method: "GET",
+				headers: {
+					Authorization: `Bearer ${this.token}`,
+				},
+			});
+
+			if (!meResponse.ok) {
+				throw new Error(`Failed to fetch user info: ${meResponse.status}`);
+			}
+
+			const userData: MeResponse = await meResponse.json();
+
+			this.user = {
+				id: userData.id,
+				email: userData.email,
+				name: userData.name || userData.email,
+			};
+
+			// Persist auth to localStorage
+			this.persistAuth();
+
+			this.log(`Successfully logged in as ${this.user.email} to server ${this.serverId}`);
+
+			return {
+				user: this.user,
+				token: {
+					token: this.token,
+					expiresAt: this.tokenExpiresAt,
+				},
+			};
+		} catch (error) {
+			this.log("Login error:", error);
+			this.user = undefined;
+			this.token = undefined;
+			this.tokenExpiresAt = 0;
+			this.authStore.clear(this.serverId);
+			throw error;
+		}
+	}
+
+	async loginWithOAuth2(provider: string): Promise<AuthResponse> {
+		// Import dynamically to avoid circular dependencies
+		const { OAuthHandler } = await import("./OAuthHandler");
+
+		this.log(`Starting OAuth2 login with provider: ${provider}`);
+
+		const oauthHandler = new OAuthHandler(this.normalizedUrl, this.serverId);
+
+		try {
+			// Prepare OAuth flow and open browser
+			const authResponse = await oauthHandler.completeOAuthFlow(provider, (url: string) => {
+				// Use window.open to open browser
+				if (typeof window !== "undefined" && window.open) {
+					window.open(url, "_blank");
+				} else {
+					throw new Error("Cannot open browser - window.open not available");
+				}
+			});
+
+			// Store auth data
+			this.user = authResponse.user;
+			this.token = authResponse.token.token;
+			this.tokenExpiresAt = authResponse.token.expiresAt;
+
+			// OAuth response might include refresh token
+			// (It's in the AuthResponse but we need to extract it from the raw response)
+			// For now, we'll rely on the token exchange to provide it
+
+			// Persist auth
+			this.persistAuth();
+
+			this.log(`OAuth2 login successful for ${this.user.email}`);
+
+			return authResponse;
+		} catch (error) {
+			this.log("OAuth2 login error:", error);
+			this.user = undefined;
+			this.token = undefined;
+			this.tokenExpiresAt = 0;
+			this.storedRefreshToken = undefined;
+			this.authStore.clear(this.serverId);
+			throw error;
+		} finally {
+			oauthHandler.destroy();
+		}
+	}
+
+	async refreshToken(): Promise<AuthResponse> {
+		if (!this.token || !this.user) {
+			throw new Error("No active session to refresh");
+		}
+
+		this.log(`Refreshing token for server ${this.serverId}...`);
+
+		try {
+			// If we have a refresh token, use the refresh endpoint
+			if (this.storedRefreshToken) {
+				this.log("Using refresh token to get new access token");
+
+				const refreshResponse = await customFetch(
+					`${this.normalizedUrl}/v1/auth/refresh`,
+					{
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+						},
+						body: JSON.stringify({
+							refresh_token: this.storedRefreshToken,
+						}),
+					},
+				);
+
+				if (!refreshResponse.ok) {
+					throw new Error(`Token refresh failed: ${refreshResponse.status}`);
+				}
+
+				const refreshData: RefreshTokenResponse = await refreshResponse.json();
+
+				// Update tokens
+				this.token = refreshData.access_token;
+				this.storedRefreshToken = refreshData.refresh_token;
+				this.tokenExpiresAt = Date.now() + refreshData.expires_in * 1000;
+
+				// Fetch updated user info
+				const meResponse = await customFetch(`${this.normalizedUrl}/auth/me`, {
+					method: "GET",
+					headers: {
+						Authorization: `Bearer ${this.token}`,
+					},
+				});
+
+				if (meResponse.ok) {
+					const userData: MeResponse = await meResponse.json();
+					this.user = {
+						id: userData.id,
+						email: userData.email,
+						name: userData.name || userData.email,
+					};
+				}
+
+				// Persist refreshed auth
+				this.persistAuth();
+
+				this.log("Token refreshed successfully with refresh token");
+
+				return {
+					user: this.user,
+					token: {
+						token: this.token,
+						expiresAt: this.tokenExpiresAt,
+					},
+				};
+			} else {
+				// Legacy mode: just verify the current token is still valid
+				this.log("No refresh token available, verifying current token");
+
+				const meResponse = await customFetch(`${this.normalizedUrl}/auth/me`, {
+					method: "GET",
+					headers: {
+						Authorization: `Bearer ${this.token}`,
+					},
+				});
+
+				if (!meResponse.ok) {
+					throw new Error(`Token verification failed: ${meResponse.status}`);
+				}
+
+				const userData: MeResponse = await meResponse.json();
+
+				this.user = {
+					id: userData.id,
+					email: userData.email,
+					name: userData.name || userData.email,
+				};
+
+				// Persist refreshed auth
+				this.persistAuth();
+
+				this.log("Token verified successfully");
+
+				return {
+					user: this.user,
+					token: {
+						token: this.token,
+						expiresAt: this.tokenExpiresAt,
+					},
+				};
+			}
+		} catch (error) {
+			this.log("Token refresh error:", error);
+			// If refresh fails, clear the session
+			this.user = undefined;
+			this.token = undefined;
+			this.tokenExpiresAt = 0;
+			this.storedRefreshToken = undefined;
+			this.authStore.clear(this.serverId);
+			throw error;
+		}
+	}
+
+	async logout(): Promise<void> {
+		this.log(`Logging out from server ${this.serverId}...`);
+
+		if (this.token) {
+			try {
+				// Call logout endpoint
+				await customFetch(`${this.normalizedUrl}/auth/logout`, {
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${this.token}`,
+					},
+				});
+			} catch (error) {
+				this.log("Logout error:", error);
+				// Continue with local logout even if remote logout fails
+			}
+		}
+
+		this.user = undefined;
+		this.token = undefined;
+		this.tokenExpiresAt = 0;
+		this.storedRefreshToken = undefined;
+		this.authStore.clear(this.serverId);
+
+		this.log("Logged out successfully");
+	}
+
+	isTokenValid(): boolean {
+		if (!this.token) {
+			return false;
+		}
+
+		const now = Date.now();
+		// Add 5-minute buffer before expiration
+		const buffer = 5 * 60 * 1000;
+		return now < this.tokenExpiresAt - buffer;
+	}
+}

@@ -1,0 +1,1655 @@
+"use strict";
+
+import {
+	TFolder,
+	Notice,
+	MarkdownView,
+	normalizePath,
+	MetadataCache,
+	TFile,
+	Vault,
+	FileManager,
+	requireApiVersion,
+	Modal,
+	moment,
+	addIcon,
+	Menu,
+} from "obsidian";
+import { Platform } from "obsidian";
+import { relative } from "path-browserify";
+import { SharedFolder } from "./SharedFolder";
+import type { SharedFolderSettings } from "./SharedFolder";
+import { LiveViewManager } from "./LiveViews";
+
+import { SharedFolders } from "./SharedFolder";
+import { FolderNavigationDecorations } from "./ui/FolderNav";
+import { LiveSettingsTab } from "./ui/SettingsTab";
+import { LoginManager, type LoginSettings } from "./LoginManager";
+import { EndpointConfigModal } from "./ui/EndpointConfigModal";
+import {
+	curryLog,
+	setDebugging,
+	RelayInstances,
+	initializeLogger,
+	flushLogs,
+} from "./debug";
+import { getPatcher, Patcher } from "./Patcher";
+import { LiveTokenStore } from "./LiveTokenStore";
+import NetworkStatus from "./NetworkStatus";
+import { RelayManager } from "./RelayManager";
+import { DefaultTimeProvider, type TimeProvider } from "./TimeProvider";
+import { auditTeardown } from "./observable/Observable";
+import { Plugin } from "obsidian";
+
+import {
+	DifferencesView,
+	VIEW_TYPE_DIFFERENCES,
+} from "./differ/differencesView";
+import { FeatureFlagDefaults, flag, type FeatureFlags } from "./flags";
+import { FeatureFlagManager, flags, withFlag } from "./flagManager";
+import { PostOffice } from "./observable/Postie";
+import { BackgroundSync } from "./BackgroundSync";
+import { FeatureFlagToggleModal } from "./ui/FeatureFlagModal";
+import { DebugModal } from "./ui/DebugModal";
+import { NamespacedSettings, Settings } from "./SettingsStorage";
+import { ObsidianFileAdapter, ObsidianNotifier } from "./debugObsididan";
+import { BugReportModal } from "./ui/BugReportModal";
+import { IndexedDBAnalysisModal } from "./ui/IndexedDBAnalysisModal";
+
+import { UpdateManager } from "./UpdateManager";
+import type { PluginWithApp } from "./UpdateManager";
+import { ReleaseManager } from "./ui/ReleaseManager";
+import type { ReleaseSettings } from "./UpdateManager";
+import { SyncSettingsManager } from "./SyncSettings";
+import { ContentAddressedFileStore, isSyncFile } from "./SyncFile";
+import { isDocument } from "./Document";
+import { EndpointManager, type EndpointSettings } from "./EndpointManager";
+import { SelfHostModal } from "./ui/SelfHostModal";
+import {
+	DEFAULT_RELAY_ONPREM_SETTINGS,
+	type RelayOnPremSettings,
+	migrateRelayOnPremSettings,
+	getDefaultServer,
+} from "./RelayOnPremConfig";
+import { RelayOnPremTokenProvider } from "./auth/RelayOnPremTokenProvider";
+import { RelayOnPremShareClient } from "./RelayOnPremShareClient";
+import { RelayOnPremShareClientManager } from "./RelayOnPremShareClientManager";
+import { QuickShareModal } from "./ui/QuickShareModal";
+
+interface DebugSettings {
+	debugging: boolean;
+}
+
+const DEFAULT_DEBUG_SETTINGS: DebugSettings = {
+	debugging: false,
+};
+
+interface RelaySettings extends FeatureFlags, DebugSettings {
+	sharedFolders: SharedFolderSettings[];
+	release: ReleaseSettings;
+	endpoints: EndpointSettings;
+	relayOnPrem: RelayOnPremSettings;
+}
+
+const DEFAULT_SETTINGS: RelaySettings = {
+	release: {
+		channel: "stable",
+	},
+	sharedFolders: [],
+	endpoints: {},
+	relayOnPrem: DEFAULT_RELAY_ONPREM_SETTINGS,
+	...FeatureFlagDefaults,
+	...DEFAULT_DEBUG_SETTINGS,
+};
+
+declare const HEALTH_URL: string;
+declare const GIT_TAG: string;
+declare const REPOSITORY: string;
+
+export default class Live extends Plugin {
+	appId!: string;
+	webviewerPatched = false;
+	openModals: Modal[] = [];
+	loadTime?: number;
+	sharedFolders!: SharedFolders;
+	vault!: Vault;
+	notifier!: ObsidianNotifier;
+	loginManager!: LoginManager;
+	timeProvider!: TimeProvider;
+	fileManager!: FileManager;
+	tokenStore!: LiveTokenStore;
+	interceptedUrls: Array<string | RegExp> = [];
+	networkStatus!: NetworkStatus;
+	backgroundSync!: BackgroundSync;
+	folderNavDecorations!: FolderNavigationDecorations;
+	relayManager!: RelayManager;
+	settingsTab!: LiveSettingsTab;
+	settings!: Settings<RelaySettings>;
+	updateManager!: UpdateManager;
+	private featureSettings!: NamespacedSettings<FeatureFlags>;
+	private debugSettings!: NamespacedSettings<DebugSettings>;
+	private folderSettings!: NamespacedSettings<SharedFolderSettings[]>;
+	public releaseSettings!: NamespacedSettings<ReleaseSettings>;
+	public loginSettings!: NamespacedSettings<LoginSettings>;
+	public endpointSettings!: NamespacedSettings<EndpointSettings>;
+	public relayOnPremSettings!: NamespacedSettings<RelayOnPremSettings>;
+	public shareClient?: RelayOnPremShareClient;
+	public shareClientManager?: RelayOnPremShareClientManager;
+	public webSyncManager?: import("./WebSyncManager").WebSyncManager;
+	debug!: (...args: unknown[]) => void;
+	log!: (...args: unknown[]) => void;
+	warn!: (...args: unknown[]) => void;
+	error!: (...args: unknown[]) => void;
+	private _liveViews!: LiveViewManager;
+	fileDiffMergeWarningKey = "file-diff-merge-warning";
+	version = GIT_TAG;
+	repo = REPOSITORY;
+	hashStore!: ContentAddressedFileStore;
+
+	enableDebugging(save?: boolean) {
+		setDebugging(true);
+		console.warn("RelayInstances", RelayInstances);
+		if (save) {
+			this.debugSettings.update((settings) => ({
+				...settings,
+				debugging: true,
+			}));
+		}
+	}
+
+	disableDebugging(save?: boolean) {
+		setDebugging(false);
+		if (save) {
+			this.debugSettings.update((settings) => ({
+				...settings,
+				debugging: false,
+			}));
+		}
+	}
+
+	toggleDebugging(save?: boolean): boolean {
+		const setTo = !this.debugSettings.get().debugging;
+		setDebugging(setTo);
+		if (save) {
+			this.debugSettings.update((settings) => ({
+				...settings,
+				debugging: setTo,
+			}));
+		}
+		return setTo;
+	}
+
+	buildApiUrl(path: string) {
+		return this.loginManager.getEndpointManager().getApiUrl() + path;
+	}
+
+	/**
+	 * Open endpoint configuration modal
+	 */
+	openEndpointConfigurationModal() {
+		const modal = new EndpointConfigModal(this.app, this, () => {
+			this.reload();
+		});
+		modal.open();
+	}
+
+	/**
+	 * Validate and apply custom endpoints
+	 */
+	async validateAndApplyEndpoints() {
+		const settings = this.endpointSettings.get();
+
+		if (!settings.activeTenantId || !settings.tenants?.length) {
+			new Notice("Please configure an enterprise tenant first", 4000);
+			return;
+		}
+
+		const notice = new Notice("Validating endpoints...", 0);
+
+		try {
+			const result = await this.loginManager.validateAndApplyEndpoints();
+			notice.hide();
+
+			if (result.success) {
+				// Clear any previous validation errors on success
+				await this.endpointSettings.update((current) => ({
+					...current,
+					_lastValidationError: undefined,
+					_lastValidationAttempt: undefined,
+				}));
+				new Notice("✓ Endpoints validated and applied successfully!", 5000);
+				if (result.licenseInfo) {
+					this.log("License validation successful:", result.licenseInfo);
+				}
+			} else {
+				// Store validation error for display in settings
+				await this.endpointSettings.update((current) => ({
+					...current,
+					_lastValidationError: result.error,
+					_lastValidationAttempt: Date.now(),
+				}));
+				new Notice(`❌ Validation failed: ${result.error}`, 8000);
+			}
+		} catch (error) {
+			notice.hide();
+			const errorMessage =
+				error instanceof Error ? error.message : "Unknown error";
+			// Store validation error for display in settings
+			await this.endpointSettings.update((current) => ({
+				...current,
+				_lastValidationError: errorMessage,
+				_lastValidationAttempt: Date.now(),
+			}));
+			new Notice(`❌ Validation error: ${errorMessage}`, 8000);
+		}
+	}
+
+	/**
+	 * Reset to default endpoints
+	 */
+	resetToDefaultEndpoints() {
+		this.loginManager.getEndpointManager().clearValidatedEndpoints();
+		this.endpointSettings.update(() => ({}));
+		new Notice("Reset to default endpoints", 3000);
+	}
+
+	/**
+	 * Validate custom endpoints on startup if configured
+	 */
+	private async validateEndpointsOnStartup(
+		endpointManager: EndpointManager,
+	): Promise<void> {
+		const settings = this.endpointSettings.get();
+
+		// Skip if no active tenant configured
+		if (!settings.activeTenantId || !settings.tenants?.length) {
+			this.log("No active enterprise tenant configured, using defaults");
+			return;
+		}
+
+		const activeTenant = settings.tenants.find(
+			(t) => t.id === settings.activeTenantId,
+		);
+		if (!activeTenant) {
+			this.log("Active tenant not found, using defaults");
+			return;
+		}
+
+		this.log("Enterprise tenant configured, validating on startup...", {
+			tenantId: activeTenant.id,
+			tenantUrl: activeTenant.tenantUrl,
+			tenantName: activeTenant.name,
+		});
+
+		try {
+			// Use shorter timeout for startup validation to avoid blocking startup
+			const result = await endpointManager.validateAndSetEndpoints(5000);
+
+			if (result.success) {
+				// Clear any previous validation errors on successful startup validation
+				await this.endpointSettings.update((current) => ({
+					...current,
+					_lastValidationError: undefined,
+					_lastValidationAttempt: undefined,
+				}));
+				this.log("✓ Enterprise tenant validated and applied on startup", {
+					licenseInfo: result.licenseInfo,
+				});
+			} else {
+				this.error(
+					"❌ Enterprise tenant validation failed on startup",
+					result.error,
+				);
+				// Store the error for display in settings
+				await this.endpointSettings.update((current) => ({
+					...current,
+					_lastValidationError: result.error,
+					_lastValidationAttempt: Date.now(),
+				}));
+				new Notice(
+					`❌ Custom endpoints failed validation: ${result.error}`,
+					8000,
+				);
+			}
+		} catch (error) {
+			const errorMessage =
+				error instanceof Error ? error.message : "Unknown error";
+			this.error("Startup endpoint validation error:", errorMessage);
+			// Store the error for display in settings
+			await this.endpointSettings.update((current) => ({
+				...current,
+				_lastValidationError: errorMessage,
+				_lastValidationAttempt: Date.now(),
+			}));
+			new Notice(`❌ Endpoint validation error: ${errorMessage}`, 8000);
+		}
+	}
+	async onload() {
+		this.appId = (this.app as any).appId;
+		const start = moment.now();
+		RelayInstances.set(this, "plugin");
+		this.timeProvider = new DefaultTimeProvider();
+		this.register(() => {
+			this.timeProvider.destroy();
+		});
+
+		const logFilePath = normalizePath(
+			`${this.app.vault.configDir}/plugins/${this.manifest.id}/relay.log`,
+		);
+
+		initializeLogger(
+			new ObsidianFileAdapter(this.app.vault),
+			this.timeProvider,
+			logFilePath,
+			{
+				maxFileSize: 5 * 1024 * 1024, // 5MB
+				maxBackups: 3,
+				disableConsole: false, // Disable console logging
+			},
+		);
+		this.notifier = new ObsidianNotifier();
+
+		this.debug = curryLog("[System 3][Relay]", "debug");
+		this.log = curryLog("[System 3][Relay]", "log");
+		this.warn = curryLog("[System 3][Relay]", "warn");
+		this.error = curryLog("[System 3][Relay]", "error");
+
+		this.settings = new Settings(this, DEFAULT_SETTINGS);
+		await this.settings.load();
+
+		// Migrate relay-onprem settings from legacy single-server format to multi-server
+		const rawRelayOnPremSettings = this.settings.get().relayOnPrem;
+		const migratedRelayOnPremSettings = migrateRelayOnPremSettings(rawRelayOnPremSettings);
+		if (migratedRelayOnPremSettings !== rawRelayOnPremSettings) {
+			await this.settings.update((settings) => ({
+				...settings,
+				relayOnPrem: migratedRelayOnPremSettings,
+			}));
+		}
+
+		this.featureSettings = new NamespacedSettings(this.settings, "(enable*)");
+		this.debugSettings = new NamespacedSettings(this.settings, "(debugging)");
+		this.folderSettings = new NamespacedSettings(
+			this.settings,
+			"sharedFolders",
+		);
+		this.releaseSettings = new NamespacedSettings(this.settings, "release");
+		this.loginSettings = new NamespacedSettings(this.settings, "login");
+		this.endpointSettings = new NamespacedSettings(this.settings, "endpoints");
+		this.relayOnPremSettings = new NamespacedSettings(this.settings, "relayOnPrem");
+
+		const flagManager = FeatureFlagManager.getInstance();
+		flagManager.setSettings(this.featureSettings);
+
+		this.settingsTab = new LiveSettingsTab(this.app, this);
+
+		// Register custom EVC Relay icon
+		addIcon("evc-relay", `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><g transform="scale(0.333333)"><g><path fill="currentColor" d="M 11.914969 99.237534 C 24.033806 99.046112 36.213295 99.289841 48.341644 99.170944 C 51.59132 99.138855 54.709785 100.099091 56.287449 103.287704 C 58.8848 108.536697 61.970402 113.782532 64.009758 119.258606 C 65.717018 124.316162 60.033283 130.881668 54.537395 129.028961 C 49.582062 127.358566 47.504257 120.03772 45.145096 115.681992 C 41.199928 115.644348 37.254375 115.630478 33.309204 115.641174 C 31.607891 115.639969 27.951637 115.53891 26.411209 115.806808 L 26.183739 116.165878 C 26.220995 117.831924 55.919304 174.47226 58.774639 179.955078 L 89.279808 179.928101 C 91.172134 176.000397 93.297867 171.989853 95.29287 168.100174 C 97.119392 164.547714 98.928131 158.911163 103.1063 157.727798 C 104.985542 157.212601 106.993217 157.48172 108.670761 158.473236 C 111.701668 160.298203 113.50206 164.976105 112.27549 168.30307 C 110.644325 172.727768 108.047783 177.048218 105.977509 181.306061 C 104.063759 185.241699 102.030739 189.213013 99.927589 193.049194 C 98.963799 194.505203 97.083336 195.794769 95.299988 195.959625 C 91.153107 196.343262 86.709808 196.090393 82.535988 196.124481 L 64.463516 196.170471 C 61.042667 196.18277 57.48547 196.250519 54.070545 196.130829 C 53.020763 196.094376 50.863697 195.683426 50.079811 195.072327 C 48.939274 194.183029 47.711941 192.606934 47.029503 191.308258 C 44.950912 187.350815 42.906799 183.33786 40.866241 179.360626 L 27.982546 154.259003 L 13.372949 126.231491 C 10.72765 121.150925 6.464263 113.902206 4.774438 108.342514 C 4.267175 106.672913 5.326883 103.239365 6.512603 101.882019 C 8.067284 100.102249 9.543509 99.446381 11.914969 99.237534 Z"/><path fill="currentColor" d="M 96.765511 99.206619 C 104.64196 98.855881 112.642067 99.161423 120.531998 99.149155 C 125.15921 99.141632 133.149017 98.681122 137.281616 99.417038 C 138.877914 99.701202 140.38623 101.225372 141.28067 102.524033 C 142.465607 104.246368 143.15477 106.884125 142.723587 108.977005 C 142.127579 111.869965 131.412796 132.920242 129.553772 135.769623 C 128.994995 136.625641 128.348618 137.31601 127.489838 137.879532 C 125.958946 138.884155 123.912041 139.336716 122.10968 138.944778 C 119.988678 138.483887 118.224754 137.024307 117.105209 135.197754 C 113.812767 129.825134 117.837166 124.246414 120.330299 119.512619 C 120.819336 118.584473 121.585373 117.38092 121.758942 116.345383 C 121.811264 116.031128 121.686035 115.97287 121.521179 115.72757 C 119.903885 115.250809 105.285164 115.594818 102.599846 115.600342 C 100.726547 118.87854 98.589294 123.348801 96.784935 126.824341 C 95.811234 128.946915 94.195511 131.818924 93.090225 133.941879 L 85.836746 147.964966 C 83.232254 153.157272 80.585785 158.328217 77.896873 163.477722 C 76.897804 165.36055 75.342743 168.486938 74.166519 170.174789 L 73.581581 170.210052 C 72.546432 169.047714 66.1371 156.252777 64.921638 153.907471 C 65.589813 152.263626 67.242775 149.362717 68.123344 147.697067 L 73.751602 136.890366 C 79.474556 125.851044 85.262115 114.852127 91.068687 103.857193 C 92.470428 101.202377 93.881645 100.01944 96.765511 99.206619 Z"/></g><g><path fill="currentColor" d="M 229.592743 80.346909 C 225.620056 81.464081 222.799362 78.789856 219.698334 76.720947 L 211.969116 71.582443 C 210.270462 70.453598 208.56575 69.333633 206.854858 68.223083 C 205.807663 67.542068 203.431625 66.137802 202.741852 65.300659 C 199.394806 61.237976 201.1017 54.953613 206.419769 53.831467 C 210.131241 53.048584 212.647934 55.291641 215.396652 57.044693 C 215.197998 56.612656 214.99588 56.181946 214.790176 55.753128 C 206.48027 38.370483 191.632401 24.979767 173.486664 18.503357 C 155.566162 12.226807 135.899277 13.225739 118.706818 21.285645 C 102.899513 28.707184 90.333931 41.629028 83.35743 57.637833 C 82.531479 59.514069 81.796463 61.429108 81.155586 63.376297 C 80.675835 64.869034 80.260368 66.37413 79.768669 67.865723 C 78.550438 71.560181 74.3181 73.636627 70.640404 72.193039 C 68.903053 71.499191 67.51226 70.144241 66.773537 68.425507 C 66.33036 67.429642 66.114784 66.34761 66.142128 65.257996 C 66.195793 63.067215 68.387192 57.190826 69.22052 55.006943 C 70.202843 52.332474 71.779228 49.05687 73.085312 46.543411 C 81.885345 29.671783 96.01577 16.182495 113.277481 8.174713 C 134.042603 -1.336609 157.720856 -2.27594 179.174255 5.560577 C 197.290985 12.225525 212.627197 24.811676 222.698181 41.280365 C 225.095444 45.167862 226.856827 48.729919 228.759521 52.852127 C 229.574036 50.892975 230.491577 48.96637 231.304245 47.016327 C 232.823837 43.370514 237.393616 41.796753 240.898041 43.603424 C 242.446838 44.41243 243.606079 45.809433 244.115341 47.481049 C 244.723312 49.409882 244.483749 50.598175 243.77037 52.457092 C 243.269394 53.762375 242.740311 55.066391 242.223953 56.366257 L 238.624496 65.430374 C 237.718628 67.701248 236.82666 69.977524 235.948349 72.259262 C 234.42601 76.225433 234.068451 78.94632 229.592743 80.346909 Z"/><path fill="currentColor" d="M 81.009193 214.557129 C 84.981888 213.439941 87.802574 216.114166 90.903603 218.18309 L 98.632828 223.321594 C 100.331482 224.450439 102.036186 225.570389 103.747086 226.680939 C 104.794273 227.361969 107.170319 228.766235 107.860092 229.603363 C 111.207138 233.666046 109.500237 239.950424 104.182167 241.072556 C 100.470695 241.855438 97.954002 239.612396 95.205276 237.859344 C 95.403946 238.291367 95.606056 238.722076 95.811752 239.150909 C 104.121674 256.533569 118.969536 269.924255 137.11528 276.400665 C 155.035782 282.677216 174.702667 281.678284 191.895126 273.618408 C 207.702423 266.196838 220.268005 253.274994 227.244507 237.26619 C 228.07045 235.389969 228.805481 233.474915 229.44635 231.52774 C 229.926102 230.035004 230.341568 228.529907 230.833267 227.0383 C 232.051498 223.343842 236.283844 221.267395 239.961533 222.710999 C 241.698883 223.404846 243.089676 224.759796 243.8284 226.478516 C 244.271576 227.47438 244.487152 228.556427 244.459808 229.646027 C 244.406143 231.836807 242.214752 237.713196 241.381409 239.897095 C 240.399094 242.571548 238.822708 245.847153 237.516632 248.360611 C 228.716599 265.232239 214.586166 278.721558 197.324463 286.729309 C 176.559341 296.240662 152.881088 297.179962 131.427689 289.343445 C 113.310944 282.678497 97.974739 270.092346 87.903755 253.623657 C 85.506485 249.73616 83.745117 246.174103 81.842415 242.051895 C 81.027901 244.011047 80.110359 245.937653 79.297691 247.887695 C 77.778099 251.533524 73.208321 253.107269 69.703888 251.300598 C 68.155106 250.491608 66.99585 249.094589 66.486595 247.422974 C 65.878624 245.494141 66.118187 244.305847 66.831558 242.44693 C 67.332535 241.141663 67.861626 239.837631 68.377975 238.537781 L 71.977432 229.473663 C 72.883316 227.202789 73.775284 224.926498 74.653587 222.64476 C 76.175934 218.678589 76.533493 215.957703 81.009193 214.557129 Z"/></g><g><path fill="currentColor" d="M 244.770096 96.388397 C 241.608612 94.792068 239.73555 93.846298 235.701004 94.020554 C 232.660995 94.280548 231.450714 94.94342 228.81105 96.262756 L 224.349686 98.486786 L 210.462036 105.391602 L 195.45816 112.83522 L 190.458542 115.298233 C 187.985382 116.518234 186.030899 117.332047 184.2229 119.549362 C 182.416779 121.764114 181.613113 124.538849 181.835648 127.392609 C 182.110916 130.461609 183.489136 133.133301 185.893967 135.078339 C 187.230026 136.158859 189.085464 136.964081 190.649475 137.725021 L 194.619629 139.686066 L 211.814667 148.176056 L 224.883926 154.615067 C 226.7155 155.516632 230.004898 157.27359 231.793304 157.949051 C 233.699203 158.663101 235.737015 158.956085 237.766968 158.807877 C 240.468796 158.607788 242.251343 157.715363 244.591873 156.544388 L 249.116989 154.276337 L 263.0495 147.364243 L 278.732574 139.587021 L 283.125916 137.406158 C 283.994324 136.979523 285.108246 136.467285 285.921356 135.994781 C 287.058746 135.345322 288.077362 134.507217 288.933472 133.516327 C 292.887177 128.926895 292.202576 121.467407 287.469788 117.74881 C 285.887634 116.505646 284.056183 115.782028 282.262939 114.896622 L 275.540497 111.566772 L 252.542023 100.239471 L 245.657806 96.835022 C 245.349777 96.681107 245.054718 96.53212 244.770096 96.388397 Z M 241.139893 104.779465 C 241.490112 104.967133 241.83017 105.149338 242.156433 105.312271 L 247.808517 108.094299 L 265.681885 116.901123 L 277.893036 122.924942 C 279.119019 123.541245 280.394623 124.112076 281.591187 124.766373 C 282.75589 125.403381 282.643677 127.456345 281.505005 128.032333 C 279.477478 129.057816 277.424805 130.03212 275.390717 131.042313 L 261.775757 137.794754 L 246.846924 145.220947 L 242.338379 147.434845 C 240.90715 148.151047 238.760712 149.438782 237.212997 149.6483 L 237.148453 149.649445 C 236.347702 149.663651 235.647308 149.676086 234.891327 149.331024 C 233.58844 148.736313 232.286835 148.08429 231.001511 147.45256 L 223.175995 143.555893 L 204.295868 134.250107 L 195.354401 129.827896 C 194.165131 129.243332 192.837936 128.682358 191.715118 128.004044 C 190.906601 127.515671 190.698929 125.983231 191.362244 125.297623 C 191.670105 124.979477 191.9841 124.746521 192.38829 124.553268 C 194.808578 123.333267 197.254578 122.160583 199.679993 120.952164 L 217.786179 111.978394 L 228.762894 106.523834 C 230.4151 105.697876 234.647781 103.327927 236.219528 103.164276 C 237.851334 103.017334 239.59465 103.951477 241.139893 104.779465 Z"/><path fill="currentColor" d="M 288.635193 145.318848 C 290.814087 145.186493 292.598328 145.987595 293.498627 148.10202 C 294.312836 150.014343 293.518768 152.689163 291.679047 153.712357 C 290.540222 154.345657 289.282776 154.924774 288.097656 155.513046 L 281.490692 158.786865 L 264.080139 167.429489 L 249.344238 174.762634 L 244.523972 177.160034 C 243.485199 177.673859 242.404694 178.250412 241.321625 178.639008 C 238.810013 179.55072 235.535065 179.765411 232.956284 178.93988 C 230.682785 178.211975 228.015686 176.76442 225.834229 175.666473 L 217.808624 171.703491 L 184.229187 155.157593 C 182.130493 154.126114 180.120987 153.374619 179.601318 150.835007 C 179.357193 149.594284 179.632477 148.307678 180.362671 147.275345 C 181.279388 145.973022 183.236298 145.143478 184.765869 145.46521 C 186.261292 145.779785 188.339981 146.951614 189.725189 147.641083 L 195.311813 150.424103 L 227.259048 166.177185 L 232.224228 168.629761 C 233.219116 169.123001 234.62178 169.908508 235.661407 170.16333 C 236.396469 170.343704 237.675781 170.244385 238.36853 169.941666 C 240.006577 169.225464 241.706955 168.335342 243.315125 167.534393 L 252.050079 163.213791 L 279.654266 149.534256 C 281.326904 148.715729 287.194519 145.580826 288.537872 145.335724 L 288.635193 145.318848 Z"/><path fill="currentColor" d="M 288.576172 165.897629 C 293.808472 165.48587 295.77124 171.601578 291.525818 174.372742 C 290.652557 174.942719 289.314087 175.488983 288.335327 175.970764 L 282.488464 178.866974 L 263.286621 188.405731 L 248.137665 195.946838 L 244.179108 197.914764 C 243.276688 198.362671 242.279648 198.893646 241.338776 199.212219 C 238.650085 200.146652 235.742874 200.252411 232.993439 199.515503 C 231.170731 199.019562 227.380524 197.041046 225.495224 196.093185 L 217.138306 191.951385 L 184.341812 175.769531 C 182.247559 174.740326 180.189301 174.015137 179.608597 171.4991 C 179.343903 170.303253 179.568863 169.051392 180.233322 168.022476 C 181.158035 166.586945 182.997467 165.785858 184.679688 166.025833 C 186.319458 166.259659 191.112274 168.936188 192.91597 169.812881 L 223.025345 184.66983 L 231.498886 188.851379 C 232.721741 189.451782 234.295197 190.358917 235.568649 190.738251 C 237.679779 191.366974 240.242264 189.645309 242.122574 188.719177 L 250.808914 184.418015 L 279.461456 170.187073 L 284.802704 167.518097 C 285.981659 166.936829 287.321442 166.17662 288.576172 165.897629 Z"/></g></g></svg>`);
+		this.addRibbonIcon("evc-relay", "EVC Team Relay", () => {
+			this.openSettings();
+		});
+
+		// Initialize update manager
+		this.updateManager = new UpdateManager(
+			this as unknown as PluginWithApp,
+			this.timeProvider,
+			this.releaseSettings,
+		);
+
+		this.register(
+			this.debugSettings.subscribe((settings) => {
+				if (settings.debugging) {
+					this.enableDebugging();
+					this.removeCommand("enable-debugging");
+					this.addCommand({
+						id: "toggle-feature-flags",
+						name: "Show feature flags",
+						callback: () => {
+							const modal = new FeatureFlagToggleModal(this.app, () => {
+								this.reload();
+							});
+							this.openModals.push(modal);
+							modal.open();
+						},
+					});
+					this.addCommand({
+						id: "send-bug-report",
+						name: "Send bug report",
+						callback: () => {
+							const modal = new BugReportModal(this.app, this);
+							this.openModals.push(modal);
+							modal.open();
+						},
+					});
+					this.addCommand({
+						id: "show-debug-info",
+						name: "Show debug info",
+						callback: () => {
+							const modal = new DebugModal(this.app, this);
+							this.openModals.push(modal);
+							modal.open();
+						},
+					});
+					this.addCommand({
+						id: "show-release-manager",
+						name: "Show releases",
+						callback: () => {
+							const modal = new ReleaseManager(this.app, this);
+							this.openModals.push(modal);
+							modal.open();
+						},
+					});
+					this.addCommand({
+						id: "analyze-indexeddb",
+						name: "Analyze database",
+						callback: () => {
+							const modal = new IndexedDBAnalysisModal(this.app, this);
+							this.openModals.push(modal);
+							modal.open();
+						},
+					});
+					this.addCommand({
+						id: "disable-debugging",
+						name: "Disable debugging",
+						callback: () => {
+							this.disableDebugging(true);
+						},
+					});
+				} else {
+					this.removeCommand("toggle-feature-flags");
+					this.removeCommand("send-bug-report");
+					this.removeCommand("show-debug-info");
+					this.removeCommand("show-release-manager");
+					this.removeCommand("disable-debugging");
+					this.addCommand({
+						id: "enable-debugging",
+						name: "Enable debugging",
+						callback: () => {
+							this.enableDebugging(true);
+						},
+					});
+				}
+			}),
+		);
+
+		// Store app reference for reload function (avoid window.app per Obsidian guidelines)
+		const appRef = this.app as any;
+		(this.app as any).reloadRelay = async () => {
+			await appRef.plugins.disablePlugin("evc-team-relay");
+			await appRef.plugins.enablePlugin("evc-team-relay");
+		};
+
+		this.addCommand({
+			id: "reload",
+			name: "Reload Relay",
+			callback: async () => await (this.app as any).reloadRelay(),
+		});
+
+		this.addCommand({
+			id: "open-settings",
+			name: "Open settings",
+			callback: () => {
+				this.openSettings();
+			},
+		});
+
+		this.addCommand({
+			id: "configure-endpoints",
+			name: "Configure enterprise tenant",
+			callback: () => {
+				this.openEndpointConfigurationModal();
+			},
+		});
+
+		if (flags().enableSelfManageHosts) {
+			this.addCommand({
+				id: "register-host",
+				name: "Register self-hosted Relay Server",
+				callback: () => {
+					const modal = new SelfHostModal(
+						this.app,
+						this.relayManager,
+						(relay) => {
+							// Open relay settings after successful creation
+							this.openSettings(`/relays?id=${relay.id}`);
+						},
+					);
+					this.openModals.push(modal);
+					modal.open();
+				},
+			});
+		}
+
+		// Register handler for update availability changes
+		this.register(this.updateManager.subscribe(() => {
+			const newRelease = this.updateManager.getNewRelease();
+			if (newRelease) {
+				// Add update command when an update is available
+				this.removeCommand("update-plugin");
+				this.addCommand({
+					id: "update-plugin",
+					name: `Update Plugin (${this.version} → ${newRelease.tag_name})`,
+					callback: async () => {
+						await this.updateManager.installUpdate(newRelease);
+					},
+				});
+				this.log(`Update available: v${this.version} → ${newRelease.tag_name}`);
+			} else {
+				// Remove update command when no update is available
+				this.removeCommand("update-plugin");
+			}
+		}));
+
+		this.vault = this.app.vault;
+		const vaultName = this.vault.getName();
+		this.fileManager = this.app.fileManager;
+
+		this.hashStore = new ContentAddressedFileStore(this.appId);
+
+		// Initialize and validate endpoints before creating LoginManager
+		const endpointManager = new EndpointManager(this.endpointSettings);
+		await this.validateEndpointsOnStartup(endpointManager);
+
+		this.loginManager = new LoginManager(
+			this.vault.getName(),
+			this.openSettings.bind(this),
+			this.timeProvider,
+			this.patchWebviewer.bind(this),
+			this.loginSettings,
+			endpointManager,
+			this.relayOnPremSettings.get(),
+		);
+		this.relayManager = new RelayManager(this.loginManager);
+		this.sharedFolders = new SharedFolders(
+			this.relayManager,
+			this.vault,
+			this._createSharedFolder.bind(this),
+			this.folderSettings,
+		);
+
+		// Initialize relay-onprem token provider and share client if enabled
+		const relayOnPremSettings = this.relayOnPremSettings.get();
+		let relayOnPremTokenProvider: RelayOnPremTokenProvider | undefined;
+		const defaultServer = getDefaultServer(relayOnPremSettings);
+
+		if (relayOnPremSettings.enabled && defaultServer && this.loginManager.getAuthProvider()) {
+			relayOnPremTokenProvider = new RelayOnPremTokenProvider({
+				controlPlaneUrl: defaultServer.controlPlaneUrl,
+				authProvider: this.loginManager.getAuthProvider()!,
+			});
+
+			// Initialize share client for relay-onprem mode (backward compatibility)
+			this.shareClient = new RelayOnPremShareClient(
+				defaultServer.controlPlaneUrl,
+				() => this.loginManager.getAuthProvider()?.getToken(),
+			);
+		}
+
+		// Initialize multi-server share client manager
+		if (relayOnPremSettings.enabled && relayOnPremSettings.servers.length > 0) {
+			const multiServerAuthManager = this.loginManager.getMultiServerAuthManager();
+			if (multiServerAuthManager) {
+				this.shareClientManager = new RelayOnPremShareClientManager(
+					multiServerAuthManager,
+					relayOnPremSettings.servers,
+				);
+			}
+		}
+
+		// Initialize WebSyncManager for auto-sync (v1.8.1)
+		if (this.shareClientManager) {
+			const { WebSyncManager } = await import("./WebSyncManager");
+			this.webSyncManager = new WebSyncManager(
+				this.vault,
+				this.shareClientManager
+			);
+		}
+
+		// Add status bar item for Relay On-Prem (v1.8.2)
+		if (relayOnPremSettings.enabled) {
+			this.addRelayStatusBarItem();
+		}
+
+		this.tokenStore = new LiveTokenStore(
+			this.loginManager,
+			this.timeProvider,
+			vaultName,
+			3,
+			relayOnPremTokenProvider,
+		);
+
+		this.networkStatus = new NetworkStatus(this.timeProvider, HEALTH_URL);
+
+		this.backgroundSync = new BackgroundSync(
+			this.loginManager,
+			this.timeProvider,
+			this.sharedFolders,
+		);
+
+		if (!this.loginManager.setup()) {
+			new Notice("Please sign in to use relay");
+		}
+
+		this.app.workspace.onLayoutReady(() => {
+			this.sharedFolders.load();
+			this._liveViews = new LiveViewManager(
+				this.app,
+				this.sharedFolders,
+				this.loginManager,
+				this.networkStatus,
+			);
+
+			// NOTE: Extensions list should be loaded once and then mutated.
+			// this.app.workspace.updateOptions(); must be called to apply changes.
+			this.registerEditorExtension(this._liveViews.extensions);
+
+			this.register(
+				this.loginManager.on(() => {
+					if (this.loginManager.loggedIn) {
+						this._onLogin();
+					} else {
+						this._onLogout();
+					}
+				}),
+			);
+
+			this.tokenStore.start();
+
+			if (!Platform.isIosApp) {
+				// We can't run network status on iOS or it will always be offline.
+				this.networkStatus.addEventListener("offline", () => {
+					this.tokenStore.stop();
+					this.sharedFolders.forEach((folder) => folder.disconnect());
+					this._liveViews.goOffline();
+				});
+				this.networkStatus.addEventListener("online", () => {
+					this.tokenStore.start();
+					this.relayManager.subscribe();
+					this.relayManager.update();
+					this._liveViews.goOnline();
+				});
+				this.networkStatus.start();
+			}
+
+			this.registerView(
+				VIEW_TYPE_DIFFERENCES,
+				(leaf) => new DifferencesView(leaf),
+			);
+
+			this.registerEvent(
+				this.app.workspace.on("file-menu", (menu, file) => {
+					if (file instanceof TFolder) {
+						const folder = this.sharedFolders.find(
+							(sharedFolder) => sharedFolder.path === file.path,
+						);
+						if (!folder) {
+							// Folder is not shared yet - offer to share in relay-onprem mode
+							if (this.loginManager.isRelayOnPremMode() && this.loginManager.isLoggedInToAnyServer()) {
+								menu.addItem((item) => {
+									item
+										.setTitle("EVC Relay: Share folder")
+										.setIcon("share-2")
+										.onClick(() => {
+											const modal = new QuickShareModal(this.app, this, file.path);
+											modal.open();
+										});
+								});
+							}
+							return;
+						}
+						if (folder.relayId) {
+							menu.addItem((item) => {
+								item
+									.setTitle("EVC Relay: Relay settings")
+									.setIcon("gear")
+									.onClick(() => {
+										this.openSettings(`/relays?id=${folder.relayId}`);
+									});
+							});
+							menu.addItem((item) => {
+								item
+									.setTitle("EVC Relay: Local folder settings")
+									.setIcon("gear")
+									.onClick(() => {
+										this.openSettings(`/shared-folders?id=${folder.guid}`);
+									});
+							});
+							menu.addItem((item) => {
+								item
+									.setTitle(
+										folder.connected ? "EVC Relay: Disconnect" : "EVC Relay: Connect",
+									)
+									.setIcon("satellite")
+									.onClick(() => {
+										if (folder.connected) {
+											folder.shouldConnect = false;
+											folder.disconnect();
+										} else {
+											folder.shouldConnect = true;
+											folder.connect();
+										}
+										this._liveViews.refresh("folder connection toggle");
+									});
+							});
+						} else {
+							menu.addItem((item) => {
+								item
+									.setTitle("EVC Relay: Local folder settings")
+									.setIcon("gear")
+									.onClick(() => {
+										this.openSettings(`/shared-folders?id=${folder.guid}`);
+									});
+							});
+							// Add Unshare option for relay-onprem folders
+							if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
+								menu.addItem((item) => {
+									item
+										.setTitle("EVC Relay: Unshare folder")
+										.setIcon("folder-x")
+										.onClick(async () => {
+											const confirmed = confirm(
+												`Are you sure you want to unshare "${folder.path}"?\n\nThis will remove the share from the server and disconnect this folder.`
+											);
+											if (!confirmed) return;
+
+											try {
+												// Delete from server
+												if (this.shareClientManager && folder.guid) {
+													await this.shareClientManager.deleteShare(
+														folder.settings!.onpremServerId!,
+														folder.guid
+													);
+												}
+												// Remove local shared folder
+												this.sharedFolders.delete(folder);
+												this.folderNavDecorations?.quickRefresh();
+												new Notice(`Folder "${folder.path}" unshared`);
+											} catch (error) {
+												new Notice(
+													`Failed to unshare: ${error instanceof Error ? error.message : "Unknown error"}`
+												);
+											}
+										});
+								});
+							}
+						}
+						if (folder.relayId && folder.connected) {
+							menu.addItem((item) => {
+								item
+									.setTitle("EVC Relay: Sync")
+									.setIcon("folder-sync")
+									.onClick(() => {
+										folder.netSync();
+									});
+							});
+						}
+					} else if (file instanceof TFile) {
+						const folder = this.sharedFolders.lookup(file.path);
+						const ifile = folder?.getFile(file);
+						if (ifile && isSyncFile(ifile)) {
+							menu.addItem((item) => {
+								item
+									.setTitle("EVC Relay: Download")
+									.setIcon("cloud-download")
+									.onClick(async () => {
+										await ifile.pull();
+										new Notice(`Download complete: ${ifile.name}`);
+									});
+							});
+							if (this.debugSettings.get().debugging) {
+								menu.addItem((item) => {
+									item
+										.setTitle("EVC Relay: Verify upload")
+										.setIcon("search-check")
+										.onClick(async () => {
+											const present = await ifile.verifyUpload();
+											new Notice(
+												`${ifile.name} ${present ? "on server" : "missing from server"}`,
+											);
+										});
+								});
+							}
+							menu.addItem((item) => {
+								item
+									.setTitle("EVC Relay: Upload")
+									.setIcon("cloud-upload")
+									.onClick(async () => {
+										await ifile.push(true);
+										const present = await ifile.verifyUpload();
+										new Notice(
+											`${present ? "File uploaded:" : "File upload failed:"} ${ifile.name}`,
+										);
+									});
+							});
+						}
+					}
+				}),
+			);
+			this.setup();
+			this._liveViews.refresh("init");
+			this.loadTime = moment.now() - start;
+		});
+	}
+
+	async reload() {
+		(this.app as any).reloadRelay()();
+	}
+
+	private _createSharedFolder(
+		path: string,
+		guid: string,
+		relayId?: string,
+		awaitingUpdates?: boolean,
+	): SharedFolder {
+		// Initialize settings with pattern matching syntax
+		const folderSettings = new NamespacedSettings<SharedFolderSettings>(
+			this.settings,
+			`sharedFolders/[guid=${guid}]`,
+		);
+		const settings: SharedFolderSettings = { guid: guid, path: path };
+		if (relayId) {
+			settings["relay"] = relayId;
+		}
+		folderSettings.update((current) => {
+			return {
+				...current,
+				path,
+				guid,
+				...(relayId ? { relay: relayId } : {}),
+				...{
+					sync: current.sync ? current.sync : SyncSettingsManager.defaultFlags,
+				},
+			};
+		}, true);
+
+		const folder = new SharedFolder(
+			this.appId,
+			guid,
+			path,
+			this.loginManager,
+			this.vault,
+			this.fileManager,
+			this.tokenStore,
+			this.relayManager,
+			this.hashStore,
+			this.backgroundSync,
+			folderSettings,
+			relayId,
+			awaitingUpdates,
+		);
+		return folder;
+	}
+
+	private async loadRelayOnPremShares() {
+		const log = curryLog("[RelayOnPrem]", "log");
+		const err = curryLog("[RelayOnPrem]", "error");
+
+		try {
+			log("Loading existing shares from control plane...");
+
+			// Use multi-server manager if available, otherwise fall back to single client
+			if (this.shareClientManager) {
+				// Multi-server mode: load from all servers
+				const allShares = await this.shareClientManager.getAllSharesFlat();
+				log(`Found ${allShares.length} shares across all servers`);
+
+				for (const share of allShares) {
+					if (share.kind === "folder") {
+						// Check if SharedFolder already exists
+						const existing = this.sharedFolders.find(
+							(sf) => sf.guid === share.id
+						);
+
+						if (!existing) {
+							const sharedFolder = this.sharedFolders.new(
+								share.path,
+								share.id,
+								undefined,
+								false
+							);
+							// Store server ID in settings
+							if (sharedFolder && sharedFolder.settings) {
+								sharedFolder.settings.onpremServerId = share.serverId;
+							}
+							log(`Created SharedFolder for ${share.path} on server ${share.serverId}`);
+						}
+					}
+
+					// Register auto-sync shares (v1.8.1) - supports both doc and folder shares
+					if (share.web_published && share.web_sync_mode === "auto") {
+						if (this.webSyncManager) {
+							this.webSyncManager.registerAutoSyncShare(
+								share.path,
+								share.id,
+								share.serverId,
+								share.kind,
+								share.web_slug ?? undefined
+							);
+							log(`Registered auto-sync for ${share.kind} ${share.path} on server ${share.serverId}`);
+						}
+					}
+				}
+			} else if (this.shareClient) {
+				// Single-server mode (legacy)
+				const shares = await this.shareClient.listShares();
+				log(`Found ${shares.length} shares`);
+
+				// Get default server ID
+				const relayOnPremSettings = this.relayOnPremSettings.get();
+				const defaultServerId = relayOnPremSettings.defaultServerId ||
+					(relayOnPremSettings.servers.length > 0 ? relayOnPremSettings.servers[0].id : "default");
+
+				for (const share of shares) {
+					if (share.kind === "folder") {
+						const existing = this.sharedFolders.find(
+							(sf) => sf.guid === share.id
+						);
+
+						if (!existing) {
+							const sharedFolder = this.sharedFolders.new(
+								share.path,
+								share.id,
+								undefined,
+								false
+							);
+							if (sharedFolder && sharedFolder.settings) {
+								sharedFolder.settings.onpremServerId = defaultServerId;
+							}
+							log(`Created SharedFolder for ${share.path}`);
+						}
+					}
+
+					// Register auto-sync shares (v1.8.1) - supports both doc and folder shares
+					if (share.web_published && share.web_sync_mode === "auto") {
+						if (this.webSyncManager) {
+							this.webSyncManager.registerAutoSyncShare(
+								share.path,
+								share.id,
+								defaultServerId,
+								share.kind,
+								share.web_slug ?? undefined
+							);
+							log(`Registered auto-sync for ${share.kind} ${share.path}`);
+						}
+					}
+				}
+			} else {
+				log("No share client available, skipping share load");
+				return;
+			}
+
+			// Refresh visual indicators
+			this.folderNavDecorations?.quickRefresh();
+			log("Relay-onprem shares loaded");
+		} catch (error) {
+			err("Failed to load relay-onprem shares:", error);
+		}
+	}
+
+	/**
+	 * Add status bar item with menu for Relay On-Prem (v1.8.3)
+	 */
+	private addRelayStatusBarItem() {
+		const statusBarItem = this.addStatusBarItem();
+		statusBarItem.addClass("relay-onprem-statusbar");
+		// Use custom icon without text (v1.8.3)
+		const iconEl = statusBarItem.createSpan({ cls: "relay-status-icon" });
+		// Create custom EVC logo SVG using DOM API instead of innerHTML for security
+		const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+		svg.setAttribute("viewBox", "0 0 100 100");
+		svg.setAttribute("width", "16");
+		svg.setAttribute("height", "16");
+		svg.style.display = "block";
+		svg.style.margin = "auto";
+		const g1 = document.createElementNS("http://www.w3.org/2000/svg", "g");
+		g1.setAttribute("transform", "scale(0.333333)");
+		// Simplified EVC logo paths
+		const paths = [
+			"M 11.914969 99.237534 C 24.033806 99.046112 36.213295 99.289841 48.341644 99.170944 C 51.59132 99.138855 54.709785 100.099091 56.287449 103.287704 C 58.8848 108.536697 61.970402 113.782532 64.009758 119.258606 C 65.717018 124.316162 60.033283 130.881668 54.537395 129.028961 C 49.582062 127.358566 47.504257 120.03772 45.145096 115.681992 C 41.199928 115.644348 37.254375 115.630478 33.309204 115.641174 C 31.607891 115.639969 27.951637 115.53891 26.411209 115.806808 L 26.183739 116.165878 C 26.220995 117.831924 55.919304 174.47226 58.774639 179.955078 L 89.279808 179.928101 C 91.172134 176.000397 93.297867 171.989853 95.29287 168.100174 C 97.119392 164.547714 98.928131 158.911163 103.1063 157.727798 C 104.985542 157.212601 106.993217 157.48172 108.670761 158.473236 C 111.701668 160.298203 113.50206 164.976105 112.27549 168.30307 C 110.644325 172.727768 108.047783 177.048218 105.977509 181.306061 C 104.063759 185.241699 102.030739 189.213013 99.927589 193.049194 C 98.963799 194.505203 97.083336 195.794769 95.299988 195.959625 C 91.153107 196.343262 86.709808 196.090393 82.535988 196.124481 L 64.463516 196.170471 C 61.042667 196.18277 57.48547 196.250519 54.070545 196.130829 C 53.020763 196.094376 50.863697 195.683426 50.079811 195.072327 C 48.939274 194.183029 47.711941 192.606934 47.029503 191.308258 C 44.950912 187.350815 42.906799 183.33786 40.866241 179.360626 L 27.982546 154.259003 L 13.372949 126.231491 C 10.72765 121.150925 6.464263 113.902206 4.774438 108.342514 C 4.267175 106.672913 5.326883 103.239365 6.512603 101.882019 C 8.067284 100.102249 9.543509 99.446381 11.914969 99.237534 Z",
+			"M 96.765511 99.206619 C 104.64196 98.855881 112.642067 99.161423 120.531998 99.149155 C 125.15921 99.141632 133.149017 98.681122 137.281616 99.417038 C 138.877914 99.701202 140.38623 101.225372 141.28067 102.524033 C 142.465607 104.246368 143.15477 106.884125 142.723587 108.977005 C 142.127579 111.869965 131.412796 132.920242 129.553772 135.769623 C 128.994995 136.625641 128.348618 137.31601 127.489838 137.879532 C 125.958946 138.884155 123.912041 139.336716 122.10968 138.944778 C 119.988678 138.483887 118.224754 137.024307 117.105209 135.197754 C 113.812767 129.825134 117.837166 124.246414 120.330299 119.512619 C 120.819336 118.584473 121.585373 117.38092 121.758942 116.345383 C 121.811264 116.031128 121.686035 115.97287 121.521179 115.72757 C 119.903885 115.250809 105.285164 115.594818 102.599846 115.600342 C 100.726547 118.87854 98.589294 123.348801 96.784935 126.824341 C 95.811234 128.946915 94.195511 131.818924 93.090225 133.941879 L 85.836746 147.964966 C 83.232254 153.157272 80.585785 158.328217 77.896873 163.477722 C 76.897804 165.36055 75.342743 168.486938 74.166519 170.174789 L 73.581581 170.210052 C 72.546432 169.047714 66.1371 156.252777 64.921638 153.907471 C 65.589813 152.263626 67.242775 149.362717 68.123344 147.697067 L 73.751602 136.890366 C 79.474556 125.851044 85.262115 114.852127 91.068687 103.857193 C 92.470428 101.202377 93.881645 100.01944 96.765511 99.206619 Z"
+		];
+		const g2 = document.createElementNS("http://www.w3.org/2000/svg", "g");
+		paths.forEach(d => {
+			const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+			path.setAttribute("fill", "currentColor");
+			path.setAttribute("d", d);
+			g2.appendChild(path);
+		});
+		g1.appendChild(g2);
+		svg.appendChild(g1);
+		iconEl.appendChild(svg);
+		statusBarItem.setAttribute("aria-label", "EVC Team Relay");
+		statusBarItem.setAttribute("data-tooltip-position", "top");
+		statusBarItem.style.cursor = "pointer";
+
+		statusBarItem.addEventListener("click", (event) => {
+			const menu = new Menu();
+
+			// Sync All option
+			menu.addItem((item) => {
+				item
+					.setTitle("Sync All Shares")
+					.setIcon("refresh-cw")
+					.onClick(async () => {
+						await this.syncAllShares();
+					});
+			});
+
+			// Sync Current option
+			menu.addItem((item) => {
+				item
+					.setTitle("Sync Current File")
+					.setIcon("file-sync")
+					.onClick(async () => {
+						await this.syncCurrentFile();
+					});
+			});
+
+			menu.addSeparator();
+
+			// Shares option
+			menu.addItem((item) => {
+				item
+					.setTitle("Manage Shares")
+					.setIcon("folder-shared")
+					.onClick(() => {
+						const { ShareManagementModal } = require("./ui/ShareManagementModal");
+						new ShareManagementModal(this.app, this).open();
+					});
+			});
+
+			// Settings option
+			menu.addItem((item) => {
+				item
+					.setTitle("Settings")
+					.setIcon("settings")
+					.onClick(() => {
+						this.openSettings("/relay-onprem");
+					});
+			});
+
+			menu.showAtMouseEvent(event);
+		});
+	}
+
+	/**
+	 * Sync all web-published shares
+	 */
+	private async syncAllShares() {
+		if (!this.shareClientManager) {
+			new Notice("No share client available");
+			return;
+		}
+
+		try {
+			const shares = await this.shareClientManager.getAllSharesFlat();
+			const webShares = shares.filter(s => s.web_published);
+
+			if (webShares.length === 0) {
+				new Notice("No web-published shares to sync");
+				return;
+			}
+
+			let synced = 0;
+			for (const share of webShares) {
+				try {
+					if (share.kind === "doc") {
+						const file = this.vault.getAbstractFileByPath(share.path);
+						if (file instanceof TFile) {
+							const content = await this.vault.read(file);
+							await this.shareClientManager.updateShare(share.serverId, share.id, {
+								web_content: content,
+							});
+							synced++;
+						}
+					}
+					// Folder syncs handled by manual sync button for now
+				} catch (e) {
+					console.error(`Failed to sync ${share.path}:`, e);
+				}
+			}
+
+			new Notice(`Synced ${synced} shares to web`);
+		} catch (error) {
+			new Notice(`Sync failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+		}
+	}
+
+	/**
+	 * Sync the current active file if it's a web-published share
+	 */
+	private async syncCurrentFile() {
+		const activeFile = this.app.workspace.getActiveFile();
+		if (!activeFile) {
+			new Notice("No active file");
+			return;
+		}
+
+		if (!this.shareClientManager) {
+			new Notice("No share client available");
+			return;
+		}
+
+		try {
+			const shares = await this.shareClientManager.getAllSharesFlat();
+			const share = shares.find(s => s.path === activeFile.path && s.web_published);
+
+			if (!share) {
+				new Notice("Current file is not a web-published share");
+				return;
+			}
+
+			const content = await this.vault.read(activeFile);
+			await this.shareClientManager.updateShare(share.serverId, share.id, {
+				web_content: content,
+			});
+
+			new Notice(`Synced ${activeFile.name} to web`);
+		} catch (error) {
+			new Notice(`Sync failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+		}
+	}
+
+	private _onLogout() {
+		this.tokenStore?.clear();
+		this.relayManager?.logout();
+		this._liveViews.refresh("logout");
+	}
+
+	private _onLogin() {
+		this.sharedFolders.load();
+
+		// Load relay-onprem shares after login
+		if (this.shareClient) {
+			this.loadRelayOnPremShares();
+		}
+		this.relayManager?.login();
+		this._liveViews.refresh("login");
+	}
+
+	async openSettings(path: string = "/") {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const setting = (this.app as any).setting;
+		await setting.open();
+		await setting.openTabById("evc-team-relay");
+		this.settingsTab.navigateTo(path);
+	}
+
+	patchWebviewer(): void {
+		// eslint-disable-next-line
+		const plugin = this;
+		try {
+			if (this.webviewerPatched) {
+				return;
+			}
+
+			const webviewer = (this.app as any).internalPlugins?.plugins?.webviewer;
+			if (!webviewer?.instance?.options || !webviewer.enabled) {
+				this.warn("Webviewer plugin not found or not initialized");
+				return;
+			}
+
+			const options = webviewer.instance.options;
+			const originalDesc = Object.getOwnPropertyDescriptor(
+				options,
+				"openExternalURLs",
+			);
+
+			if (!originalDesc) {
+				this.warn("Could not find openExternalURLs property");
+				return;
+			}
+
+			Object.defineProperty(options, "openExternalURLs", {
+				get() {
+					const currentEvent = window.event as any;
+					if (currentEvent?.type === "open-url" && currentEvent?.detail?.url) {
+						const url = currentEvent.detail.url;
+						for (const pattern of plugin.interceptedUrls) {
+							if (
+								(typeof pattern === "string" && url.startsWith(pattern)) ||
+								(pattern instanceof RegExp && pattern.test(url))
+							) {
+								plugin.log(
+									"Intercepted webviewer, opening in default browser",
+									currentEvent.detail.url,
+								);
+								return false;
+							}
+						}
+					}
+					return originalDesc.value;
+				},
+				set(value) {
+					originalDesc.value = value;
+				},
+				configurable: true,
+			});
+
+			this.register(() => {
+				Object.defineProperty(options, "openExternalURLs", originalDesc);
+			});
+
+			const intercepts = this.loginManager.getWebviewIntercepts();
+			intercepts.forEach((intercept) => {
+				this.debug("Intercepting Webviewer for URL pattern", intercept.source);
+				this.interceptedUrls.push(intercept);
+			});
+
+			const apiUrl = this.loginManager.getEndpointManager().getApiUrl();
+			const apiRegExp = new RegExp(apiUrl.replace("/", "\\/") + ".*");
+			this.debug("Intercepting Webviewer for URL pattern", apiRegExp.source);
+			this.interceptedUrls.push(apiRegExp);
+
+			this.webviewerPatched = true;
+			this.debug("patched webviewer options");
+		} catch (error) {
+			this.error("Failed to patch webviewer:", error);
+		}
+	}
+
+	setup() {
+		this.folderNavDecorations = new FolderNavigationDecorations(
+			this.vault,
+			this.app.workspace,
+			this.sharedFolders,
+			this.backgroundSync,
+		);
+		this.folderNavDecorations.refresh();
+
+		// Load relay-onprem shares if enabled
+		if (this.shareClient) {
+			this.loadRelayOnPremShares();
+		}
+
+		this.addSettingTab(this.settingsTab);
+
+		const workspaceLog = curryLog("[Live][Workspace]", "log");
+
+		this.registerEvent(
+			this.app.workspace.on("file-open", (file) => {
+				workspaceLog("file-open");
+				plugin._liveViews.refresh("file-open");
+			}),
+		);
+
+		this.registerEvent(
+			this.app.workspace.on("layout-change", () => {
+				workspaceLog("layout-change");
+				this._liveViews.refresh("layout-change");
+			}),
+		);
+
+		const vaultLog = curryLog("[System 3][Relay][Vault]", "log");
+
+		const handlePromiseRejection = (event: PromiseRejectionEvent): void => {
+			//event.preventDefault();
+		};
+		const rejectionListener = (event: PromiseRejectionEvent) =>
+			handlePromiseRejection(event);
+		window.addEventListener("unhandledrejection", rejectionListener, true);
+		this.register(() =>
+			window.removeEventListener("unhandledrejection", rejectionListener, true),
+		);
+
+		this.registerEvent(
+			this.app.vault.on("create", (tfile) => {
+				// NOTE: this is called on every file at startup...
+				const folder = this.sharedFolders.lookup(tfile.path);
+				if (folder) {
+					const newDocs = folder.placeHold([tfile]);
+					if (newDocs.length > 0) {
+						folder.uploadFile(tfile);
+					} else {
+						folder.whenReady().then((folder) => {
+							folder.getFile(tfile);
+						});
+					}
+				}
+			}),
+		);
+
+		this.registerEvent(
+			this.app.vault.on("delete", (file) => {
+				if (file instanceof TFolder) {
+					const folder = this.sharedFolders.find(
+						(folder) => folder.path === file.path,
+					);
+					if (folder) {
+						this.sharedFolders.delete(folder);
+						return;
+					}
+				}
+				const folder = this.sharedFolders.lookup(file.path);
+				if (folder) {
+					vaultLog("Delete", file.path);
+					const vpath = folder.getVirtualPath(file.path);
+					folder.markPendingDelete(vpath);
+					folder.whenReady().then((folder) => {
+						folder.proxy.deleteFile(file.path);
+					}).finally(() => {
+						folder.clearPendingDelete(vpath);
+					});
+				}
+			}),
+		);
+
+		this.registerEvent(
+			this.app.vault.on("rename", (file, oldPath) => {
+				// TODO this doesn't work for empty folders.
+				if (file instanceof TFolder) {
+					const sharedFolder = this.sharedFolders.find((folder) => {
+						return folder.path == oldPath;
+					});
+					if (sharedFolder) {
+						sharedFolder.move(file.path);
+						this.sharedFolders.update();
+						return;
+					}
+				}
+				const fromFolder = this.sharedFolders.lookup(oldPath);
+				const toFolder = this.sharedFolders.lookup(file.path);
+				const folder = fromFolder || toFolder;
+				if (fromFolder && toFolder) {
+					// between two shared folders
+					vaultLog("Rename", file.path, oldPath);
+					fromFolder.renameFile(file, oldPath);
+					toFolder.renameFile(file, oldPath);
+					this._liveViews.refresh("rename");
+					this.folderNavDecorations.quickRefresh();
+				} else if (folder) {
+					vaultLog("Rename", file.path, oldPath);
+					folder.renameFile(file, oldPath);
+					this._liveViews.refresh("rename");
+					this.folderNavDecorations.refresh();
+				}
+			}),
+		);
+
+		this.registerEvent(
+			this.app.vault.on("modify", (tfile) => {
+				const folder = this.sharedFolders.lookup(tfile.path);
+				if (folder) {
+					vaultLog("Modify", tfile.path);
+					const file = folder.proxy.getFile(tfile);
+					if (file && isSyncFile(file)) {
+						file.sync();
+					}
+					// Dataview race condition
+					this.timeProvider.setTimeout(() => {
+						this.app.metadataCache.trigger("resolve", file);
+					}, 10);
+				}
+
+				// Handle auto-sync to web (v1.8.1)
+				if (this.webSyncManager && tfile instanceof TFile) {
+					this.webSyncManager.onFileModified(tfile);
+				}
+			}),
+		);
+
+		// eslint-disable-next-line @typescript-eslint/no-this-alias
+		const plugin = this;
+
+		getPatcher().patch(MarkdownView.prototype, {
+			// When this is called, the active editors haven't yet updated.
+			onUnloadFile(old: any) {
+				return function (file: any) {
+					plugin._liveViews.wipe();
+					// @ts-ignore
+					return old.call(this, file);
+				};
+			},
+		});
+
+		getPatcher().patch(this.app.vault, {
+			process(old: any) {
+				return function (
+					tfile: any,
+					fn: (data: string) => string,
+					options: any,
+				) {
+					try {
+						const folder = plugin.sharedFolders.lookup(tfile.path);
+						if (folder) {
+							const file = folder.proxy.getFile(tfile);
+							if (tfile instanceof TFile && file && isDocument(file)) {
+								file.process(fn);
+							}
+						}
+					} catch (e: any) {
+						plugin.log(e);
+					}
+
+					// @ts-ignore
+					return old.call(this, tfile, fn, options);
+				};
+			},
+		});
+
+		this.patchWebviewer();
+
+		withFlag(flag.enableNewLinkFormat, () => {
+			getPatcher().patch(MetadataCache.prototype, {
+				fileToLinktext(
+					old: (
+						file: TFile,
+						sourcePath: string,
+						omitMdExtension?: boolean | undefined,
+					) => string,
+				) {
+					return function (
+						file: TFile,
+						sourcePath: string,
+						omitMdExtension?: boolean | undefined,
+					) {
+						const folder = plugin.sharedFolders.lookup(file.path);
+						if (folder) {
+							if (omitMdExtension === void 0) {
+								omitMdExtension = true;
+							}
+
+							const fileName =
+								file.extension === "md" && omitMdExtension
+									? file.basename
+									: file.name;
+							const normalizedFileName = normalizePath(file.name);
+							const destinationFiles = (
+								plugin.app.metadataCache as any
+							).uniqueFileLookup.get(normalizedFileName.toLowerCase());
+
+							// If there are no conflicts (unique file), return the fileName
+							if (
+								destinationFiles &&
+								destinationFiles.length === 1 &&
+								destinationFiles[0] === file
+							) {
+								return fileName;
+							} else {
+								// If there are conflicts, use the relative path
+								const filePath =
+									file.extension === "md" && omitMdExtension
+										? file.path.slice(0, file.path.length - 3)
+										: file.path;
+								const rpath = relative(sourcePath, filePath);
+								if (rpath === "../" + fileName) {
+									return "./" + fileName;
+								}
+								return rpath;
+							}
+						}
+						// @ts-ignore
+						return old.call(this, file, sourcePath, omitMdExtension);
+					};
+				},
+			});
+		});
+
+		interface Parameters {
+			action: string;
+			relay?: string;
+			id?: string;
+			version?: string;
+		}
+
+		this.registerObsidianProtocolHandler("evc-team-relay/settings/relays", async (e) => {
+			const parameters = e as unknown as Parameters;
+			const query = new URLSearchParams({ ...parameters }).toString();
+			const path = `/${parameters.action.split("/").slice(-1)}?${query}`;
+			this.openSettings(path);
+		});
+
+		this.registerObsidianProtocolHandler(
+			"evc-team-relay/settings/shared-folders",
+			async (e) => {
+				const parameters = e as unknown as Parameters;
+				const query = new URLSearchParams({ ...parameters }).toString();
+				const path = `/${parameters.action.split("/").slice(-1)}?${query}`;
+				this.openSettings(path);
+			},
+		);
+
+		this.registerObsidianProtocolHandler("evc-team-relay/upgrade", async (e) => {
+			const parameters = e as unknown as Parameters;
+			const version = parameters.version?.trim();
+			this.installVersion(version);
+		});
+
+		this.backgroundSync.start();
+		this.updateManager.start();
+	}
+
+	installVersion(version?: string) {
+		const modal = new ReleaseManager(this.app, this, version);
+
+		const app = this.app as any;
+		const setting = app.setting;
+		setting.close();
+
+		this.openModals.push(modal);
+		modal.open();
+	}
+
+	removeCommand(command: string): void {
+		// [Polyfill] removeCommand was added in 1.7.2
+		if (requireApiVersion("1.7.2")) {
+			// @ts-ignore
+			super.removeCommand(command);
+		} else {
+			const appAny = this.app as any;
+			const appCommands = appAny.commands;
+			const qualifiedCommand = `evc-team-relay:${command}`;
+			if (
+				appCommands.commands.hasOwnProperty(qualifiedCommand) ||
+				appAny.hotkeyManager.removeDefaultHotkeys(qualifiedCommand)
+			) {
+				delete appCommands.commands[qualifiedCommand];
+				delete appCommands.editorCommands[qualifiedCommand];
+			}
+		}
+	}
+
+	async onunload() {
+		// Save settings before cleanup to persist any changes
+		// Must await to ensure settings are persisted before destroying namespaced settings
+		await this.settings?.save();
+
+		// Cleanup all monkeypatches and destroy the singleton
+		Patcher.destroy();
+
+		this.timeProvider?.destroy();
+
+		this.folderNavDecorations?.destroy();
+
+		this.app.workspace.detachLeavesOfType(VIEW_TYPE_DIFFERENCES);
+
+		// Explicitly destroy the update manager
+		if (this.updateManager) {
+			this.updateManager.destroy();
+			this.updateManager = null as any;
+		}
+
+		this._liveViews?.destroy();
+		this._liveViews = null as any;
+
+		this.relayManager?.destroy();
+		this.relayManager = null as any;
+
+		this.tokenStore?.stop();
+		this.tokenStore?.clearState();
+		this.tokenStore?.destroy();
+		this.tokenStore = null as any;
+
+		this.networkStatus?.stop();
+		this.networkStatus?.destroy();
+		this.networkStatus = null as any;
+
+		this.openModals.forEach((modal) => {
+			modal.close();
+		});
+		this.openModals.length = 0;
+
+		this.sharedFolders?.destroy();
+		this.sharedFolders = null as any;
+
+		this.settingsTab?.destroy();
+		this.settingsTab = null as any;
+
+		this.loginManager?.destroy();
+		this.loginManager = null as any;
+
+		this.backgroundSync?.destroy();
+		this.backgroundSync = null as any;
+
+		// Cleanup WebSyncManager (v1.8.1)
+		if (this.webSyncManager) {
+			this.webSyncManager.destroy();
+			this.webSyncManager = undefined;
+		}
+
+		this.hashStore.destroy();
+		this.hashStore = null as any;
+
+		this.app?.workspace.updateOptions();
+		(this.app as any).reloadRelay = undefined;
+		this.app = null as any;
+		this.fileManager = null as any;
+		this.manifest = null as any;
+		this.vault = null as any;
+
+		this.debugSettings.destroy();
+		this.debugSettings = null as any;
+		this.folderSettings.destroy();
+		this.folderSettings = null as any;
+
+		// Destroy FeatureFlagManager before destroying featureSettings
+		FeatureFlagManager.destroy();
+
+		this.featureSettings.destroy();
+		this.featureSettings = null as any;
+		this.releaseSettings.destroy();
+		this.releaseSettings = null as any;
+		this.loginSettings.destroy();
+		this.loginSettings = null as any;
+		this.endpointSettings.destroy();
+		this.endpointSettings = null as any;
+		this.relayOnPremSettings.destroy();
+		this.relayOnPremSettings = null as any;
+
+		this.interceptedUrls.length = 0;
+		PostOffice.destroy();
+
+		this.notifier = null as any;
+
+		auditTeardown();
+		flushLogs();
+	}
+
+	async loadSettings() {
+		this.settings.load();
+	}
+
+	async saveSettings() {
+		await this.settings.save();
+	}
+}
