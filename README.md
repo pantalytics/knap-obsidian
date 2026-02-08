@@ -16,8 +16,6 @@ Enterprise **multiplayer mode** for Obsidian with self-hosted infrastructure.
 
 EVC Team Relay is an enterprise-grade collaborative editing plugin for Obsidian. It uses CRDTs to enable snappy, local-first, real-time and asynchronous collaboration with your own self-hosted relay infrastructure.
 
-Originally based on [System 3 Relay](https://system3.md/), enhanced with enterprise features and on-premise deployment capabilities.
-
 ## Key Features
 
 ### Relay On-Premise Mode
