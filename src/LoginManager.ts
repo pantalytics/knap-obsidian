@@ -186,6 +186,7 @@ export class LoginManager extends Observable<LoginManager> {
 	// Multi-server auth manager
 	private multiServerAuthManager?: MultiServerAuthManager;
 	private activeServerId?: string;
+	private _restorePromise?: Promise<void>;
 
 	constructor(
 		private vaultName: string,
@@ -227,18 +228,23 @@ export class LoginManager extends Observable<LoginManager> {
 					this.authProvider = this.multiServerAuthManager.getProvider(this.activeServerId);
 				}
 
-				// Try to restore user from active server's auth provider
-				if (this.authProvider) {
-					const currentUser = getCurrentUserFromProvider(this.authProvider);
-					if (currentUser) {
-						this.user = currentUser;
-						this.log("Restored relay-onprem user:", currentUser.email);
-					}
-				}
-
 				// In relay-onprem mode, we don't need PocketBase or System 3 connectivity
 				// Return early to avoid initializing PocketBase
 				this.openSettings = openSettings;
+
+				// Start async auth restore — await via waitForRestore() before using auth state
+				this._restorePromise = this.multiServerAuthManager.waitForAllRestore().then(() => {
+					// After restore completes, update user from active server
+					if (this.authProvider) {
+						const currentUser = getCurrentUserFromProvider(this.authProvider);
+						if (currentUser) {
+							this.user = currentUser;
+							this.log("Restored relay-onprem user:", currentUser.email);
+							this.notifyListeners();
+						}
+					}
+				});
+
 				return;
 			}
 		}
@@ -276,6 +282,16 @@ export class LoginManager extends Observable<LoginManager> {
 				});
 		}
 		RelayInstances.set(this, "loginManager");
+	}
+
+	/**
+	 * Wait for auth restoration to complete.
+	 * Must be called before using auth state after plugin load.
+	 */
+	async waitForRestore(): Promise<void> {
+		if (this._restorePromise) {
+			await this._restorePromise;
+		}
 	}
 
 	refreshToken() {

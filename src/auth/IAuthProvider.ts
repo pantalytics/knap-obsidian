@@ -21,6 +21,7 @@ export interface AuthToken {
 export interface AuthResponse {
 	user: AuthUser;
 	token: AuthToken;
+	refreshToken?: string;
 }
 
 export interface IAuthProvider {

@@ -8,7 +8,9 @@
 import { App, Modal, Notice, Setting } from "obsidian";
 import type Live from "../main";
 import type { RelayOnPremServer } from "../RelayOnPremConfig";
-import { getServerById } from "../RelayOnPremConfig";
+import { getDefaultServer, getServerById } from "../RelayOnPremConfig";
+import { RelayOnPremShareClient } from "../RelayOnPremShareClient";
+import { RelayOnPremShareClientManager } from "../RelayOnPremShareClientManager";
 
 export class QuickShareModal extends Modal {
 	private selectedServerId: string | undefined;
@@ -27,6 +29,9 @@ export class QuickShareModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass("relay-quick-share-modal");
+
+		// Ensure share clients are initialized (handles servers added after plugin load)
+		this.ensureShareClientsInitialized();
 
 		// Get logged-in servers
 		const loggedInServerIds = this.plugin.loginManager.getLoggedInServers();
@@ -97,6 +102,44 @@ export class QuickShareModal extends Modal {
 		createBtn.addEventListener("click", () => this.createShare());
 	}
 
+	/**
+	 * Ensure share clients are initialized.
+	 * Handles the case when servers are added/logged in after plugin load.
+	 */
+	private ensureShareClientsInitialized() {
+		const relayOnPremSettings = this.plugin.relayOnPremSettings.get();
+
+		if (this.plugin.shareClientManager) {
+			for (const server of relayOnPremSettings.servers) {
+				if (!this.plugin.shareClientManager.getClient(server.id)) {
+					this.plugin.shareClientManager.addServer(server);
+				}
+			}
+			return;
+		}
+
+		if (relayOnPremSettings.enabled && relayOnPremSettings.servers.length > 0) {
+			const multiServerAuthManager = this.plugin.loginManager.getMultiServerAuthManager();
+			if (multiServerAuthManager) {
+				this.plugin.shareClientManager = new RelayOnPremShareClientManager(
+					multiServerAuthManager,
+					relayOnPremSettings.servers,
+				);
+				return;
+			}
+		}
+
+		if (!this.plugin.shareClient && relayOnPremSettings.enabled) {
+			const defaultServer = getDefaultServer(relayOnPremSettings);
+			if (defaultServer && this.plugin.loginManager.getAuthProvider()) {
+				this.plugin.shareClient = new RelayOnPremShareClient(
+					defaultServer.controlPlaneUrl,
+					() => this.plugin.loginManager.getAuthProvider()?.getToken(),
+				);
+			}
+		}
+	}
+
 	private async createShare() {
 		if (!this.selectedServerId || this.isCreating) {
 			return;
@@ -127,11 +170,11 @@ export class QuickShareModal extends Modal {
 				}
 			);
 
-			// Create local SharedFolder
+			// Create local SharedFolder with relay-onprem marker for CRDT sync
 			const sharedFolder = this.plugin.sharedFolders.new(
 				this.folderPath,
 				share.id,
-				undefined,
+				"relay-onprem",
 				false
 			);
 

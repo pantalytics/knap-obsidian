@@ -100,7 +100,7 @@ const context = await esbuild.context({
 		HEALTH_URL: `"${healthUrl}"`,
 		API_URL: `"${apiUrl}"`,
 		AUTH_URL: `"${authUrl}"`,
-		REPOSITORY: `"entire-vc/relay-obsidian-plugin"`,
+		REPOSITORY: `"entire-vc/evc-team-relay-obsidian-plugin"`,
 	},
 	treeShaking: true,
 	loader: {

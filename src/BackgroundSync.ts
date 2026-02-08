@@ -712,13 +712,19 @@ export class BackgroundSync extends HasLogging {
 		if (response.status === 200) {
 			this.debug("[downloadItem]", getId(entity), response.status);
 		} else {
-			this.error(
-				"[downloadItem]",
-				getId(entity),
-				url,
-				response.status,
-				response.text,
-			);
+			if (response.status === 401) {
+				// CWT tokens are not accepted for HTTP endpoints on y-sweet relay-server.
+				// This is expected — WebSocket sync handles document synchronization.
+				this.warn("[downloadItem] HTTP auth failed (expected with CWT tokens):", getId(entity), response.status);
+			} else {
+				this.error(
+					"[downloadItem]",
+					getId(entity),
+					url,
+					response.status,
+					response.text,
+				);
+			}
 			throw new Error(`Unable to download item: ${S3RN.encode(entity)}`);
 		}
 		return response;
@@ -758,11 +764,19 @@ export class BackgroundSync extends HasLogging {
 			contentsMatch = currentTextStr === currentFileContents;
 		}
 
+		const isRelayOnPrem = !!doc.sharedFolder.relayId;
+
 		if (!contentsMatch && currentFileContents) {
-			this.log(
-				"file is not tracking local disk. resolve merge conflicts before syncing.",
-			);
-			return false;
+			if (!isRelayOnPrem) {
+				this.log(
+					"file is not tracking local disk. resolve merge conflicts before syncing.",
+				);
+				return false;
+			}
+			// For relay-onprem: Y.Text is likely empty (new Document) while the file
+			// has content. We need to connect to the relay to get the authoritative
+			// server state first, then reconcile. Skipping would leave Documents
+			// permanently unsynced.
 		}
 
 		const promise = doc.onceProviderSynced();
@@ -770,6 +784,22 @@ export class BackgroundSync extends HasLogging {
 		doc.connect();
 		if (intent === "disconnected") {
 			await promise;
+		}
+
+		// For relay-onprem: after syncing with the relay, handle content reconciliation.
+		// If the relay provided content, it takes priority (server is authoritative).
+		// If the relay had no content for this doc, insert local file content.
+		if (isRelayOnPrem && !contentsMatch && currentFileContents) {
+			const syncedText = isDocument(doc) ? doc.text : "";
+			if (!syncedText) {
+				// Relay had no content — insert local file content into Y.Text
+				if (isDocument(doc)) {
+					doc.ydoc.getText("contents").insert(0, currentFileContents);
+				}
+				// Allow the update to propagate to the relay before disconnecting
+				await new Promise((resolve) => setTimeout(resolve, 500));
+			}
+			// If syncedText is non-empty, relay provided content — use it as-is
 		}
 
 		// promise can take some time
@@ -823,8 +853,19 @@ export class BackgroundSync extends HasLogging {
 				this.log("[getCanvas] flushed");
 			}
 		} catch (e) {
-			this.error(e);
-			throw e;
+			// HTTP download failed (e.g., CWT tokens not accepted for HTTP endpoints).
+			// Fall back to WebSocket sync for the canvas content.
+			this.warn("[getCanvas] HTTP download failed, falling back to WS sync:", (e as Error).message);
+			try {
+				const synced = await this.syncDocumentWebsocket(canvas);
+				if (synced && canvas.sharedFolder.syncStore.has(canvas.path)) {
+					canvas.sharedFolder.flush(canvas, canvas.json);
+					this.log("[getCanvas] WS sync fallback successful, flushed to disk");
+				}
+			} catch (wsError) {
+				this.error("[getCanvas] WS sync fallback also failed:", wsError);
+			}
+			return;
 		}
 	}
 
@@ -890,8 +931,19 @@ export class BackgroundSync extends HasLogging {
 				this.log("[getDocument] flushed");
 			}
 		} catch (e) {
-			this.error(e);
-			throw e;
+			// HTTP download failed (e.g., CWT tokens not accepted for HTTP endpoints).
+			// Fall back to WebSocket sync for the document content.
+			this.warn("[getDocument] HTTP download failed, falling back to WS sync:", (e as Error).message);
+			try {
+				const synced = await this.syncDocumentWebsocket(doc);
+				if (synced && doc.sharedFolder.syncStore.has(doc.path)) {
+					doc.sharedFolder.flush(doc, doc.text);
+					this.log("[getDocument] WS sync fallback successful, flushed to disk");
+				}
+			} catch (wsError) {
+				this.error("[getDocument] WS sync fallback also failed:", wsError);
+			}
+			return;
 		}
 	}
 

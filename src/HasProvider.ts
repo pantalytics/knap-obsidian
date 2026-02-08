@@ -145,12 +145,21 @@ export class HasProvider extends HasLogging {
 		this.listeners.delete(el);
 	}
 
+	/**
+	 * Get the full vault path for this provider.
+	 * For documents in shared folders, this includes the folder path prefix.
+	 * Override in subclasses that need to provide full vault paths.
+	 */
+	getVaultPath(): string {
+		return this.path || "unknown";
+	}
+
 	async getProviderToken(): Promise<ClientToken> {
 		this.log("get provider token");
 
 		const tokenPromise = this.tokenStore.getToken(
 			S3RN.encode(this.s3rn),
-			this.path || "unknown",
+			this.getVaultPath(),
 			this.refreshProvider.bind(this),
 		);
 		return tokenPromise;
@@ -204,6 +213,7 @@ export class HasProvider extends HasLogging {
 				return true;
 			})
 			.catch((e) => {
+				this.warn("connect() failed:", e instanceof Error ? e.message : e);
 				return false;
 			});
 	}
@@ -238,6 +248,9 @@ export class HasProvider extends HasLogging {
 	}
 
 	onceConnected(): Promise<void> {
+		if (this.connected) {
+			return Promise.resolve();
+		}
 		return new Promise((resolve) => {
 			const resolveOnConnect = (state: ConnectionState) => {
 				if (state.status === "connected") {
@@ -246,20 +259,34 @@ export class HasProvider extends HasLogging {
 			};
 			// provider observers are manually cleared in destroy()
 			this._provider.on("status", resolveOnConnect);
+			// Check again after registering — connection may have completed
+			// between the initial check and listener registration
+			if (this.connected) {
+				resolve();
+			}
 		});
 	}
 
 	onceProviderSynced(): Promise<void> {
-		if (this.synced) {
-			return new Promise((resolve) => {
-				resolve();
-			});
+		// Check if already synced: either provider reports synced, or we previously
+		// synced (e.g., via syncDocumentWebsocket) and then disconnected.
+		// Without the _providerSynced check, Documents that were briefly connected
+		// and synced during background sync would hang forever after disconnect
+		// (provider.synced resets to false on disconnect).
+		if (this._providerSynced || this._provider.synced) {
+			this._providerSynced = true;
+			return Promise.resolve();
 		}
 		return new Promise((resolve) => {
 			this._provider.once("synced", () => {
 				this._providerSynced = true;
 				resolve();
 			});
+			// Double-check after registering listener (event may have fired between check and registration)
+			if (this._provider.synced) {
+				this._providerSynced = true;
+				resolve();
+			}
 		});
 	}
 

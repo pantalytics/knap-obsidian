@@ -78,6 +78,19 @@ export class MultiServerAuthManager {
 	}
 
 	/**
+	 * Wait for all providers to finish restoring auth from localStorage.
+	 * Must be called before checking auth state to avoid race conditions.
+	 */
+	async waitForAllRestore(): Promise<void> {
+		const promises: Promise<void>[] = [];
+		for (const provider of this.providers.values()) {
+			promises.push(provider.waitForRestore());
+		}
+		await Promise.all(promises);
+		this.log(`All ${promises.length} providers restored`);
+	}
+
+	/**
 	 * Get auth provider for a specific server
 	 */
 	getProvider(serverId: string): RelayOnPremAuthProvider | undefined {

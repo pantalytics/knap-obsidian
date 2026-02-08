@@ -203,6 +203,23 @@ const setupWS = (provider: YSweetProvider) => {
 					]),
 				);
 				websocket.send(encoding.toUint8Array(encoderAwarenessState));
+
+				// Re-send awareness after delay for relay room warm-up
+				// First awareness message can be dropped while relay initializes the doc room
+				setTimeout(() => {
+					if (provider.wsconnected && provider.ws === websocket) {
+						const retryEncoder = encoding.createEncoder();
+						encoding.writeVarUint(retryEncoder, messageAwareness);
+						encoding.writeVarUint8Array(
+							retryEncoder,
+							awarenessProtocol.encodeAwarenessUpdate(
+								provider.awareness,
+								[provider.doc.clientID],
+							),
+						);
+						websocket.send(encoding.toUint8Array(retryEncoder));
+					}
+				}, 2000);
 			}
 		};
 		provider.emit("status", [

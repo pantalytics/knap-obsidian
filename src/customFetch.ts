@@ -60,21 +60,46 @@ export const customFetch = async (
 		throw: false,
 	};
 
+	// Retry logic for transient network errors (stale keep-alive connections, HTTP/2 RST_STREAM)
+	const MAX_RETRIES = 2;
 	let response: RequestUrlResponse | undefined = undefined;
-	try {
-		response = await requestUrl(requestParams);
-	} catch (error: any) {
-		// Handle Electron networking errors gracefully to prevent complete networking failure
-		if (error?.message?.includes("net::ERR_FAILED")) {
-			// Return a proper error response instead of throwing
-			return new Response(JSON.stringify({ error: "Network request failed" }), {
-				status: 503,
-				statusText: "Service Unavailable",
-				headers: new Headers({ "content-type": "application/json" }),
-			});
+	let lastError: any = undefined;
+
+	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+		try {
+			response = await requestUrl(requestParams);
+			lastError = undefined;
+			break;
+		} catch (error: any) {
+			lastError = error;
+			const msg = error?.message || "";
+			const isRetryable =
+				msg.includes("net::ERR_FAILED") ||
+				msg.includes("net::ERR_HTTP2") ||
+				msg.includes("net::ERR_CONNECTION_RESET") ||
+				msg.includes("GOAWAY") ||
+				msg.includes("RST_STREAM");
+
+			if (isRetryable && attempt < MAX_RETRIES) {
+				curryLog("[CustomFetch]", "warn")(
+					`Retrying ${method} ${urlString} (attempt ${attempt + 2}/${MAX_RETRIES + 1}): ${msg}`
+				);
+				continue;
+			}
+
+			if (isRetryable) {
+				return new Response(JSON.stringify({ error: "Network request failed" }), {
+					status: 503,
+					statusText: "Service Unavailable",
+					headers: new Headers({ "content-type": "application/json" }),
+				});
+			}
+			throw error;
 		}
-		// Re-throw other errors
-		throw error;
+	}
+
+	if (!response) {
+		throw lastError || new Error("Request failed after retries");
 	}
 
 	if (!response.arrayBuffer.byteLength) {

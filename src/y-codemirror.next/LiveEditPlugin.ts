@@ -91,7 +91,13 @@ export class LiveCMPluginValue implements PluginValue {
 			async () => {
 				if (!this.document) return true;
 				const diskBuffer = await this.document.diskBuffer();
-				const stale = await this.document.checkStale();
+				let stale: boolean;
+				try {
+					stale = await this.document.checkStale();
+				} catch (e) {
+					this.warn("[mergeBanner] checkStale failed:", (e as Error).message);
+					return true;
+				}
 				if (!stale) {
 					return true;
 				}
@@ -120,6 +126,16 @@ export class LiveCMPluginValue implements PluginValue {
 		this.connectionManager = this.editor.state.field(
 			ConnectionManagerStateField,
 		);
+
+		// For SharedFolder documents, add the live editor class so this plugin
+		// (and RemoteSelections) activates for real-time CRDT editing.
+		// Without this, SharedFolder docs fail the allowlist check below and
+		// the Y.Text ↔ CodeMirror binding is never established.
+		const fileInfo = this.editor.state.field(editorInfoField);
+		const file = fileInfo?.file;
+		if (file && this.connectionManager?.sharedFolders.lookup(file.path)) {
+			this.sourceView?.classList.add("relay-live-editor");
+		}
 
 		// Allowlist: Check for live editing markers
 		const isLiveEditor = this.editor.dom.closest(".relay-live-editor");
@@ -199,11 +215,13 @@ export class LiveCMPluginValue implements PluginValue {
 						return function () {
 							// @ts-ignore
 							const result = old.call(this);
-							try {
-								// @ts-ignore
-								this.app.metadataCache.trigger("resolve", this.file);
-							} catch (e) {
-								// pass
+							if (!liveEditPlugin.destroyed && liveEditPlugin.document) {
+								try {
+									// @ts-ignore
+									this.app.metadataCache.trigger("resolve", this.file);
+								} catch (e) {
+									// pass
+								}
 							}
 							return result;
 						};
@@ -229,7 +247,10 @@ export class LiveCMPluginValue implements PluginValue {
 			});
 		}
 
-		this._observer = async (event, tr) => {
+		// Synchronous observer — MUST NOT be async to prevent interleaving.
+		// Yjs calls observers synchronously; async observers cause concurrent
+		// getKeyFrame() calls that overwrite each other with stale snapshots.
+		this._observer = (event: YTextEvent, tr: Transaction) => {
 			this.document = this.getDocument();
 
 			if (!this.active(this.view)) {
@@ -243,39 +264,52 @@ export class LiveCMPluginValue implements PluginValue {
 
 			// Called when a yjs event is received. Results in updates to codemirror.
 			if (tr.origin !== this) {
-				const delta = event.delta;
-				let changes: ChangeSpec[] = [];
-				let pos = 0;
-				for (let i = 0; i < delta.length; i++) {
-					const d = delta[i];
-					if (d.insert != null) {
-						changes.push({
-							from: pos,
-							to: pos,
-							insert: d.insert as string,
-						});
-					} else if (d.delete != null) {
-						changes.push({
-							from: pos,
-							to: pos + d.delete,
-							insert: "",
-						});
-						pos += d.delete;
-					} else if (d.retain != null) {
-						pos += d.retain;
+				let changes: ChangeSpec[];
+
+				if (isLiveMd(this.view) && !this.view.tracking) {
+					// Not tracking: editor and ytext may be out of sync.
+					// Compute a synchronous keyframe (full diff) to reconcile.
+					// MUST be synchronous — async getKeyFrame races with user typing.
+					if (!this.document) {
+						this.debug("not tracking, no document");
+						return;
 					}
-				}
-				if (
-					(isLiveMd(this.view) && !this.view.tracking) ||
-					(flags().enableEditorTweens && this.keyFrameCounter > TWEENS)
-				) {
-					this.keyFrameCounter = 0;
-					changes = await this.getKeyFrame(true);
-					this.debug(`dispatch (full)`);
+					if (this.document.text === this.editor.state.doc.toString()) {
+						// Already in sync — just set tracking
+						this.view.tracking = true;
+						this.debug("not tracking but content matches, set tracking=true");
+						return;
+					}
+					changes = this.getBufferChange(this.document.text, true);
+					this.debug("dispatch (sync keyframe)");
 				} else {
+					// Tracking: apply Yjs delta incrementally (fast path)
+					const delta = event.delta;
+					changes = [];
+					let pos = 0;
+					for (let i = 0; i < delta.length; i++) {
+						const d = delta[i];
+						if (d.insert != null) {
+							changes.push({
+								from: pos,
+								to: pos,
+								insert: d.insert as string,
+							});
+						} else if (d.delete != null) {
+							changes.push({
+								from: pos,
+								to: pos + d.delete,
+								insert: "",
+							});
+							pos += d.delete;
+						} else if (d.retain != null) {
+							pos += d.retain;
+						}
+					}
 					this.keyFrameCounter += 1;
 					this.debug(`dispatch (incremental + ${this.keyFrameCounter})`);
 				}
+
 				if (this.active(this.view)) {
 					editor.dispatch({
 						changes,
@@ -288,7 +322,7 @@ export class LiveCMPluginValue implements PluginValue {
 			}
 		};
 
-		this.observer = (event, tr) => {
+		this.observer = (event: YTextEvent, tr: Transaction) => {
 			try {
 				this._observer?.(event, tr);
 			} catch (e) {
@@ -296,6 +330,8 @@ export class LiveCMPluginValue implements PluginValue {
 					if (isLiveMd(this.view)) {
 						this.view.tracking = false;
 					}
+					this.warn("[observer] RangeError, scheduling resync");
+					this.resync();
 				}
 			}
 		};
@@ -353,6 +389,7 @@ export class LiveCMPluginValue implements PluginValue {
 	async resync() {
 		if (isLiveMd(this.view) && !this.view.tracking && !this.destroyed) {
 			await this.view.document.whenSynced();
+			await this.waitForProviderSync();
 			const keyFrame = await this.getKeyFrame();
 			if (isLiveMd(this.view) && !this.view.tracking && !this.destroyed) {
 				this.editor.dispatch({
@@ -362,6 +399,7 @@ export class LiveCMPluginValue implements PluginValue {
 			}
 		} else if (this.active(this.view) && this.document) {
 			await this.document.whenSynced();
+			await this.waitForProviderSync();
 			const keyFrame = await this.getKeyFrame();
 			if (this.active(this.view) && !this.destroyed) {
 				this.editor.dispatch({
@@ -369,6 +407,32 @@ export class LiveCMPluginValue implements PluginValue {
 					annotations: [ySyncAnnotation.of(this.editor)],
 				});
 			}
+		}
+	}
+
+	/**
+	 * Wait for the provider to finish syncing with the relay server.
+	 * Without this, resync() uses stale Y.Text data from IDB, sets tracking=true,
+	 * and then the relay sync arrives with incremental deltas that reference
+	 * different positions — causing character loss and missing newlines.
+	 */
+	private async waitForProviderSync(): Promise<void> {
+		if (!this.document) return;
+		const provider = this.document._provider;
+		if (!provider || provider.synced) return;
+		// Only wait if the document is connected or connecting
+		if (!this.document.connected && this.document.intent !== "connected") return;
+		try {
+			await Promise.race([
+				new Promise<void>((resolve) => {
+					provider.once("synced", () => resolve());
+					// Double-check after registration
+					if (provider.synced) resolve();
+				}),
+				new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+			]);
+		} catch {
+			// timeout or error — proceed with current Y.Text state
 		}
 	}
 
@@ -405,9 +469,13 @@ export class LiveCMPluginValue implements PluginValue {
 		if (isLiveMd(this.view) && !this.view.tracking) {
 			this.view.checkStale();
 		} else if (this.document) {
-			const stale = await this.document.checkStale();
-			if (stale && !this.destroyed && this.editor) {
-				this.mergeBanner();
+			try {
+				const stale = await this.document.checkStale();
+				if (stale && !this.destroyed && this.editor) {
+					this.mergeBanner();
+				}
+			} catch (e) {
+				this.warn("[getKeyFrame] checkStale failed, relying on WS sync:", (e as Error).message);
 			}
 		}
 
@@ -432,22 +500,28 @@ export class LiveCMPluginValue implements PluginValue {
 		if (!ytext) {
 			return;
 		}
-		ytext.doc?.transact(() => {
-			/**
-			 * This variable adjusts the fromA position to the current position in the Y.Text type.
-			 */
-			let adj = 0;
-			update.changes.iterChanges((fromA, toA, fromB, toB, insert) => {
-				const insertText = insert.sliceString(0, insert.length, "\n");
-				if (fromA !== toA) {
-					ytext.delete(fromA + adj, toA - fromA);
-				}
-				if (insertText.length > 0) {
-					ytext.insert(fromA + adj, insertText);
-				}
-				adj += insertText.length - (toA - fromA);
-			});
-		}, this);
+		try {
+			ytext.doc?.transact(() => {
+				/**
+				 * This variable adjusts the fromA position to the current position in the Y.Text type.
+				 */
+				let adj = 0;
+				update.changes.iterChanges((fromA, toA, fromB, toB, insert) => {
+					const insertText = insert.sliceString(0, insert.length, "\n");
+					if (fromA !== toA) {
+						ytext.delete(fromA + adj, toA - fromA);
+					}
+					if (insertText.length > 0) {
+						ytext.insert(fromA + adj, insertText);
+					}
+					adj += insertText.length - (toA - fromA);
+				});
+			}, this);
+		} catch (e) {
+			// Yjs internal error (e.g., ydoc destroyed while editor still active).
+			// Skip Yjs update — local edit is preserved, sync resumes on reconnect.
+			this.warn("[update] Yjs transact failed:", (e as Error).message);
+		}
 
 		if (this.embed && this.document) {
 			this.document.requestSave();
@@ -464,6 +538,10 @@ export class LiveCMPluginValue implements PluginValue {
 		});
 		this.unsubscribes.length = 0;
 		this.viewHookPlugin?.destroy();
+		// Remove class we may have added for SharedFolder documents
+		if (this.embed && this.sourceView) {
+			this.sourceView.classList.remove("relay-live-editor");
+		}
 		this.connectionManager = null as any;
 		this.view = undefined;
 		this._ytext = undefined;

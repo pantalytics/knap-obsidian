@@ -247,6 +247,19 @@ export class Canvas extends HasProvider implements IFile, HasMimeType {
 	public get sharedFolder(): SharedFolder {
 		return this._parent;
 	}
+
+	/**
+	 * Get the full vault path for this canvas.
+	 * Combines the shared folder path with the canvas's relative path.
+	 * Used for relay-onprem token requests that need full vault paths.
+	 */
+	override getVaultPath(): string {
+		if (this._parent && this.path) {
+			return `${this._parent.path}/${this.path}`;
+		}
+		return this.path || "unknown";
+	}
+
 	public get tfile(): TFile | null {
 		if (!this._tfile) {
 			this._tfile = this._parent.getTFile(this);

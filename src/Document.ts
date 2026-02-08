@@ -158,6 +158,19 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 	public get sharedFolder(): SharedFolder {
 		return this._parent;
 	}
+
+	/**
+	 * Get the full vault path for this document.
+	 * Combines the shared folder path with the document's relative path.
+	 * Used for relay-onprem token requests that need full vault paths.
+	 */
+	override getVaultPath(): string {
+		if (this._parent && this.path) {
+			return `${this._parent.path}/${this.path}`;
+		}
+		return this.path || "unknown";
+	}
+
 	public get tfile(): TFile | null {
 		if (!this._tfile) {
 			this._tfile = this.getTFile();
@@ -230,10 +243,18 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 	}
 
 	public async checkStale(): Promise<boolean> {
+		// Relay-onprem: HTTP download always fails (CWT tokens rejected on HTTP endpoints).
+		// CRDT sync is handled entirely via WebSocket. Skip the HTTP freshness check.
+		if (this.sharedFolder.relayId) {
+			return false;
+		}
+
 		await this.whenSynced();
 		const diskBuffer = await this.diskBuffer(true);
 		const contents = (diskBuffer as DiskBuffer).contents;
+
 		const response = await this.sharedFolder.backgroundSync.downloadItem(this);
+
 		const updateBytes = new Uint8Array(response.arrayBuffer);
 
 		Y.applyUpdate(this.ydoc, updateBytes);

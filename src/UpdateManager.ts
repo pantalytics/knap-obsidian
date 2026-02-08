@@ -148,9 +148,7 @@ export class UpdateManager extends Observable<UpdateManager> {
 
 	private async fetchLatestRelease(): Promise<Release | null> {
 		try {
-			const repoOwner = "No-Instructions";
-			const repoName = "Relay";
-			const latestUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/releases/latest`;
+			const latestUrl = `https://api.github.com/repos/${REPOSITORY}/releases/latest`;
 
 			this.debug(`Fetching latest release from: ${latestUrl}`);
 			const response = await customFetch(latestUrl, {
@@ -294,9 +292,7 @@ export class UpdateManager extends Observable<UpdateManager> {
 		branch = "main",
 	): Promise<Manifest | null> {
 		try {
-			const repoOwner = "No-Instructions";
-			const repoName = "Relay";
-			const fileUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${path}`;
+			const fileUrl = `https://raw.githubusercontent.com/${REPOSITORY}/${branch}/${path}`;
 
 			this.debug(`Fetching ${fileUrl}`);
 

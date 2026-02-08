@@ -83,8 +83,13 @@ export class ShareManagementModal extends Modal {
 	private ensureShareClientsInitialized() {
 		const relayOnPremSettings = this.plugin.relayOnPremSettings.get();
 
-		// If shareClientManager already exists, nothing to do
+		// If shareClientManager already exists, sync any new servers from settings
 		if (this.plugin.shareClientManager) {
+			for (const server of relayOnPremSettings.servers) {
+				if (!this.plugin.shareClientManager.getClient(server.id)) {
+					this.plugin.shareClientManager.addServer(server);
+				}
+			}
 			return;
 		}
 
@@ -142,10 +147,16 @@ export class ShareManagementModal extends Modal {
 		try {
 			this.isLoading = true;
 			this.selectedShare = share;
-			this.invites = []; // Reset invites
-			this.isOwner = false; // Reset owner flag
+			this.invites = [];
+			this.isOwner = false;
 
-			// Determine if current user is the owner
+			// Show loading indicator immediately
+			const { contentEl } = this;
+			contentEl.empty();
+			const loadingDiv = contentEl.createDiv({ cls: "relay-onprem-loading" });
+			loadingDiv.createEl("p", { text: "Loading share details..." });
+
+			// Determine if current user is the owner (local check, no network)
 			const multiServerAuth = this.plugin.loginManager.getMultiServerAuthManager();
 			if (multiServerAuth) {
 				const currentUser = multiServerAuth.getUserForServer(share.serverId);
@@ -156,55 +167,62 @@ export class ShareManagementModal extends Modal {
 				this.isOwner = currentUser?.id === share.owner_user_id;
 			}
 
-			// Get server info to check web publishing support
-			try {
-				if (this.plugin.shareClientManager) {
-					const client = this.plugin.shareClientManager.getClient(share.serverId);
-					if (client) {
-						const serverInfo = await client.getServerInfo();
-						this.webPublishEnabled = serverInfo.features?.web_publish_enabled ?? false;
-						this.webPublishDomain = serverInfo.features?.web_publish_domain ?? null;
-					}
-				} else if (this.plugin.shareClient) {
-					const serverInfo = await this.plugin.shareClient.getServerInfo();
-					this.webPublishEnabled = serverInfo.features?.web_publish_enabled ?? false;
-					this.webPublishDomain = serverInfo.features?.web_publish_domain ?? null;
-				}
-			} catch (error) {
-				// Server might not support web publishing yet
-				console.log("[ShareManagement] Failed to get server info, web publishing disabled");
-				this.webPublishEnabled = false;
-				this.webPublishDomain = null;
-			}
-
-			// Get members using the appropriate client
-			if (this.plugin.shareClientManager) {
-				this.members = await this.plugin.shareClientManager.getShareMembers(share.serverId, share.id);
-			} else if (this.plugin.shareClient) {
-				this.members = await this.plugin.shareClient.getShareMembers(share.id);
-			}
-
-			// Only load invites if user is owner
-			if (this.isOwner) {
+			// Run all API calls in parallel for faster loading
+			const serverInfoPromise = (async () => {
 				try {
 					if (this.plugin.shareClientManager) {
-						this.invites = await this.plugin.shareClientManager.listInvites(share.serverId, share.id);
+						const client = this.plugin.shareClientManager.getClient(share.serverId);
+						if (client) {
+							return await client.getServerInfo();
+						}
 					} else if (this.plugin.shareClient) {
-						this.invites = await this.plugin.shareClient.listInvites(share.id);
+						return await this.plugin.shareClient.getServerInfo();
+					}
+				} catch {
+					console.log("[ShareManagement] Failed to get server info, web publishing disabled");
+				}
+				return null;
+			})();
+
+			const membersPromise = (async () => {
+				if (this.plugin.shareClientManager) {
+					return this.plugin.shareClientManager.getShareMembers(share.serverId, share.id);
+				} else if (this.plugin.shareClient) {
+					return this.plugin.shareClient.getShareMembers(share.id);
+				}
+				return [] as ShareMember[];
+			})();
+
+			const invitesPromise = (async () => {
+				if (!this.isOwner) return [] as Invite[];
+				try {
+					if (this.plugin.shareClientManager) {
+						return await this.plugin.shareClientManager.listInvites(share.serverId, share.id);
+					} else if (this.plugin.shareClient) {
+						return await this.plugin.shareClient.listInvites(share.id);
 					}
 				} catch (inviteError) {
-					// 403 means user is not owner - this is expected, just don't show invites
 					const errorMessage = inviteError instanceof Error ? inviteError.message : "";
 					if (errorMessage.includes("403") || errorMessage.includes("Insufficient permissions")) {
 						console.log("[ShareManagement] User is not owner, skipping invites");
-						this.invites = [];
 						this.isOwner = false;
 					} else {
-						// Re-throw other errors
 						throw inviteError;
 					}
 				}
-			}
+				return [] as Invite[];
+			})();
+
+			const [serverInfo, members, invites] = await Promise.all([
+				serverInfoPromise,
+				membersPromise,
+				invitesPromise,
+			]);
+
+			this.webPublishEnabled = serverInfo?.features?.web_publish_enabled ?? false;
+			this.webPublishDomain = serverInfo?.features?.web_publish_domain ?? null;
+			this.members = members;
+			this.invites = invites;
 
 			this.renderContent();
 		} catch (error) {
@@ -339,7 +357,12 @@ export class ShareManagementModal extends Modal {
 			new Notice("Share ID copied to clipboard");
 		});
 
-		// Section order (v1.8.3): Metadata → Members → Add Member → Invites → Web Publishing → Actions
+		// Section order (v1.9.1): Local Folder → Members → Add Member → Invites → Web Publishing → Actions
+
+		// Local folder connection section (folder shares only)
+		if (this.selectedShare.kind === "folder") {
+			this.renderLocalFolderSection();
+		}
 
 		// Members section
 		contentEl.createEl("h4", { text: "Members" });
@@ -355,16 +378,27 @@ export class ShareManagementModal extends Modal {
 			this.members.forEach((member) => {
 				const setting = new Setting(membersDiv)
 					.setName(member.user_email)
-					.setDesc(`Role: ${member.role} • ID: ${member.user_id.substring(0, 8)}...`);
+					.setDesc(`ID: ${member.user_id.substring(0, 8)}...`);
 
-				// Only owners can remove members
+				// Only owners can change roles and remove members
 				if (this.isOwner) {
+					setting.addDropdown((dropdown) => {
+						dropdown
+							.addOption("viewer", "Viewer")
+							.addOption("editor", "Editor")
+							.setValue(member.role)
+							.onChange(async (value) => {
+								await this.changeMemberRole(member.user_id, value as "viewer" | "editor");
+							});
+					});
 					setting.addButton((button) => {
 						button
 							.setButtonText("Remove")
 							.setWarning()
 							.onClick(() => this.removeMember(member.user_id));
 					});
+				} else {
+					setting.setDesc(`Role: ${member.role} • ID: ${member.user_id.substring(0, 8)}...`);
 				}
 			});
 		}
@@ -422,6 +456,74 @@ export class ShareManagementModal extends Modal {
 		// Actions - only for owners
 		if (this.isOwner) {
 			this.renderActionsSection();
+		}
+	}
+
+	/**
+	 * Render local folder connection section for folder shares
+	 */
+	private renderLocalFolderSection() {
+		if (!this.selectedShare) return;
+
+		const { contentEl } = this;
+		const localFolder = this.plugin.sharedFolders.find(
+			(sf) => sf.guid === this.selectedShare!.id
+		);
+
+		contentEl.createEl("h4", { text: "Local Folder" });
+
+		if (localFolder) {
+			new Setting(contentEl)
+				.setName(localFolder.path)
+				.setDesc("Connected and syncing")
+				.addButton((button) => {
+					button
+						.setButtonText("Disconnect")
+						.setWarning()
+						.onClick(() => {
+							if (!confirm(`Disconnect local folder "${localFolder.path}" from this share? Local files will not be deleted.`)) return;
+							this.plugin.sharedFolders.delete(localFolder);
+							this.plugin.folderNavDecorations?.quickRefresh();
+							new Notice("Folder disconnected");
+							this.renderContent();
+						});
+				});
+		} else {
+			new Setting(contentEl)
+				.setName("Not connected")
+				.setDesc("Connect a local folder to start syncing")
+				.addButton((button) => {
+					button
+						.setButtonText("Connect to local folder")
+						.setCta()
+						.onClick(() => {
+							const modal = new FolderSuggestModal(
+								this.plugin.app,
+								"Choose local folder for this share...",
+								new Set(),
+								this.plugin.sharedFolders,
+								(folderPath: string) => {
+									try {
+										const sharedFolder = this.plugin.sharedFolders.new(
+											folderPath,
+											this.selectedShare!.id,
+											"relay-onprem",
+											true
+										);
+										if (sharedFolder && sharedFolder.settings) {
+											sharedFolder.settings.onpremServerId = this.selectedShare!.serverId;
+										}
+										this.plugin.folderNavDecorations?.quickRefresh();
+										new Notice("Folder connected! Syncing...");
+										this.renderContent();
+									} catch (e) {
+										new Notice(`Failed to connect folder: ${e instanceof Error ? e.message : "Unknown error"}`);
+									}
+								},
+							);
+							modal.open();
+						});
+				});
 		}
 	}
 
@@ -858,6 +960,34 @@ export class ShareManagementModal extends Modal {
 
 	private async toggleWebPublishing(enabled: boolean) {
 		if (!this.selectedShare) return;
+
+		// Warn if enabling web-publish on a private share
+		if (enabled && this.selectedShare.visibility === "private") {
+			const makePublic = confirm(
+				"This share is private. Web-published pages from private shares require authentication.\n\n" +
+				"Would you like to change visibility to public so anyone can view the web page?\n\n" +
+				"Click OK to make public, or Cancel to keep private."
+			);
+			if (makePublic) {
+				try {
+					if (this.plugin.shareClientManager) {
+						await this.plugin.shareClientManager.updateShare(
+							this.selectedShare.serverId,
+							this.selectedShare.id,
+							{ visibility: "public" }
+						);
+					} else if (this.plugin.shareClient) {
+						await this.plugin.shareClient.updateShare(
+							this.selectedShare.id,
+							{ visibility: "public" }
+						);
+					}
+					this.selectedShare = { ...this.selectedShare, visibility: "public" };
+				} catch (e) {
+					console.error("Failed to change visibility:", e);
+				}
+			}
+		}
 
 		try {
 			// Build update payload
@@ -1544,12 +1674,11 @@ export class ShareManagementModal extends Modal {
 
 	private async createLocalSharedFolder(folderPath: string, shareGuid: string, serverId: string) {
 		try {
-			// Create SharedFolder object for this relay-onprem share
-			// Don't pass relayId - relay-onprem shares use S3Folder, not S3RemoteFolder
+			// Create SharedFolder with relay-onprem marker for CRDT sync
 			const sharedFolder = this.plugin.sharedFolders.new(
 				folderPath,
 				shareGuid,
-				undefined,
+				"relay-onprem",
 				false
 			);
 
@@ -1601,6 +1730,30 @@ export class ShareManagementModal extends Modal {
 		}
 	}
 
+	private async changeMemberRole(userId: string, role: "viewer" | "editor") {
+		if (!this.selectedShare) return;
+
+		try {
+			if (this.plugin.shareClientManager) {
+				await this.plugin.shareClientManager.updateMemberRole(
+					this.selectedShare.serverId,
+					this.selectedShare.id,
+					userId,
+					role
+				);
+			} else if (this.plugin.shareClient) {
+				await this.plugin.shareClient.updateMemberRole(this.selectedShare.id, userId, role);
+			}
+
+			new Notice(`Member role changed to ${role}`);
+			await this.loadShareDetails(this.selectedShare);
+		} catch (error) {
+			new Notice(
+				`Failed to change role: ${error instanceof Error ? error.message : "Unknown error"}`,
+			);
+		}
+	}
+
 	private async removeMember(userId: string) {
 		if (!this.selectedShare) return;
 
@@ -1642,6 +1795,15 @@ export class ShareManagementModal extends Modal {
 				);
 			} else if (this.plugin.shareClient) {
 				await this.plugin.shareClient.deleteShare(this.selectedShare.id);
+			}
+
+			// Clean up local SharedFolder entry so it doesn't persist as stale
+			const localFolder = this.plugin.sharedFolders.find(
+				(sf) => sf.guid === this.selectedShare!.id
+			);
+			if (localFolder) {
+				this.plugin.sharedFolders.delete(localFolder);
+				this.plugin.folderNavDecorations?.quickRefresh();
 			}
 
 			new Notice("Share deleted successfully");

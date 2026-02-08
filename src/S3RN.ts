@@ -135,8 +135,9 @@ export class S3RN {
 		let s3rn = `${entity.platform}:${entity.product}`;
 
 		if ("relayId" in entity) {
-			if (!this.validateUUID(entity.relayId)) {
-				throw new Error("Invalid relay UUID");
+			// relayId can be a UUID or a string identifier (e.g., "relay-onprem")
+			if (!entity.relayId) {
+				throw new Error("Invalid relay ID");
 			}
 			s3rn += `:relay:${entity.relayId}`;
 		}
@@ -208,7 +209,9 @@ export class S3RN {
 			type5,
 			item5,
 		] = parts;
-		if (!this.validateUUID(item0)) {
+		// item0 may be a relayId (non-UUID string like "relay-onprem") or a UUID
+		const isRelayItem0 = type0 === "relay";
+		if (!isRelayItem0 && !this.validateUUID(item0)) {
 			throw new Error("Invalid UUID");
 		}
 		if (item1 && !this.validateUUID(item1)) {

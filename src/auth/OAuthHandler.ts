@@ -137,6 +137,7 @@ export class OAuthHandler {
 					token: data.access_token,
 					expiresAt: Date.now() + (data.expires_in || 3600) * 1000,
 				},
+				refreshToken: data.refresh_token,
 			};
 
 			return authResponse;

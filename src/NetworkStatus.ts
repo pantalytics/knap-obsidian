@@ -44,6 +44,10 @@ class NetworkStatus {
 	}
 
 	public start() {
+		if (!this.url) {
+			// No health URL configured (relay-onprem mode) - stay online
+			return;
+		}
 		if (!this.timer) {
 			this.timer = this.checkStatusRepeatedly();
 		}
@@ -74,6 +78,9 @@ class NetworkStatus {
 	}
 
 	private async _checkStatus(): Promise<void> {
+		if (!this.url) {
+			return; // No health URL configured, assume online
+		}
 		return requestUrl({
 			url: this.url,
 			method: "GET",

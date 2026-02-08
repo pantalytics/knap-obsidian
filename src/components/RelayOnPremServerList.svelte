@@ -5,12 +5,12 @@
 	import type { RelayOnPremServer } from "../RelayOnPremConfig";
 	import { generateServerId, validateServerConfig } from "../RelayOnPremConfig";
 	import { RelayOnPremLoginModal } from "../ui/RelayOnPremLoginModal";
-	import { ShareManagementModal } from "../ui/ShareManagementModal";
 
 	export let plugin: Live;
 
 	const dispatch = createEventDispatcher<{
 		serversChanged: void;
+		openShares: { server: RelayOnPremServer };
 	}>();
 
 	const relayOnPremSettings = plugin.relayOnPremSettings;
@@ -302,8 +302,7 @@
 	}
 
 	function openSharesForServer(server: RelayOnPremServer) {
-		const modal = new ShareManagementModal(plugin.app, plugin, server.id, server.name);
-		modal.open();
+		dispatch('openShares', { server });
 	}
 
 	async function toggleDefaultServer(serverId: string, isCurrentlyDefault: boolean) {
@@ -338,12 +337,10 @@
 		<div class="relay-server-item" class:is-default={server.id === defaultServerId}>
 			<div class="relay-server-info">
 				<div class="relay-server-name">
+					<span class="relay-status-dot" class:is-connected={authStatus.isLoggedIn}></span>
 					{server.name}
 					{#if server.id === defaultServerId}
 						<span class="relay-server-badge default">Default</span>
-					{/if}
-					{#if authStatus.isLoggedIn}
-						<span class="relay-server-badge logged-in">Logged in</span>
 					{/if}
 				</div>
 				<div class="relay-server-url">{server.controlPlaneUrl}</div>
@@ -463,7 +460,7 @@
 	.relay-server-item {
 		display: flex;
 		justify-content: space-between;
-		align-items: flex-start;
+		align-items: center;
 		padding: 12px;
 		background: var(--background-secondary);
 		border-radius: 6px;
@@ -487,6 +484,18 @@
 		flex-wrap: wrap;
 	}
 
+	.relay-status-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--text-faint);
+		flex-shrink: 0;
+	}
+
+	.relay-status-dot.is-connected {
+		background: var(--color-green, #28a745);
+	}
+
 	.relay-server-badge {
 		font-size: 0.75em;
 		padding: 2px 6px;
@@ -497,11 +506,6 @@
 	.relay-server-badge.default {
 		background: var(--interactive-accent);
 		color: var(--text-on-accent);
-	}
-
-	.relay-server-badge.logged-in {
-		background: var(--background-modifier-success);
-		color: var(--text-success);
 	}
 
 	.relay-server-url {

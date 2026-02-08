@@ -69,10 +69,12 @@ import { SelfHostModal } from "./ui/SelfHostModal";
 import {
 	DEFAULT_RELAY_ONPREM_SETTINGS,
 	type RelayOnPremSettings,
+	type RelayOnPremServer,
 	migrateRelayOnPremSettings,
 	getDefaultServer,
 } from "./RelayOnPremConfig";
 import { RelayOnPremTokenProvider } from "./auth/RelayOnPremTokenProvider";
+import type { IAuthProvider } from "./auth/IAuthProvider";
 import { RelayOnPremShareClient } from "./RelayOnPremShareClient";
 import { RelayOnPremShareClientManager } from "./RelayOnPremShareClientManager";
 import { QuickShareModal } from "./ui/QuickShareModal";
@@ -573,10 +575,27 @@ export default class Live extends Plugin {
 		let relayOnPremTokenProvider: RelayOnPremTokenProvider | undefined;
 		const defaultServer = getDefaultServer(relayOnPremSettings);
 
-		if (relayOnPremSettings.enabled && defaultServer && this.loginManager.getAuthProvider()) {
+		if (relayOnPremSettings.enabled && defaultServer) {
+			// Lazy auth provider — defers to loginManager at call time.
+			// Needed because OAuth auth provider may not be available at plugin load.
+			const lazyAuthProvider: IAuthProvider = {
+				isLoggedIn: () => this.loginManager.getAuthProvider()?.isLoggedIn() ?? false,
+				getCurrentUser: () => this.loginManager.getAuthProvider()?.getCurrentUser(),
+				getToken: () => this.loginManager.getAuthProvider()?.getToken(),
+				loginWithPassword: async () => { throw new Error("Use loginManager directly"); },
+				loginWithOAuth2: async () => { throw new Error("Use loginManager directly"); },
+				refreshToken: async () => {
+				const provider = this.loginManager.getAuthProvider();
+				if (!provider) throw new Error("No auth provider available");
+				return provider.refreshToken();
+			},
+				logout: async () => { throw new Error("Use loginManager directly"); },
+				isTokenValid: () => this.loginManager.getAuthProvider()?.isTokenValid() ?? false,
+			};
+
 			relayOnPremTokenProvider = new RelayOnPremTokenProvider({
 				controlPlaneUrl: defaultServer.controlPlaneUrl,
-				authProvider: this.loginManager.getAuthProvider()!,
+				authProvider: lazyAuthProvider,
 			});
 
 			// Initialize share client for relay-onprem mode (backward compatibility)
@@ -585,6 +604,9 @@ export default class Live extends Plugin {
 				() => this.loginManager.getAuthProvider()?.getToken(),
 			);
 		}
+
+		// Wait for auth restoration before using auth state
+		await this.loginManager.waitForRestore();
 
 		// Initialize multi-server share client manager
 		if (relayOnPremSettings.enabled && relayOnPremSettings.servers.length > 0) {
@@ -628,7 +650,11 @@ export default class Live extends Plugin {
 		);
 
 		if (!this.loginManager.setup()) {
-			new Notice("Please sign in to use relay");
+			// In relay-onprem mode, setup() returns false because auth is handled
+			// asynchronously via waitForRestore(). Only show notice for non-relay-onprem.
+			if (!this.loginManager.isRelayOnPremMode()) {
+				new Notice("Please sign in to use relay");
+			}
 		}
 
 		this.app.workspace.onLayoutReady(() => {
@@ -654,7 +680,46 @@ export default class Live extends Plugin {
 				}),
 			);
 
+			// If user is already logged in after auth restore, trigger login flow now.
+			// This handles the case where auth restored before onLayoutReady fired,
+			// so the login listener missed the state change notification.
+			if (this.loginManager.loggedIn) {
+				this._onLogin();
+			}
+
 			this.tokenStore.start();
+
+			// Sync shareClientManager when relay-onprem settings change
+			let prevServerIds = new Set(
+				this.relayOnPremSettings.get().servers?.map((s: RelayOnPremServer) => s.id) || []
+			);
+			this.register(
+				this.relayOnPremSettings.subscribe((settings) => {
+					const currentServers = settings.servers || [];
+					const currentIds = new Set(currentServers.map((s: RelayOnPremServer) => s.id));
+
+					// New servers added
+					for (const server of currentServers) {
+						if (!prevServerIds.has(server.id)) {
+							this.ensureShareClientManager();
+							this.shareClientManager?.addServer(server);
+						}
+					}
+					// Removed servers
+					for (const id of prevServerIds) {
+						if (!currentIds.has(id)) {
+							this.shareClientManager?.removeServer(id);
+						}
+					}
+					// Updated servers (URL or name changed)
+					for (const server of currentServers) {
+						if (prevServerIds.has(server.id) && this.shareClientManager) {
+							this.shareClientManager.updateServer(server);
+						}
+					}
+					prevServerIds = currentIds;
+				})
+			);
 
 			if (!Platform.isIosApp) {
 				// We can't run network status on iOS or it will always be offline.
@@ -709,10 +774,15 @@ export default class Live extends Plugin {
 							});
 							menu.addItem((item) => {
 								item
-									.setTitle("EVC Relay: Local folder settings")
-									.setIcon("gear")
+									.setTitle("EVC Relay: Share settings")
+									.setIcon("settings")
 									.onClick(() => {
-										this.openSettings(`/shared-folders?id=${folder.guid}`);
+										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
+											const { ShareManagementModal } = require("./ui/ShareManagementModal");
+											new ShareManagementModal(this.app, this, folder.settings.onpremServerId).open();
+										} else {
+											this.openSettings(`/shared-folders?id=${folder.guid}`);
+										}
 									});
 							});
 							menu.addItem((item) => {
@@ -735,10 +805,15 @@ export default class Live extends Plugin {
 						} else {
 							menu.addItem((item) => {
 								item
-									.setTitle("EVC Relay: Local folder settings")
-									.setIcon("gear")
+									.setTitle("EVC Relay: Share settings")
+									.setIcon("settings")
 									.onClick(() => {
-										this.openSettings(`/shared-folders?id=${folder.guid}`);
+										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
+											const { ShareManagementModal } = require("./ui/ShareManagementModal");
+											new ShareManagementModal(this.app, this, folder.settings.onpremServerId).open();
+										} else {
+											this.openSettings(`/shared-folders?id=${folder.guid}`);
+										}
 									});
 							});
 							// Add Unshare option for relay-onprem folders
@@ -896,23 +971,49 @@ export default class Live extends Plugin {
 
 				for (const share of allShares) {
 					if (share.kind === "folder") {
-						// Check if SharedFolder already exists
-						const existing = this.sharedFolders.find(
+						// Find existing by guid OR by path (settings may have old client-side guid)
+						const byGuid = this.sharedFolders.find(
 							(sf) => sf.guid === share.id
 						);
+						const byPath = !byGuid ? this.sharedFolders.find(
+							(sf) => sf.path === share.path
+						) : undefined;
+						const existing = byGuid || byPath;
 
-						if (!existing) {
+						if (existing && (existing.guid !== share.id || !existing.relayId)) {
+							// Migrate: guid mismatch or missing relayId — recreate
+							log(`Migrating SharedFolder ${share.path} (guid: ${existing.guid} → ${share.id})`);
+							this.sharedFolders.delete(existing);
 							const sharedFolder = this.sharedFolders.new(
 								share.path,
 								share.id,
-								undefined,
+								"relay-onprem",
 								false
 							);
-							// Store server ID in settings
 							if (sharedFolder && sharedFolder.settings) {
 								sharedFolder.settings.onpremServerId = share.serverId;
 							}
-							log(`Created SharedFolder for ${share.path} on server ${share.serverId}`);
+						} else if (!existing) {
+							// Only auto-create if the folder exists locally in vault
+							const vaultFolder = this.app.vault.getAbstractFileByPath(share.path);
+							if (vaultFolder && vaultFolder instanceof TFolder) {
+								const sharedFolder = this.sharedFolders.new(
+									share.path,
+									share.id,
+									"relay-onprem",
+									true
+								);
+								if (sharedFolder && sharedFolder.settings) {
+									sharedFolder.settings.onpremServerId = share.serverId;
+								}
+								log(`Created SharedFolder for ${share.path} on server ${share.serverId}`);
+							} else {
+								log(`Share "${share.path}" not connected locally (folder not in vault)`);
+							}
+						} else if (existing && !existing.connected) {
+							// Folder exists with correct guid+relayId but not connected
+							log(`Connecting SharedFolder ${share.path}`);
+							existing.connect();
 						}
 					}
 
@@ -942,21 +1043,49 @@ export default class Live extends Plugin {
 
 				for (const share of shares) {
 					if (share.kind === "folder") {
-						const existing = this.sharedFolders.find(
+						// Find existing by guid OR by path (settings may have old client-side guid)
+						const byGuid = this.sharedFolders.find(
 							(sf) => sf.guid === share.id
 						);
+						const byPath = !byGuid ? this.sharedFolders.find(
+							(sf) => sf.path === share.path
+						) : undefined;
+						const existing = byGuid || byPath;
 
-						if (!existing) {
+						if (existing && (existing.guid !== share.id || !existing.relayId)) {
+							// Migrate: guid mismatch or missing relayId — recreate
+							log(`Migrating SharedFolder ${share.path} (guid: ${existing.guid} → ${share.id})`);
+							this.sharedFolders.delete(existing);
 							const sharedFolder = this.sharedFolders.new(
 								share.path,
 								share.id,
-								undefined,
+								"relay-onprem",
 								false
 							);
 							if (sharedFolder && sharedFolder.settings) {
 								sharedFolder.settings.onpremServerId = defaultServerId;
 							}
-							log(`Created SharedFolder for ${share.path}`);
+						} else if (!existing) {
+							// Only auto-create if the folder exists locally in vault
+							const vaultFolder = this.app.vault.getAbstractFileByPath(share.path);
+							if (vaultFolder && vaultFolder instanceof TFolder) {
+								const sharedFolder = this.sharedFolders.new(
+									share.path,
+									share.id,
+									"relay-onprem",
+									true
+								);
+								if (sharedFolder && sharedFolder.settings) {
+									sharedFolder.settings.onpremServerId = defaultServerId;
+								}
+								log(`Created SharedFolder for ${share.path}`);
+							} else {
+								log(`Share "${share.path}" not connected locally (folder not in vault)`);
+							}
+						} else if (existing && !existing.connected) {
+							// Folder exists with correct guid+relayId but not connected
+							log(`Connecting SharedFolder ${share.path}`);
+							existing.connect();
 						}
 					}
 
@@ -1051,6 +1180,25 @@ export default class Live extends Plugin {
 	}
 
 	/**
+	 * Ensure shareClientManager exists, creating it lazily if needed
+	 */
+	private async ensureShareClientManager(): Promise<void> {
+		if (this.shareClientManager) return;
+		const settings = this.relayOnPremSettings.get();
+		if (!settings.enabled || settings.servers.length === 0) return;
+		const multiServerAuthManager = this.loginManager.getMultiServerAuthManager();
+		if (!multiServerAuthManager) return;
+		this.shareClientManager = new RelayOnPremShareClientManager(
+			multiServerAuthManager,
+			settings.servers,
+		);
+		if (!this.webSyncManager) {
+			const { WebSyncManager } = await import("./WebSyncManager");
+			this.webSyncManager = new WebSyncManager(this.vault, this.shareClientManager);
+		}
+	}
+
+	/**
 	 * Sync all web-published shares
 	 */
 	private async syncAllShares() {
@@ -1060,15 +1208,24 @@ export default class Live extends Plugin {
 		}
 
 		try {
+			new Notice("Syncing all shares...");
 			const shares = await this.shareClientManager.getAllSharesFlat();
-			const webShares = shares.filter(s => s.web_published);
 
-			if (webShares.length === 0) {
-				new Notice("No web-published shares to sync");
-				return;
+			// 1. Reconnect CRDT relay for all folder shares
+			let relaySynced = 0;
+			for (const share of shares) {
+				if (share.kind === "folder") {
+					const folder = this.sharedFolders.find(sf => sf.guid === share.id);
+					if (folder) {
+						folder.connect();
+						relaySynced++;
+					}
+				}
 			}
 
-			let synced = 0;
+			// 2. Sync web-published shares
+			let webSynced = 0;
+			const webShares = shares.filter(s => s.web_published);
 			for (const share of webShares) {
 				try {
 					if (share.kind === "doc") {
@@ -1078,16 +1235,37 @@ export default class Live extends Plugin {
 							await this.shareClientManager.updateShare(share.serverId, share.id, {
 								web_content: content,
 							});
-							synced++;
+							webSynced++;
+						}
+					} else if (share.kind === "folder" && this.webSyncManager) {
+						// Trigger folder web-publish sync for all files
+						const folder = this.vault.getAbstractFileByPath(share.path);
+						if (folder instanceof TFolder) {
+							const files = folder.children.filter(f => f instanceof TFile) as TFile[];
+							for (const file of files) {
+								if (file.extension === "md" || file.extension === "canvas") {
+									const content = await this.vault.read(file);
+									const relativePath = file.path.substring(share.path.length);
+									const cleanPath = relativePath.startsWith("/") ? relativePath.slice(1) : relativePath;
+									if (share.web_slug) {
+										await this.shareClientManager.syncFolderFileContent(
+											share.serverId, share.web_slug, cleanPath, content
+										);
+									}
+									webSynced++;
+								}
+							}
 						}
 					}
-					// Folder syncs handled by manual sync button for now
 				} catch (e) {
 					console.error(`Failed to sync ${share.path}:`, e);
 				}
 			}
 
-			new Notice(`Synced ${synced} shares to web`);
+			const parts = [];
+			if (relaySynced > 0) parts.push(`${relaySynced} relay`);
+			if (webSynced > 0) parts.push(`${webSynced} web`);
+			new Notice(parts.length > 0 ? `Synced: ${parts.join(", ")}` : "No shares to sync");
 		} catch (error) {
 			new Notice(`Sync failed: ${error instanceof Error ? error.message : "Unknown error"}`);
 		}
@@ -1138,7 +1316,7 @@ export default class Live extends Plugin {
 		this.sharedFolders.load();
 
 		// Load relay-onprem shares after login
-		if (this.shareClient) {
+		if (this.shareClient || this.shareClientManager) {
 			this.loadRelayOnPremShares();
 		}
 		this.relayManager?.login();
@@ -1236,7 +1414,7 @@ export default class Live extends Plugin {
 		this.folderNavDecorations.refresh();
 
 		// Load relay-onprem shares if enabled
-		if (this.shareClient) {
+		if (this.shareClient || this.shareClientManager) {
 			this.loadRelayOnPremShares();
 		}
 
@@ -1353,10 +1531,10 @@ export default class Live extends Plugin {
 					if (file && isSyncFile(file)) {
 						file.sync();
 					}
-					// Dataview race condition
+					// Trigger metadata resolve with the actual TFile (not our Document proxy)
 					this.timeProvider.setTimeout(() => {
-						this.app.metadataCache.trigger("resolve", file);
-					}, 10);
+						this.app.metadataCache.trigger("resolve", tfile);
+					}, 500);
 				}
 
 				// Handle auto-sync to web (v1.8.1)

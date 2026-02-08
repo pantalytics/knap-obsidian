@@ -111,6 +111,29 @@ export class SyncStore extends Observable<SyncStore> {
 		return guid;
 	}
 
+	/**
+	 * Ensure a file has a Y.Map metadata entry (filemeta_v0 + legacyIds).
+	 * Called from addLocalDocs() to write metadata that markUploaded() would
+	 * normally write after background sync completes. This ensures the relay
+	 * has file metadata even if individual document syncs haven't finished.
+	 */
+	ensureMeta(vpath: string, meta: Meta): boolean {
+		this.assertVPath(vpath);
+		if (this.meta.has(vpath)) {
+			return false; // already in Y.Map
+		}
+		this.set(vpath, meta);
+		return true;
+	}
+
+	/**
+	 * Check if a path has an entry in the Y.Map (filemeta_v0),
+	 * as opposed to just being in pendingUpload or overlay.
+	 */
+	hasYMapEntry(vpath: string): boolean {
+		return this.meta.has(vpath);
+	}
+
 	forEach(callbackFn: (meta: Meta, path: string) => void) {
 		//this.migrateUp();
 		this.meta.forEach((meta, path) => {
@@ -454,7 +477,9 @@ export class SyncStore extends Observable<SyncStore> {
 
 	markUploaded(vpath: string, meta: Meta) {
 		if (!this.has(vpath)) {
-			throw new Error(`unexpected vpath ${vpath} marked uploaded`);
+			// File may have been renamed, moved, or synced from another peer.
+			// Warn and add gracefully instead of crashing the plugin.
+			this.warn(`unexpected vpath ${vpath} marked uploaded, adding to store`);
 		}
 		this.set(vpath, meta);
 	}

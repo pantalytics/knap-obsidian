@@ -478,7 +478,14 @@ export class LiveView<ViewType extends TextFileView>
 			// Add click handler
 			mergeButton.addEventListener("click", async () => {
 				const diskBuffer = await this.document.diskBuffer();
-				const stale = await this.document.checkStale();
+				let stale: boolean;
+				try {
+					stale = await this.document.checkStale();
+				} catch (e) {
+					console.warn("[Relay] setMergeButton checkStale failed:", (e as Error).message);
+					this.clearMergeButton();
+					return;
+				}
 				if (!stale) {
 					this.clearMergeButton();
 					return;
@@ -523,7 +530,13 @@ export class LiveView<ViewType extends TextFileView>
 				"Merge conflict -- click to resolve",
 				async () => {
 					const diskBuffer = await this.document.diskBuffer();
-					const stale = await this.document.checkStale();
+					let stale: boolean;
+					try {
+						stale = await this.document.checkStale();
+					} catch (e) {
+						console.warn("[Relay] mergeBanner checkStale failed:", (e as Error).message);
+						return true;
+					}
 					if (!stale) {
 						return true;
 					}
@@ -627,7 +640,15 @@ export class LiveView<ViewType extends TextFileView>
 		) {
 			return false;
 		}
-		const stale = await this.document.checkStale();
+		let stale: boolean;
+		try {
+			stale = await this.document.checkStale();
+		} catch (e) {
+			// HTTP download failed (e.g., 401 with CWT tokens on relay-server).
+			// Return false — rely on WS sync for CRDT state.
+			console.warn("[Relay] LiveView.checkStale failed, relying on WS sync:", (e as Error).message);
+			return false;
+		}
 		if (stale && this.document._diskBuffer?.contents) {
 			this.mergeBanner();
 		} else {
@@ -960,13 +981,17 @@ export class LiveViewManager {
 					});
 					views.push(view);
 				} else if (folder.ready) {
-					const doc = folder.proxy.getDoc(viewFilePath);
-					const view = new LiveView<typeof textFileView>(
-						this,
-						textFileView,
-						doc,
-					);
-					views.push(view);
+					try {
+						const doc = folder.proxy.getDoc(viewFilePath);
+						const view = new LiveView<typeof textFileView>(
+							this,
+							textFileView,
+							doc,
+						);
+						views.push(view);
+					} catch (e) {
+						this.warn(`[Relay] Error getting doc for view ${viewFilePath}`, e);
+					}
 				} else {
 					this.log(`Folder not ready, skipping views. folder=${folder.path}`);
 				}
@@ -992,9 +1017,13 @@ export class LiveViewManager {
 						});
 						views.push(view);
 					} else if (folder.ready) {
-						const doc = folder.proxy.getCanvas(viewFilePath);
-						const view = new RelayCanvasView(this, canvasView, doc);
-						views.push(view);
+						try {
+							const doc = folder.proxy.getCanvas(viewFilePath);
+							const view = new RelayCanvasView(this, canvasView, doc);
+							views.push(view);
+						} catch (e) {
+							this.warn(`[Relay] Error getting canvas for view ${viewFilePath}`, e);
+						}
 					} else {
 						this.log(`Folder not ready, skipping views. folder=${folder.path}`);
 					}

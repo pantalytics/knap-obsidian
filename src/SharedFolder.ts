@@ -274,8 +274,28 @@ export class SharedFolder extends HasProvider {
 
 		this.cas = new ContentAddressedStore(this);
 
-		this.whenReady().then(() => {
+		this.whenReady().then(async () => {
 			if (!this.destroyed) {
+				await this.whenSynced(); // Ensure IDB and syncStore.start() completed
+
+				// Always wait for provider sync before processing files.
+				// For the owner: ensures Y.Map writes propagate to the relay.
+				// For the member: ensures we receive file metadata from the relay
+				// (fixes stale serverSynced=true in IDB causing immediate resolve).
+				if (this._shouldConnect) {
+					try {
+						await Promise.race([
+							this.onceProviderSynced(),
+							new Promise<void>((_, reject) =>
+								setTimeout(() => reject(new Error("provider sync timeout")), 30000)
+							)
+						]);
+					} catch (e: any) {
+						console.warn(`[SharedFolder] ${this.path}: ${e.message}, proceeding with current state`);
+					}
+				}
+
+				console.log(`[SharedFolder] ready to sync: path=${this.path}, synced=${this.synced}, authoritative=${this.authoritative}`);
 				this.addLocalDocs();
 				this.syncFileTree(this.syncStore);
 			}
@@ -308,6 +328,13 @@ export class SharedFolder extends HasProvider {
 		const syncTFiles = this.getSyncFiles();
 		const files: IFile[] = [];
 		const newPaths = this.placeHold(syncTFiles);
+
+		// Ensure all local files have Y.Map metadata entries.
+		// This is critical: markUploaded() only runs after background sync completes,
+		// but if individual doc syncs hang (e.g., onceProviderSynced race condition),
+		// the Y.Map never gets entries and the relay stays empty.
+		this.ensureFileMetadata(syncTFiles);
+
 		syncTFiles.forEach((tfile) => {
 			const vpath = this.getVirtualPath(tfile.path);
 			const upload = newPaths.contains(vpath);
@@ -365,6 +392,39 @@ export class SharedFolder extends HasProvider {
 			this.fset.update();
 		}
 	};
+
+	/**
+	 * Ensure all local files have Y.Map metadata entries (filemeta_v0).
+	 * Without this, the relay has no file metadata and other devices
+	 * can't see the file list.
+	 */
+	private ensureFileMetadata(syncTFiles: TAbstractFile[]) {
+		let written = 0;
+		this.ydoc.transact(() => {
+			syncTFiles.forEach((file) => {
+				if (file instanceof TFolder) return;
+				const vpath = this.getVirtualPath(file.path);
+				const guid = this.syncStore.get(vpath);
+				if (!guid) return;
+
+				// Skip if Y.Map already has this entry
+				if (this.syncStore.hasYMapEntry(vpath)) return;
+
+				// Write metadata based on file type
+				if (Document.checkExtension(vpath)) {
+					this.syncStore.ensureMeta(vpath, makeDocumentMeta(guid));
+					written++;
+				} else if (Canvas.checkExtension(vpath)) {
+					this.syncStore.ensureMeta(vpath, makeCanvasMeta(guid));
+					written++;
+				}
+				// SyncFile types need hash/mimetype - they'll be written by markUploaded()
+			});
+		}, this);
+		if (written > 0) {
+			console.log(`[SharedFolder] ensureFileMetadata: wrote ${written} Y.Map entries for ${this.path}`);
+		}
+	}
 
 	public get server(): string | undefined {
 		return this._server;
@@ -455,6 +515,10 @@ export class SharedFolder extends HasProvider {
 
 	async netSync() {
 		await this.whenReady();
+		// Wait for provider to fully sync remote state before reconciling.
+		// Without this, cleanupExtraLocalFiles may see incomplete remote state
+		// and delete files that exist on the server but haven't been received yet.
+		await this.onceProviderSynced();
 		this.addLocalDocs();
 		await this.syncFileTree(this.syncStore);
 		this.backgroundSync.enqueueSharedFolderSync(this);
@@ -547,27 +611,50 @@ export class SharedFolder extends HasProvider {
 
 	async awaitingUpdates(): Promise<boolean> {
 		await this.whenSynced();
+		const hasLocal = this.hasLocalDB();
+		const serverSynced = await this.getServerSynced();
+		console.log(`[SharedFolder] awaitingUpdates: authoritative=${this.authoritative}, serverSynced=${serverSynced}, hasLocalDB=${hasLocal}, path=${this.path}`);
 		if (this.authoritative) {
 			return false;
 		}
-		const serverSynced = await this.getServerSynced();
 		if (serverSynced) {
 			return false;
 		}
-		return !this.hasLocalDB();
+		return !hasLocal;
 	}
 
 	whenReady(): Promise<SharedFolder> {
 		const promiseFn = async (): Promise<SharedFolder> => {
 			const awaitingUpdates = await this.awaitingUpdates();
+			console.log(`[SharedFolder] whenReady: awaitingUpdates=${awaitingUpdates}, path=${this.path}, authoritative=${this.authoritative}`);
 			if (awaitingUpdates) {
 				// If this is a brand new shared folder, we want to wait for a connection before we start reserving new guids for local files.
 				this.connect();
-				await this.onceConnected();
-				await this.onceProviderSynced();
+
+				// Timeout after 30s to prevent silent hangs
+				const timeout = new Promise<never>((_, reject) =>
+					setTimeout(() => reject(new Error("whenReady timeout: server sync took too long")), 30000)
+				);
+
+				try {
+					await Promise.race([
+						(async () => {
+							await this.onceConnected();
+							console.log(`[SharedFolder] whenReady: onceConnected resolved`);
+							await this.onceProviderSynced();
+							console.log(`[SharedFolder] whenReady: onceProviderSynced resolved`);
+						})(),
+						timeout
+					]);
+				} catch (e: any) {
+					console.warn(`[SharedFolder] whenReady: ${e.message}`);
+					// Fall through — allow syncFileTree to run with whatever state we have
+				}
+
 				return this;
 			}
 			// If this is a shared folder with edits, then we can behave as though we're just offline.
+			console.log(`[SharedFolder] whenReady: NOT awaiting updates, resolving immediately`);
 			return this;
 		};
 		this.readyPromise =
@@ -636,6 +723,7 @@ export class SharedFolder extends HasProvider {
 		meta: Meta,
 		diffLog?: string[],
 	): Promise<IFile> {
+		console.log(`[SharedFolder] _handleServerCreate: vpath=${vpath}, type=${meta.type}, id=${meta.id?.slice(0,8)}`);
 		// Create directories as needed
 		const dir = dirname(vpath);
 		if (!this.existsSync(dir)) {
@@ -670,7 +758,7 @@ export class SharedFolder extends HasProvider {
 	private _assertNamespacing(path: string) {
 		// Check if the path is valid (inside of shared folder), otherwise delete
 		try {
-			this.assertPath(this.path + path);
+			this.assertPath(this.getPath(path));
 		} catch {
 			this.error("Deleting doc (somehow moved outside of shared folder)", path);
 			this.syncStore.delete(path);
@@ -802,31 +890,46 @@ export class SharedFolder extends HasProvider {
 		remotePaths: string[],
 		diffLog: string[],
 	): Delete[] {
+		// Build the FULL set of known remote paths from the syncStore.
+		// This is safer than using the ops-based remotePaths which only contains
+		// paths that had operations, and may be incomplete during partial sync.
+		const allRemotePaths = new Set<string>(remotePaths);
+		this.syncStore.forEach((meta, path) => {
+			allRemotePaths.add(path);
+		});
+
+		// Safety: if remote state is empty, this is likely a first sync —
+		// do NOT delete local files (they should be uploaded to remote instead)
+		if (allRemotePaths.size === 0) {
+			return [];
+		}
+
+		// Additional safety: require provider+persistence to be synced
+		const synced = this._provider?.synced && this._persistence?.synced;
+		if (!synced) {
+			this.log("cleanupExtraLocalFiles: skipping — provider/persistence not synced");
+			return [];
+		}
+
 		// Delete files that are no longer shared
 		const ffiles = this.getSyncFiles();
 		const deletes: Delete[] = [];
 		const folders = ffiles.filter((file) => file instanceof TFolder);
 		const files = ffiles.filter((file) => file instanceof TFile);
 		const sync = (file: TAbstractFile) => {
-			// If the file is in the shared folder and not in the map, move it to the Trash
 			const isSyncableFile = this.isSyncableTFile(file);
 			const fileInFolder = this.checkPath(file.path);
-			const fileInMap = remotePaths.contains(file.path.slice(this.path.length));
-			const filePending = this.pendingUpload.has(
-				this.getVirtualPath(file.path),
-			);
 			const vpath = this.getVirtualPath(file.path);
-			const synced = this._provider?.synced && this._persistence?.synced;
+			const fileInMap = allRemotePaths.has(vpath);
+			const filePending = this.pendingUpload.has(vpath);
 			if (fileInFolder && isSyncableFile && !fileInMap && !filePending) {
-				if (synced) {
-					diffLog.push(`deleted local file ${vpath} for remotely deleted doc`);
-					const promise = this.vault.adapter.trashLocal(file.path);
-					deletes.push({
-						op: "delete",
-						path: vpath,
-						promise,
-					});
-				}
+				diffLog.push(`deleted local file ${vpath} for remotely deleted doc`);
+				const promise = this.vault.adapter.trashLocal(file.path);
+				deletes.push({
+					op: "delete",
+					path: vpath,
+					promise,
+				});
 			}
 		};
 		files.forEach(sync);
@@ -869,6 +972,15 @@ export class SharedFolder extends HasProvider {
 			try {
 				const ops: Operation[] = [];
 				const diffLog: string[] = [];
+
+				// Debug: log Y.Map state before sync
+				const metaEntries: string[] = [];
+				syncStore.forEach((meta, path) => metaEntries.push(`${path}(${meta.type}:${meta.id?.slice(0,8)})`));
+				const legacyEntries: string[] = [];
+				try { (this.syncStore as any).legacyIds?.forEach?.((guid: string, path: string) => legacyEntries.push(`${path}=${guid?.slice(0,8)}`)); } catch(e) {}
+				console.log(`[SharedFolder] syncFileTree START: meta=${metaEntries.length}, legacy=${legacyEntries.length}, path=${this.path}`);
+				if (metaEntries.length > 0) console.log(`[SharedFolder] syncFileTree meta entries:`, metaEntries.slice(0, 20));
+				if (legacyEntries.length > 0) console.log(`[SharedFolder] syncFileTree legacy entries:`, legacyEntries.slice(0, 20));
 
 				this.ydoc.transact(async () => {
 					// Sync folder operations first because renames/moves also affect files
@@ -974,7 +1086,9 @@ export class SharedFolder extends HasProvider {
 	getVirtualPath(path: string): string {
 		this.assertPath(path);
 
-		const vPath = path.slice(this.path.length);
+		// Slice past the folder path AND the separator (e.g., "Folder/file.md" -> "file.md")
+		// Without +1, we'd get "/file.md" which starts with slash
+		const vPath = path.slice(this.path.length + 1);
 		return vPath;
 	}
 
@@ -1055,11 +1169,15 @@ export class SharedFolder extends HasProvider {
 			if (!this.syncStore) {
 				return;
 			}
-			if (this.syncStore.willSet(file.path, meta)) {
-				this.log("new meta", file.path, meta);
-				this.ydoc.transact(() => {
-					this.syncStore.markUploaded(file.path, meta);
-				}, this);
+			try {
+				if (this.syncStore.willSet(file.path, meta)) {
+					this.log("new meta", file.path, meta);
+					this.ydoc.transact(() => {
+						this.syncStore.markUploaded(file.path, meta);
+					}, this);
+				}
+			} catch (e) {
+				this.warn(`markUploaded failed for ${file.path}`, e);
 			}
 		};
 		if (isDocument(file)) {
@@ -1263,6 +1381,9 @@ export class SharedFolder extends HasProvider {
 					this.backgroundSync.enqueueCanvasDownload(canvas);
 				} else if (this.pendingUpload.get(canvas.path)) {
 					this.backgroundSync.enqueueSync(canvas);
+				} else if (!synced && this.relayId) {
+					// For relay-onprem: Canvas hasn't been synced to server yet
+					this.backgroundSync.enqueueCanvasDownload(canvas);
 				}
 			});
 		})();
@@ -1403,6 +1524,13 @@ export class SharedFolder extends HasProvider {
 					this.backgroundSync.enqueueDownload(doc);
 				} else if (this.pendingUpload.get(doc.path)) {
 					this.backgroundSync.enqueueSync(doc);
+				} else if (!synced && this.relayId) {
+					// For relay-onprem: Document hasn't been synced to server yet.
+					// Even if the file has content, we need to exchange Y.Doc state
+					// with the relay to get the authoritative version (or upload ours
+					// if the relay is empty). Without this, local-only Documents
+					// never connect and content diverges between devices.
+					this.backgroundSync.enqueueDownload(doc);
 				}
 			});
 		})();
@@ -1812,16 +1940,27 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 
 	private _load(folders: SharedFolderSettings[]) {
 		let updated = false;
-		folders.forEach((folder: SharedFolderSettings) => {
+		// Deduplicate by path: prefer entries with relay set
+		const byPath = new Map<string, SharedFolderSettings>();
+		for (const folder of folders) {
+			const existing = byPath.get(folder.path);
+			if (!existing || (folder.relay && !existing.relay)) {
+				byPath.set(folder.path, folder);
+			}
+		}
+		byPath.forEach((folder) => {
 			const tFolder = this.vault.getFolderByPath(folder.path);
 			if (!tFolder) {
 				this.warn(`Invalid settings, ${folder.path} does not exist`);
 				return;
 			}
-			// "relay-onprem" is a special marker, not a valid UUID - don't pass it as relayId
-			const relayId = folder?.relay === "relay-onprem" ? undefined : folder?.relay;
-			this._new(folder.path, folder.guid, relayId);
-			updated = true;
+			const relayId = folder?.relay;
+			try {
+				this._new(folder.path, folder.guid, relayId);
+				updated = true;
+			} catch (e) {
+				this.warn(`Skipping duplicate folder ${folder.path}: ${e}`);
+			}
 		});
 
 		if (updated) {

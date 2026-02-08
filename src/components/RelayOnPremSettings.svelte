@@ -1,179 +1,277 @@
 <script lang="ts">
 	import type Live from "../main";
+	import type { RelayOnPremServer } from "../RelayOnPremConfig";
+	import type { ShareWithServer } from "../RelayOnPremShareClientManager";
 	import RelayOnPremServerList from "./RelayOnPremServerList.svelte";
+	import ShareListView from "./ShareListView.svelte";
+	import ShareDetailView from "./ShareDetailView.svelte";
+	import CreateShareView from "./CreateShareView.svelte";
+	import CreateInviteView from "./CreateInviteView.svelte";
+	import Breadcrumbs from "./Breadcrumbs.svelte";
 	import evcLogo from "../assets/evc-logo.png";
 
 	export let plugin: Live;
 
-	const GITHUB_REPO = "entire-vc/evc-team-relay-obsidian-plugin";
 	const EVC_URL = "https://github.com/entire-vc";
-	const GITHUB_URL = `https://github.com/${GITHUB_REPO}`;
 
-	let stars: number | null = null;
+	// Navigation state
+	type ViewType = "servers" | "shares" | "shareDetail" | "createShare" | "createInvite";
+	let currentView: ViewType = "servers";
+	let selectedServer: RelayOnPremServer | null = null;
+	let selectedShare: ShareWithServer | null = null;
 
-	// Fetch GitHub stars on mount (silently fails for private repos)
-	async function fetchGitHubStars() {
-		try {
-			const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}`);
-			if (response.ok) {
-				const data = await response.json();
-				stars = data.stargazers_count;
-			}
-			// Silently ignore 404/403 for private repos
-		} catch {
-			// Silently fail - stars will just not show
+	// Navigation functions
+	function navigateTo(view: ViewType) {
+		currentView = view;
+		if (view === "servers") {
+			selectedServer = null;
+			selectedShare = null;
+		} else if (view === "shares") {
+			selectedShare = null;
 		}
 	}
 
-	fetchGitHubStars();
+	function handleOpenShares(event: CustomEvent<{ server: RelayOnPremServer }>) {
+		selectedServer = event.detail.server;
+		selectedShare = null;
+		currentView = "shares";
+	}
 
-	function formatStars(count: number): string {
-		if (count >= 1000) {
-			return (count / 1000).toFixed(1) + "k";
+	function handleSelectShare(event: CustomEvent<{ share: ShareWithServer }>) {
+		selectedShare = event.detail.share;
+		currentView = "shareDetail";
+	}
+
+	function handleShareCreated() {
+		// Go back to shares list to see the new share
+		currentView = "shares";
+	}
+
+	function handleShareDeleted() {
+		selectedShare = null;
+		currentView = "shares";
+	}
+
+	function handleCreateInviteDone() {
+		// Go back to share detail to see the new invite
+		currentView = "shareDetail";
+	}
+
+	// Breadcrumb items
+	$: breadcrumbItems = getBreadcrumbs(currentView, selectedServer, selectedShare);
+
+	function getBreadcrumbs(view: ViewType, server: RelayOnPremServer | null, share: ShareWithServer | null) {
+		const items: any[] = [
+			{ type: "home", onClick: () => navigateTo("servers") },
+		];
+
+		if (server && view !== "servers") {
+			items.push({
+				type: "text",
+				text: server.name,
+				onClick: () => navigateTo("shares"),
+			});
 		}
-		return count.toString();
+
+		if (view === "createShare") {
+			items.push({ type: "text", text: "Create Share" });
+		} else if (view === "createInvite" && share) {
+			items.push({
+				type: "text",
+				text: share.path,
+				onClick: () => navigateTo("shareDetail"),
+			});
+			items.push({ type: "text", text: "Create Invite" });
+		} else if (share && (view === "shareDetail")) {
+			items.push({ type: "text", text: share.path });
+		}
+
+		return items;
 	}
 </script>
 
-<div class="relay-onprem-settings">
-	<!-- Header Section -->
-	<div class="settings-header">
-		<a href={EVC_URL} class="header-brand" target="_blank" rel="noopener noreferrer">
-			<img
-				src={evcLogo}
-				alt="EVC Logo"
-				class="header-logo"
-			/>
-			<div class="header-text">
-				<div class="header-title">Entire VC Team Relay</div>
-				<div class="header-description">
-					Use self-hosted relay-onprem control plane for work with your teammates
+<div class="evc-relay-settings">
+	<!-- Static Header -->
+	<div class="evc-settings-header">
+		<a href={EVC_URL} class="evc-header-brand" target="_blank" rel="noopener noreferrer">
+			<img src={evcLogo} alt="EVC Logo" class="evc-header-logo" />
+			<div class="evc-header-text">
+				<div class="evc-header-title">EVC Team Relay</div>
+				<div class="evc-header-desc">
+					Self-hosted relay for real-time collaboration
 				</div>
 			</div>
 		</a>
 		<a
-			href={GITHUB_URL}
-			class="github-badge"
+			href={EVC_URL}
+			class="evc-github-badge"
 			target="_blank"
 			rel="noopener noreferrer"
-			title="View on GitHub"
+			title="Visit Entire VC on GitHub"
 		>
-			<svg class="github-icon" viewBox="0 0 16 16" fill="currentColor">
+			<svg class="evc-github-icon" viewBox="0 0 16 16" fill="currentColor">
 				<path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
 			</svg>
-			{#if stars !== null}
-				<span class="stars-count">{formatStars(stars)}</span>
-			{/if}
+			<span class="evc-github-text">GitHub</span>
 		</a>
 	</div>
 
-	<!-- Server List Section -->
-	<div class="relay-onprem-config">
-		<div class="setting-item-heading">
-			<div class="setting-item-name">Relay Servers</div>
-			<div class="setting-item-description">
-				Configure your relay-onprem servers. You can add multiple servers and switch between them.
-				Use the "Shares" button to manage shares for each server.
-			</div>
+	<!-- Breadcrumb Navigation -->
+	{#if currentView !== "servers"}
+		<div class="evc-breadcrumb-bar">
+			<Breadcrumbs items={breadcrumbItems} element="div" />
 		</div>
+	{/if}
 
-		<RelayOnPremServerList {plugin} />
+	<!-- Content Area -->
+	<div class="evc-settings-content">
+		{#if currentView === "servers"}
+			<div class="evc-server-section">
+				<div class="evc-section-heading">
+					<div class="evc-section-heading-title">Relay Servers</div>
+					<div class="evc-section-heading-desc">
+						Configure your relay-onprem servers. Click "Shares" to manage shares.
+					</div>
+				</div>
+				<RelayOnPremServerList {plugin} on:openShares={handleOpenShares} />
+			</div>
+		{:else if currentView === "shares" && selectedServer}
+			<ShareListView
+				{plugin}
+				server={selectedServer}
+				on:selectShare={handleSelectShare}
+				on:createShare={() => { currentView = "createShare"; }}
+			/>
+		{:else if currentView === "shareDetail" && selectedServer && selectedShare}
+			<ShareDetailView
+				{plugin}
+				server={selectedServer}
+				share={selectedShare}
+				on:createInvite={() => { currentView = "createInvite"; }}
+				on:deleted={handleShareDeleted}
+			/>
+		{:else if currentView === "createShare" && selectedServer}
+			<CreateShareView
+				{plugin}
+				server={selectedServer}
+				on:created={handleShareCreated}
+				on:cancel={() => navigateTo("shares")}
+			/>
+		{:else if currentView === "createInvite" && selectedServer && selectedShare}
+			<CreateInviteView
+				{plugin}
+				share={selectedShare}
+				on:created={handleCreateInviteDone}
+				on:cancel={() => navigateTo("shareDetail")}
+			/>
+		{/if}
 	</div>
 </div>
 
 <style>
-	.relay-onprem-settings {
-		padding: 10px 0;
+	.evc-relay-settings {
+		padding: 0;
 	}
 
-	.settings-header {
+	/* Header */
+	.evc-settings-header {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding: 16px;
-		margin-bottom: 16px;
-		background: var(--background-secondary);
-		border-radius: 8px;
+		padding: 16px 20px;
+		border-bottom: 1px solid var(--background-modifier-border);
+		margin-bottom: 0;
 	}
 
-	.header-brand {
+	.evc-header-brand {
 		display: flex;
 		align-items: center;
 		gap: 12px;
 		text-decoration: none;
 		color: inherit;
-		transition: opacity 0.2s;
+		transition: opacity 0.15s;
 	}
 
-	.header-brand:hover {
-		opacity: 0.8;
+	.evc-header-brand:hover {
+		opacity: 0.85;
 	}
 
-	.header-logo {
-		width: 40px;
-		height: 40px;
-		border-radius: 8px;
+	.evc-header-logo {
+		width: 44px;
+		height: 44px;
+		border-radius: 10px;
 	}
 
-	.header-text {
+	.evc-header-text {
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
 	}
 
-	.header-title {
-		font-weight: 600;
-		font-size: 1.4rem;
-		color: #4F566B;
+	.evc-header-title {
+		font-weight: 700;
+		font-size: 1.3em;
+		color: var(--text-normal);
 	}
 
-	.header-description {
+	.evc-header-desc {
 		color: var(--text-muted);
 		font-size: 0.85em;
 	}
 
-	.github-badge {
+	.evc-github-badge {
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		padding: 6px 10px;
+		padding: 6px 12px;
 		background: var(--background-modifier-border);
 		border-radius: 6px;
 		text-decoration: none;
 		color: var(--text-muted);
-		transition: all 0.2s;
+		font-size: 0.85em;
+		font-weight: 500;
+		transition: all 0.15s;
 	}
 
-	.github-badge:hover {
+	.evc-github-badge:hover {
 		background: var(--background-modifier-hover);
 		color: var(--text-normal);
 	}
 
-	.github-icon {
+	.evc-github-icon {
 		width: 16px;
 		height: 16px;
 	}
 
-	.stars-count {
-		font-size: 0.85em;
-		font-weight: 500;
+	/* Breadcrumbs */
+	.evc-breadcrumb-bar {
+		padding: 10px 20px;
+		border-bottom: 1px solid var(--background-modifier-border);
+		font-size: 0.9em;
 	}
 
-	.relay-onprem-config {
-		padding-left: 0;
+	/* Content */
+	.evc-settings-content {
+		padding: 16px 20px;
 	}
 
-	.setting-item-heading {
-		margin-top: 0;
-		margin-bottom: 12px;
+	/* Server section heading */
+	.evc-server-section {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
 	}
 
-	.setting-item-heading .setting-item-name {
+	.evc-section-heading {
+		margin-bottom: 4px;
+	}
+
+	.evc-section-heading-title {
 		font-weight: 600;
 		font-size: 1.1em;
 	}
 
-	.setting-item-heading .setting-item-description {
+	.evc-section-heading-desc {
 		color: var(--text-muted);
 		font-size: 0.9em;
 		margin-top: 4px;

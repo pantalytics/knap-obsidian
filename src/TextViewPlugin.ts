@@ -128,7 +128,15 @@ export class TextFileViewPlugin extends HasLogging {
 				return;
 			}
 			// Check if document is stale before overwriting view content
-			const stale = await this.doc.checkStale();
+			let stale: boolean;
+			try {
+				stale = await this.doc.checkStale();
+			} catch (e) {
+				// HTTP download failed (e.g., 401 with CWT tokens on relay-server).
+				// Skip syncViewToCRDT — rely on WS sync for CRDT state.
+				this.warn("[resync] checkStale failed, relying on WS sync:", (e as Error).message);
+				return;
+			}
 			if (stale && this.view) {
 				this.warn("Document is stale - showing merge banner");
 				this.view.checkStale().then(async (stale) => {

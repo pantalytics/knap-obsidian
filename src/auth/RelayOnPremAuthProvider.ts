@@ -53,6 +53,8 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 	private serverId: string;
 	private restorePromise?: Promise<void>;
 	private normalizedUrl: string;
+	private refreshInProgress?: Promise<AuthResponse>;
+	private _restored = false;
 
 	constructor(private config: RelayOnPremAuthConfig) {
 		this.serverId = config.serverId;
@@ -85,53 +87,60 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 	/**
 	 * Restore authentication from localStorage if available.
 	 * If the token is expired but we have a refresh token, attempt to refresh.
+	 * IMPORTANT: Never clear auth on refresh failure — keep refresh token for retry.
 	 */
 	private async restoreAuth(): Promise<void> {
-		this.log(`restoreAuth: serverId=${this.serverId}, vaultName=${this.config.vaultName}`);
+		try {
+			this.log(`restoreAuth: serverId=${this.serverId}, vaultName=${this.config.vaultName}`);
 
-		const authData = this.authStore.load(this.serverId);
-		this.log(`restoreAuth: authData exists=${!!authData}`);
+			const authData = this.authStore.load(this.serverId);
+			this.log(`restoreAuth: authData exists=${!!authData}`);
 
-		if (!authData) {
-			this.log(`restoreAuth: no stored auth data found`);
-			return;
-		}
-
-		this.log(`restoreAuth: user=${authData.user?.email}, expiresAt=${authData.expiresAt}, now=${Date.now()}, hasRefreshToken=${!!authData.refreshToken}`);
-
-		this.user = authData.user;
-		this.token = authData.token;
-		this.tokenExpiresAt = authData.expiresAt;
-		this.storedRefreshToken = authData.refreshToken;
-
-		// Check if token is still valid
-		if (this.isTokenValid()) {
-			this.log(`restoreAuth: token is valid, restored auth for ${this.user?.email} on server ${this.serverId}`);
-			return;
-		}
-
-		this.log(`restoreAuth: token expired for server ${this.serverId}`);
-
-		// Token expired - try to refresh if we have a refresh token
-		if (this.storedRefreshToken) {
-			this.log(`restoreAuth: attempting token refresh...`);
-			try {
-				await this.refreshToken();
-				this.log(`restoreAuth: token refresh successful for ${this.user?.email}`);
+			if (!authData) {
+				this.log(`restoreAuth: no stored auth data found`);
 				return;
-			} catch (e) {
-				this.log(`restoreAuth: token refresh failed: ${e}`);
-				// Fall through to clear auth
 			}
-		}
 
-		// No refresh token or refresh failed - clear auth
-		this.log(`restoreAuth: clearing expired/invalid auth`);
-		this.authStore.clear(this.serverId);
-		this.user = undefined;
-		this.token = undefined;
-		this.tokenExpiresAt = 0;
-		this.storedRefreshToken = undefined;
+			this.log(`restoreAuth: user=${authData.user?.email}, expiresAt=${authData.expiresAt}, now=${Date.now()}, hasRefreshToken=${!!authData.refreshToken}`);
+
+			this.user = authData.user;
+			this.token = authData.token;
+			this.tokenExpiresAt = authData.expiresAt;
+			this.storedRefreshToken = authData.refreshToken;
+
+			// Check if token is still valid
+			if (this.isTokenValid()) {
+				this.log(`restoreAuth: token is valid, restored auth for ${this.user?.email} on server ${this.serverId}`);
+				return;
+			}
+
+			this.log(`restoreAuth: token expired for server ${this.serverId}`);
+
+			// Token expired - try to refresh if we have a refresh token
+			if (this.storedRefreshToken) {
+				this.log(`restoreAuth: attempting token refresh...`);
+				try {
+					await this.refreshToken();
+					this.log(`restoreAuth: token refresh successful for ${this.user?.email}`);
+					return;
+				} catch (e) {
+					this.log(`restoreAuth: token refresh failed: ${e}`);
+					// Keep user and refresh token — will retry on next getToken() call.
+					// Do NOT clear auth here. The user is still "logged in" with a
+					// valid refresh token, just the access token needs refreshing.
+					this.log(`restoreAuth: keeping auth state for later refresh retry`);
+				}
+			} else {
+				// No refresh token at all — truly expired session, clear auth
+				this.log(`restoreAuth: no refresh token, clearing auth`);
+				this.authStore.clear(this.serverId);
+				this.user = undefined;
+				this.token = undefined;
+				this.tokenExpiresAt = 0;
+			}
+		} finally {
+			this._restored = true;
+		}
 	}
 
 	/**
@@ -149,7 +158,16 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 	}
 
 	isLoggedIn(): boolean {
-		return !!this.user && !!this.token && this.isTokenValid();
+		// User is "logged in" if we have user info AND either a valid token
+		// or a refresh token we can use to get a new access token.
+		return !!this.user && (this.isTokenValid() || !!this.storedRefreshToken);
+	}
+
+	/**
+	 * Whether the auth restore from localStorage has completed.
+	 */
+	get restored(): boolean {
+		return this._restored;
 	}
 
 	getCurrentUser(): AuthUser | undefined {
@@ -157,7 +175,46 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 	}
 
 	getToken(): string | undefined {
+		// If token expired but we have refresh token, trigger async refresh.
+		// Return the expired token for now — the caller should handle 401 gracefully.
+		if (this.token && !this.isTokenValid() && this.storedRefreshToken && !this.refreshInProgress) {
+			this.log("getToken: access token expired, triggering background refresh");
+			this.ensureTokenRefreshed();
+		}
 		return this.token;
+	}
+
+	/**
+	 * Get a valid token, refreshing if needed. Awaitable version of getToken().
+	 */
+	async getValidToken(): Promise<string | undefined> {
+		if (this.token && this.isTokenValid()) {
+			return this.token;
+		}
+		if (this.storedRefreshToken) {
+			try {
+				await this.ensureTokenRefreshed();
+				return this.token;
+			} catch {
+				return this.token; // Return expired token as fallback
+			}
+		}
+		return this.token;
+	}
+
+	/**
+	 * Ensure token is refreshed. Deduplicates concurrent refresh calls.
+	 */
+	private async ensureTokenRefreshed(): Promise<void> {
+		if (!this.refreshInProgress) {
+			this.refreshInProgress = this.refreshToken()
+				.finally(() => { this.refreshInProgress = undefined; });
+		}
+		try {
+			await this.refreshInProgress;
+		} catch {
+			// Refresh failed but don't propagate — caller handles stale token
+		}
 	}
 
 	/**
@@ -277,10 +334,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 			this.user = authResponse.user;
 			this.token = authResponse.token.token;
 			this.tokenExpiresAt = authResponse.token.expiresAt;
-
-			// OAuth response might include refresh token
-			// (It's in the AuthResponse but we need to extract it from the raw response)
-			// For now, we'll rely on the token exchange to provide it
+			this.storedRefreshToken = authResponse.refreshToken;
 
 			// Persist auth
 			this.persistAuth();
@@ -404,12 +458,20 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 			}
 		} catch (error) {
 			this.log("Token refresh error:", error);
-			// If refresh fails, clear the session
-			this.user = undefined;
-			this.token = undefined;
-			this.tokenExpiresAt = 0;
-			this.storedRefreshToken = undefined;
-			this.authStore.clear(this.serverId);
+			// Only clear auth if the refresh token itself is invalid (401/403).
+			// For network errors or server issues, keep auth for retry.
+			const isAuthError = error instanceof Error &&
+				(error.message.includes("401") || error.message.includes("403"));
+			if (isAuthError) {
+				this.log("Refresh token rejected by server, clearing auth");
+				this.user = undefined;
+				this.token = undefined;
+				this.tokenExpiresAt = 0;
+				this.storedRefreshToken = undefined;
+				this.authStore.clear(this.serverId);
+			} else {
+				this.log("Refresh failed (network/server error), keeping auth for retry");
+			}
 			throw error;
 		}
 	}
