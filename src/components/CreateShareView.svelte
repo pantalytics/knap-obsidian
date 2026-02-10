@@ -5,6 +5,7 @@
 	import type { RelayOnPremServer } from "../RelayOnPremConfig";
 	import { getDefaultServer } from "../RelayOnPremConfig";
 	import type { RelayOnPremShare } from "../RelayOnPremShareClient";
+	import { LimitExceededApiError } from "../RelayOnPremShareClient";
 	import { FolderSuggestModal } from "../ui/FolderSuggestModal";
 	import { S3RN } from "../S3RN";
 
@@ -76,7 +77,16 @@
 			new Notice(`Share "${share.path}" created!`);
 			dispatch("created", { share });
 		} catch (e) {
-			new Notice(`Failed to create share: ${e instanceof Error ? e.message : "Unknown error"}`);
+			if (e instanceof LimitExceededApiError) {
+				const info = e.limitInfo;
+				new Notice(
+					`Share limit reached (${info.current}/${info.max} on ${info.plan} plan). ` +
+					`Upgrade your plan to create more shares.`,
+					8000,
+				);
+			} else {
+				new Notice(`Failed to create share: ${e instanceof Error ? e.message : "Unknown error"}`);
+			}
 		} finally {
 			creating = false;
 		}

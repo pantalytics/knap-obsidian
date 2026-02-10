@@ -5,6 +5,7 @@
 	import type Live from "../main";
 	import type { RelayOnPremServer } from "../RelayOnPremConfig";
 	import type { ShareMember, Invite, FolderItem } from "../RelayOnPremShareClient";
+	import { LimitExceededApiError } from "../RelayOnPremShareClient";
 	import type { ShareWithServer } from "../RelayOnPremShareClientManager";
 	import { FolderSuggestModal } from "../ui/FolderSuggestModal";
 	import { S3RN } from "../S3RN";
@@ -134,7 +135,16 @@
 			newMemberEmail = "";
 			members = await loadMembers();
 		} catch (e) {
-			new Notice(e instanceof Error ? e.message : "Failed to add member");
+			if (e instanceof LimitExceededApiError) {
+				const info = e.limitInfo;
+				new Notice(
+					`Member limit reached (${info.current}/${info.max} on ${info.plan} plan). ` +
+					`Upgrade your plan to add more members.`,
+					8000,
+				);
+			} else {
+				new Notice(e instanceof Error ? e.message : "Failed to add member");
+			}
 		}
 	}
 
@@ -268,21 +278,33 @@
 	// Web Publishing
 	async function toggleWebPublishing(enabled: boolean) {
 		if (enabled && currentShare.visibility === "private") {
-			const makePublic = confirm(
-				"This share is private. Would you like to make it public for web publishing?"
+			// Private shares need visibility change before web publishing
+			const choice = prompt(
+				'This share is private. Web publishing requires "public" or "protected" visibility.\n\n' +
+				'Type "public" for open access, or "protected" for password-protected access.\n' +
+				'Cancel to abort.',
+				"protected"
 			);
-			if (makePublic) {
-				try {
-					const payload = { visibility: "public" as const };
-					if (plugin.shareClientManager) {
-						await plugin.shareClientManager.updateShare(share.serverId, share.id, payload);
-					} else if (plugin.shareClient) {
-						await plugin.shareClient.updateShare(share.id, payload);
-					}
-					currentShare = { ...currentShare, visibility: "public" };
-				} catch (e) {
-					console.error("Failed to change visibility:", e);
+			if (!choice) return; // User cancelled — don't publish
+
+			const newVisibility = choice.trim().toLowerCase();
+			if (newVisibility !== "public" && newVisibility !== "protected") {
+				new Notice('Invalid visibility. Use "public" or "protected".');
+				return;
+			}
+
+			try {
+				const payload = { visibility: newVisibility as "public" | "protected" };
+				if (plugin.shareClientManager) {
+					await plugin.shareClientManager.updateShare(share.serverId, share.id, payload);
+				} else if (plugin.shareClient) {
+					await plugin.shareClient.updateShare(share.id, payload);
 				}
+				currentShare = { ...currentShare, visibility: newVisibility };
+			} catch (e) {
+				console.error("Failed to change visibility:", e);
+				new Notice("Failed to change visibility");
+				return;
 			}
 		}
 
@@ -312,7 +334,16 @@
 			}
 			new Notice(enabled ? "Published to web!" : "Unpublished from web");
 		} catch (e) {
-			new Notice(`Failed: ${e instanceof Error ? e.message : "Unknown error"}`);
+			if (e instanceof LimitExceededApiError) {
+				const info = e.limitInfo;
+				new Notice(
+					`Web publish limit reached (${info.current}/${info.max} on ${info.plan} plan). ` +
+					`Upgrade your plan to publish more.`,
+					8000,
+				);
+			} else {
+				new Notice(`Failed: ${e instanceof Error ? e.message : "Unknown error"}`);
+			}
 		}
 	}
 

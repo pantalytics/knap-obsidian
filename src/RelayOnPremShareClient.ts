@@ -141,6 +141,7 @@ export interface ServerInfo {
 	name: string;
 	version: string;
 	relay_url: string;
+	edition?: string; // "community" | "enterprise"
 	features: ServerFeatures;
 	web_publish_enabled?: boolean;
 	web_publish_domain?: string | null;
@@ -158,6 +159,68 @@ export interface ServerFeatures {
 	oauth_provider?: string | null;
 	web_publish_enabled?: boolean;
 	web_publish_domain?: string | null;
+	billing_enabled?: boolean;
+}
+
+/**
+ * Billing plan response from GET /v1/billing/plan
+ */
+export interface BillingPlanResponse {
+	plan: string;
+	subscription: BillingSubscription | null;
+	entitlements: Record<string, { limit: number | null }>;
+	usage: Record<string, { current: number; max: number | null; percentage: number | null }>;
+}
+
+export interface BillingSubscription {
+	id: string;
+	status: string;
+	current_period_end?: string;
+	cancel_at_period_end?: boolean;
+}
+
+/**
+ * Available plan info from GET /v1/billing/plans
+ */
+export interface AvailablePlan {
+	id: string;
+	name: string;
+	service_id: string;
+	type: string;
+	status: string;
+	prices: Array<{
+		id: string;
+		amount: number;
+		currency: string;
+		billing_period: string;
+	}>;
+	entitlements: Record<string, { limit: number | null }>;
+	metadata: Record<string, unknown>;
+}
+
+/**
+ * Limit exceeded error response (403)
+ */
+export interface LimitExceededError {
+	error: "limit_exceeded";
+	detail: string;
+	limit: string;
+	current: number;
+	max: number;
+	plan: string;
+}
+
+/**
+ * Error thrown when a billing limit is exceeded (403 from server)
+ */
+export class LimitExceededApiError extends Error {
+	public readonly limitInfo: LimitExceededError;
+
+	constructor(limitInfo: LimitExceededError) {
+		super(limitInfo.detail || `Limit exceeded: ${limitInfo.limit} (${limitInfo.current}/${limitInfo.max})`);
+		this.name = "LimitExceededApiError";
+		this.limitInfo = limitInfo;
+	}
 }
 
 /**
@@ -299,6 +362,12 @@ export class RelayOnPremShareClient {
 
 			if (!response.ok) {
 				const errorText = await response.text();
+				if (response.status === 403) {
+					const limitError = RelayOnPremShareClient.parseLimitExceededError(errorText);
+					if (limitError) {
+						throw new LimitExceededApiError(limitError);
+					}
+				}
 				throw new Error(`Failed to create share: ${response.status} ${errorText}`);
 			}
 
@@ -389,6 +458,12 @@ export class RelayOnPremShareClient {
 
 			if (!response.ok) {
 				const errorText = await response.text();
+				if (response.status === 403) {
+					const limitError = RelayOnPremShareClient.parseLimitExceededError(errorText);
+					if (limitError) {
+						throw new LimitExceededApiError(limitError);
+					}
+				}
 				throw new Error(`Failed to add member: ${response.status} ${errorText}`);
 			}
 
@@ -673,5 +748,146 @@ export class RelayOnPremShareClient {
 			log("Error syncing folder file content:", error);
 			throw error;
 		}
+	}
+
+	/**
+	 * Check if server supports billing (enterprise edition + billing_enabled)
+	 */
+	isBillingSupported(serverInfo: ServerInfo): boolean {
+		return serverInfo.edition === "enterprise" && serverInfo.features?.billing_enabled === true;
+	}
+
+	/**
+	 * Get current user's billing plan, entitlements, and usage
+	 */
+	async getBillingPlan(): Promise<BillingPlanResponse> {
+		log("Fetching billing plan...");
+
+		try {
+			const response = await customFetch(`${this.normalizedUrl}/v1/billing/plan`, {
+				method: "GET",
+				headers: this.getHeaders(),
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(`Failed to get billing plan: ${response.status} ${errorText}`);
+			}
+
+			const plan: BillingPlanResponse = await response.json();
+			log(`Retrieved billing plan: ${plan.plan}`);
+			return plan;
+		} catch (error) {
+			log("Error getting billing plan:", error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Get available billing plans
+	 */
+	async getAvailablePlans(): Promise<AvailablePlan[]> {
+		log("Fetching available plans...");
+
+		try {
+			const response = await customFetch(`${this.normalizedUrl}/v1/billing/plans`, {
+				method: "GET",
+				headers: {
+					"Content-Type": "application/json",
+				},
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(`Failed to get available plans: ${response.status} ${errorText}`);
+			}
+
+			const data = await response.json();
+			log(`Retrieved ${data.plans.length} available plans`);
+			return data.plans;
+		} catch (error) {
+			log("Error getting available plans:", error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Create a checkout session for upgrading to a paid plan
+	 */
+	async createCheckout(productId: string, priceId: string): Promise<{ checkout_url?: string; id?: string; status?: string }> {
+		log(`Creating checkout for product ${productId}, price ${priceId}...`);
+		const response = await customFetch(`${this.normalizedUrl}/v1/billing/checkout`, {
+			method: "POST",
+			headers: this.getHeaders(),
+			body: JSON.stringify({ product_id: productId, price_id: priceId }),
+		});
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			throw new Error(`Failed to create checkout: ${response.status} ${errorText}`);
+		}
+
+		return response.json();
+	}
+
+	/**
+	 * Cancel the current subscription
+	 */
+	async cancelSubscription(): Promise<{ status: string; message?: string }> {
+		log("Cancelling subscription...");
+		const response = await customFetch(`${this.normalizedUrl}/v1/billing/cancel`, {
+			method: "POST",
+			headers: this.getHeaders(),
+		});
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			throw new Error(`Failed to cancel subscription: ${response.status} ${errorText}`);
+		}
+
+		return response.json();
+	}
+
+	/**
+	 * Create a Stripe Customer Portal session for subscription management
+	 */
+	async createPortalSession(
+		returnUrl?: string,
+	): Promise<{ url?: string; message?: string }> {
+		log("Creating portal session...");
+		const response = await customFetch(
+			`${this.normalizedUrl}/v1/billing/portal`,
+			{
+				method: "POST",
+				headers: this.getHeaders(),
+				body: JSON.stringify({
+					return_url: returnUrl || "",
+				}),
+			},
+		);
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			throw new Error(
+				`Failed to create portal session: ${response.status} ${errorText}`,
+			);
+		}
+
+		return response.json();
+	}
+
+	/**
+	 * Parse a limit_exceeded error response from a 403 status
+	 */
+	static parseLimitExceededError(errorText: string): LimitExceededError | null {
+		try {
+			const data = JSON.parse(errorText);
+			if (data.error === "limit_exceeded") {
+				return data as LimitExceededError;
+			}
+		} catch {
+			// Not a JSON response or not a limit_exceeded error
+		}
+		return null;
 	}
 }

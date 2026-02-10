@@ -7,6 +7,7 @@
 	import ShareDetailView from "./ShareDetailView.svelte";
 	import CreateShareView from "./CreateShareView.svelte";
 	import CreateInviteView from "./CreateInviteView.svelte";
+	import BillingView from "./BillingView.svelte";
 	import Breadcrumbs from "./Breadcrumbs.svelte";
 	import evcLogo from "../assets/evc-logo.png";
 
@@ -15,7 +16,7 @@
 	const EVC_URL = "https://github.com/entire-vc";
 
 	// Navigation state
-	type ViewType = "servers" | "shares" | "shareDetail" | "createShare" | "createInvite";
+	type ViewType = "servers" | "shares" | "shareDetail" | "createShare" | "createInvite" | "billing";
 	let currentView: ViewType = "servers";
 	let selectedServer: RelayOnPremServer | null = null;
 	let selectedShare: ShareWithServer | null = null;
@@ -35,6 +36,12 @@
 		selectedServer = event.detail.server;
 		selectedShare = null;
 		currentView = "shares";
+	}
+
+	function handleOpenBilling(event: CustomEvent<{ server: RelayOnPremServer }>) {
+		selectedServer = event.detail.server;
+		selectedShare = null;
+		currentView = "billing";
 	}
 
 	function handleSelectShare(event: CustomEvent<{ share: ShareWithServer }>) {
@@ -73,7 +80,9 @@
 			});
 		}
 
-		if (view === "createShare") {
+		if (view === "billing") {
+			items.push({ type: "text", text: "Billing" });
+		} else if (view === "createShare") {
 			items.push({ type: "text", text: "Create Share" });
 		} else if (view === "createInvite" && share) {
 			items.push({
@@ -133,7 +142,7 @@
 						Configure your relay-onprem servers. Click "Shares" to manage shares.
 					</div>
 				</div>
-				<RelayOnPremServerList {plugin} on:openShares={handleOpenShares} />
+				<RelayOnPremServerList {plugin} on:openShares={handleOpenShares} on:openBilling={handleOpenBilling} />
 			</div>
 		{:else if currentView === "shares" && selectedServer}
 			<ShareListView
@@ -163,6 +172,11 @@
 				share={selectedShare}
 				on:created={handleCreateInviteDone}
 				on:cancel={() => navigateTo("shareDetail")}
+			/>
+		{:else if currentView === "billing" && selectedServer}
+			<BillingView
+				{plugin}
+				server={selectedServer}
 			/>
 		{/if}
 	</div>

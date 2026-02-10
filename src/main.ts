@@ -1671,6 +1671,12 @@ export default class Live extends Plugin {
 			this.installVersion(version);
 		});
 
+		this.registerObsidianProtocolHandler("evc-team-relay/billing-ok", async (e) => {
+			new Notice("Payment successful! Refreshing billing data...");
+			// Clear billing cache by refreshing settings
+			this.openSettings();
+		});
+
 		this.backgroundSync.start();
 		this.updateManager.start();
 	}

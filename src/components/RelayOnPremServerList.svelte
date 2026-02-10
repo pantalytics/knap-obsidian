@@ -5,12 +5,14 @@
 	import type { RelayOnPremServer } from "../RelayOnPremConfig";
 	import { generateServerId, validateServerConfig } from "../RelayOnPremConfig";
 	import { RelayOnPremLoginModal } from "../ui/RelayOnPremLoginModal";
+	import { customFetch } from "../customFetch";
 
 	export let plugin: Live;
 
 	const dispatch = createEventDispatcher<{
 		serversChanged: void;
 		openShares: { server: RelayOnPremServer };
+		openBilling: { server: RelayOnPremServer };
 	}>();
 
 	const relayOnPremSettings = plugin.relayOnPremSettings;
@@ -34,6 +36,9 @@
 	// Testing state
 	let testingServerId: string | null = null;
 
+	// Track which servers support billing (enterprise + billing_enabled)
+	let serverBillingSupport: Record<string, boolean> = {};
+
 	// Refresh key to force auth status recalculation
 	let authRefreshKey = 0;
 
@@ -52,6 +57,22 @@
 		authRefreshKey = authRefreshKey + 1;
 		dispatch("serversChanged");
 	}
+
+	// Check billing support for all servers on load
+	async function checkBillingSupport() {
+		for (const s of servers) {
+			if (serverBillingSupport[s.id] !== undefined) continue;
+			const info = await fetchServerInfo(s.controlPlaneUrl);
+			if (info) {
+				serverBillingSupport[s.id] = info.edition === "enterprise" && info.features?.billing_enabled === true;
+				serverBillingSupport = serverBillingSupport; // trigger reactivity
+			}
+		}
+	}
+
+	// Run on component init
+	import { onMount } from "svelte";
+	onMount(() => { checkBillingSupport(); });
 
 	function startAddServer() {
 		isAddingServer = true;
@@ -84,6 +105,7 @@
 		admin_ui: boolean;
 		oauth_enabled?: boolean;
 		oauth_provider?: string | null;
+		billing_enabled?: boolean;
 	}
 
 	interface ServerInfo {
@@ -91,13 +113,14 @@
 		name: string;
 		version: string;
 		relay_url: string;
+		edition?: string;
 		features: ServerFeatures;
 	}
 
 	async function fetchServerInfo(url: string): Promise<ServerInfo | null> {
 		try {
 			console.log("[RelayOnPrem] Fetching server info from:", `${url}/server/info`);
-			const response = await fetch(`${url}/server/info`, { method: "GET" });
+			const response = await customFetch(`${url}/server/info`, { method: "GET" });
 			console.log("[RelayOnPrem] Server info response status:", response.status);
 			if (response.ok) {
 				const data = await response.json();
@@ -118,7 +141,7 @@
 			testingServerId = serverId;
 		}
 		try {
-			const response = await fetch(`${url}/health`, { method: "GET" });
+			const response = await customFetch(`${url}/health`, { method: "GET" });
 			if (response.ok) {
 				new Notice("Connection successful!");
 				return true;
@@ -253,6 +276,11 @@
 		const serverInfo = await fetchServerInfo(server.controlPlaneUrl);
 		console.log("[RelayOnPrem] Server info:", serverInfo);
 
+		// Track billing support for this server
+		if (serverInfo) {
+			serverBillingSupport[server.id] = serverInfo.edition === "enterprise" && serverInfo.features?.billing_enabled === true;
+		}
+
 		// If OAuth is enabled, try OAuth-first flow
 		if (serverInfo?.features?.oauth_enabled && serverInfo.features.oauth_provider) {
 			console.log("[RelayOnPrem] OAuth enabled, provider:", serverInfo.features.oauth_provider);
@@ -369,6 +397,11 @@
 					<button class="relay-server-btn" on:click={() => openSharesForServer(server)}>
 						Shares
 					</button>
+					{#if serverBillingSupport[server.id]}
+						<button class="relay-server-btn" on:click={() => dispatch('openBilling', { server })}>
+							Billing
+						</button>
+					{/if}
 				{/if}
 				<button class="relay-server-btn" on:click={() => startEditServer(server)}>
 					Edit
