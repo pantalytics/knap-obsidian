@@ -781,9 +781,26 @@ export class BackgroundSync extends HasLogging {
 
 		const promise = doc.onceProviderSynced();
 		const intent = doc.intent;
-		doc.connect();
+		const connected = await doc.connect();
+		if (!connected) {
+			this.warn("[syncDocumentWebsocket] connect failed for", doc.path);
+			return false;
+		}
 		if (intent === "disconnected") {
-			await promise;
+			// Add timeout to prevent infinite hang if provider never syncs
+			// (e.g., document disconnected by parent during connection)
+			const timeout = new Promise<void>((_, reject) =>
+				setTimeout(() => reject(new Error("WS sync timeout")), 30000),
+			);
+			try {
+				await Promise.race([promise, timeout]);
+			} catch (e) {
+				this.warn("[syncDocumentWebsocket] timed out for", doc.path);
+				if (!doc.userLock) {
+					doc.disconnect();
+				}
+				return false;
+			}
 		}
 
 		// For relay-onprem: after syncing with the relay, handle content reconciliation.

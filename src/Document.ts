@@ -71,7 +71,14 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 
 		this.unsubscribes.push(
 			this._parent.subscribe(this.path, (state) => {
-				if (state.intent === "disconnected") {
+				// Only disconnect when parent is intentionally offline (user disabled
+				// connection in settings), not during transient reconnections.
+				// SharedFolder._shouldConnect comes from user settings and stays true
+				// during connection-error → disconnect → reconnect cycles.
+				// Without this check, transient parent disconnects kill all child
+				// Document WS connections permanently (provider.shouldConnect=false
+				// prevents auto-reconnect, deadlocking the download pipeline).
+				if (state.intent === "disconnected" && !this._parent.shouldConnect) {
 					this.disconnect();
 				}
 			}),
