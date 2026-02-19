@@ -125,6 +125,15 @@
 		</a>
 	</div>
 
+	<!-- Quick Links -->
+	<div class="evc-quick-links">
+		<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=bug-report.yml" target="_blank" rel="noopener noreferrer">Bug report</a>
+		<span class="evc-link-sep">|</span>
+		<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=feature-request.yml" target="_blank" rel="noopener noreferrer">Feature request</a>
+		<span class="evc-link-sep">|</span>
+		<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=web-publish.yml" target="_blank" rel="noopener noreferrer">Web publish issue</a>
+	</div>
+
 	<!-- Breadcrumb Navigation -->
 	{#if currentView !== "servers"}
 		<div class="evc-breadcrumb-bar">
@@ -255,6 +264,27 @@
 	.evc-github-icon {
 		width: 16px;
 		height: 16px;
+	}
+
+	/* Quick Links */
+	.evc-quick-links {
+		padding: 6px 20px 8px;
+		font-size: 0.8em;
+		color: var(--text-muted);
+	}
+
+	.evc-quick-links a {
+		color: var(--text-accent);
+		text-decoration: none;
+	}
+
+	.evc-quick-links a:hover {
+		text-decoration: underline;
+	}
+
+	.evc-link-sep {
+		margin: 0 6px;
+		opacity: 0.4;
 	}
 
 	/* Breadcrumbs */
