@@ -102,15 +102,24 @@
 <div class="evc-relay-settings">
 	<!-- Static Header -->
 	<div class="evc-settings-header">
-		<a href={EVC_URL} class="evc-header-brand" target="_blank" rel="noopener noreferrer">
-			<img src={evcLogo} alt="EVC Logo" class="evc-header-logo" />
-			<div class="evc-header-text">
-				<div class="evc-header-title">EVC Team Relay</div>
-				<div class="evc-header-desc">
-					Self-hosted relay for real-time collaboration
+		<div class="evc-header-left">
+			<a href={EVC_URL} class="evc-header-brand" target="_blank" rel="noopener noreferrer">
+				<img src={evcLogo} alt="EVC Logo" class="evc-header-logo" />
+				<div class="evc-header-text">
+					<div class="evc-header-title">EVC Team Relay</div>
+					<div class="evc-header-desc">
+						Self-hosted relay for real-time collaboration
+					</div>
 				</div>
+			</a>
+			<div class="evc-quick-links">
+				<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=bug-report.yml" target="_blank" rel="noopener noreferrer">Bug report</a>
+				<span class="evc-link-sep">|</span>
+				<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=feature-request.yml" target="_blank" rel="noopener noreferrer">Feature request</a>
+				<span class="evc-link-sep">|</span>
+				<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=web-publish.yml" target="_blank" rel="noopener noreferrer">Web publish issue</a>
 			</div>
-		</a>
+		</div>
 		<a
 			href={EVC_URL}
 			class="evc-github-badge"
@@ -123,15 +132,6 @@
 			</svg>
 			<span class="evc-github-text">GitHub</span>
 		</a>
-	</div>
-
-	<!-- Quick Links -->
-	<div class="evc-quick-links">
-		<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=bug-report.yml" target="_blank" rel="noopener noreferrer">Bug report</a>
-		<span class="evc-link-sep">|</span>
-		<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=feature-request.yml" target="_blank" rel="noopener noreferrer">Feature request</a>
-		<span class="evc-link-sep">|</span>
-		<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=web-publish.yml" target="_blank" rel="noopener noreferrer">Web publish issue</a>
 	</div>
 
 	<!-- Breadcrumb Navigation -->
@@ -199,11 +199,17 @@
 	/* Header */
 	.evc-settings-header {
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		justify-content: space-between;
 		padding: 16px 20px;
 		border-bottom: 1px solid var(--background-modifier-border);
 		margin-bottom: 0;
+	}
+
+	.evc-header-left {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
 	}
 
 	.evc-header-brand {
@@ -268,7 +274,7 @@
 
 	/* Quick Links */
 	.evc-quick-links {
-		padding: 6px 20px 8px;
+		padding-left: 56px;
 		font-size: 0.8em;
 		color: var(--text-muted);
 	}
