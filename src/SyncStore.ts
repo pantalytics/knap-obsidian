@@ -356,9 +356,12 @@ export class SyncStore extends Observable<SyncStore> {
 			return undefined;
 		}
 
+		// Legacy migration: if filemeta_v0 has an entry but "docs" map doesn't,
+		// auto-populate the legacy map instead of deleting the entry.
+		// Previously this deleted the entry, breaking externally-created files
+		// (e.g. via REST API) that only write to filemeta_v0.
 		if (isDocumentMeta(meta) && !legacy) {
-			this.deleteSet.add(vpath);
-			return undefined;
+			this.legacyIds.set(vpath, meta.id);
 		}
 		return meta;
 	}
