@@ -113,13 +113,22 @@ Publish your vault as a beautiful website. Better than Obsidian Publish — cust
 ## Part of the Entire VC Toolbox
 
 | Product | What it does | Link |
-|---|---|---|
-| **Local Sync** | vault ↔ local folders, solo | [repo](https://github.com/entire-vc/evc-local-sync-plugin) |
-| **Team Relay Server** | self-hosted collaboration infrastructure | [repo](https://github.com/entire-vc/evc-team-relay) |
-| **Team Relay Plugin** (you are here) | Obsidian plugin for Team Relay | this repo |
+|---------|-------------|------|
+| **Local Sync** | Vault ↔ AI dev tools sync | [repo](https://github.com/entire-vc/evc-local-sync-plugin) |
+| **Team Relay** | Self-hosted collaboration server | [repo](https://github.com/entire-vc/evc-team-relay) |
+| **Team Relay Plugin** ← you are here | Obsidian plugin for Team Relay | this repo |
+| **Spark MCP** | MCP server for AI workflow catalog | [repo](https://github.com/entire-vc/evc-spark-mcp) |
+| **OpenClaw Skill** | AI agent ↔ vault access | [repo](https://github.com/entire-vc/evc-team-relay-openclaw-skill) |
 
 ---
 
+
+## Community
+
+- 🌐 [entire.vc](https://entire.vc)
+- 💬 [Discussions](https://github.com/entire-vc/.github/discussions)
+- 📧 in@entire.vc
+
 ## License
 
-MIT — Copyright (c) 2025 Entire VC
+MIT — Copyright (c) 2026 Entire VC
