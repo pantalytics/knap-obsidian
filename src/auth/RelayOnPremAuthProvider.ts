@@ -53,7 +53,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 	private serverId: string;
 	private restorePromise?: Promise<void>;
 	private normalizedUrl: string;
-	private refreshInProgress?: Promise<AuthResponse>;
+	private refreshInProgress?: Promise<void>;
 	private _restored = false;
 
 	constructor(private config: RelayOnPremAuthConfig) {
@@ -204,16 +204,41 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 
 	/**
 	 * Ensure token is refreshed. Deduplicates concurrent refresh calls.
+	 * Retries up to 3 times with backoff for transient network failures.
 	 */
 	private async ensureTokenRefreshed(): Promise<void> {
 		if (!this.refreshInProgress) {
-			this.refreshInProgress = this.refreshToken()
+			this.refreshInProgress = this.refreshTokenWithRetry()
 				.finally(() => { this.refreshInProgress = undefined; });
 		}
 		try {
 			await this.refreshInProgress;
 		} catch {
 			// Refresh failed but don't propagate — caller handles stale token
+		}
+	}
+
+	private async refreshTokenWithRetry(): Promise<void> {
+		const delays = [0, 1000, 3000]; // immediate, 1s, 3s
+		for (let attempt = 0; attempt < delays.length; attempt++) {
+			if (attempt > 0) {
+				this.log(`Token refresh retry ${attempt}/${delays.length - 1} after ${delays[attempt]}ms`);
+				await new Promise(r => setTimeout(r, delays[attempt]));
+			}
+			try {
+				await this.refreshToken();
+				return;
+			} catch (error) {
+				const statusCode = (error as { statusCode?: number })?.statusCode;
+				// Don't retry auth errors (401/403) — token is truly invalid
+				if (statusCode === 401 || statusCode === 403) {
+					throw error;
+				}
+				if (attempt === delays.length - 1) {
+					throw error;
+				}
+				this.log(`Token refresh attempt ${attempt + 1} failed:`, error);
+			}
 		}
 	}
 
@@ -381,7 +406,9 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 				);
 
 				if (!refreshResponse.ok) {
-					throw new Error(`Token refresh failed: ${refreshResponse.status}`);
+					const err = new Error(`Token refresh failed: ${refreshResponse.status}`) as Error & { statusCode?: number };
+					err.statusCode = refreshResponse.status;
+					throw err;
 				}
 
 				const refreshData: RefreshTokenResponse = await refreshResponse.json();
@@ -460,8 +487,8 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 			this.log("Token refresh error:", error);
 			// Only clear auth if the refresh token itself is invalid (401/403).
 			// For network errors or server issues, keep auth for retry.
-			const isAuthError = error instanceof Error &&
-				(error.message.includes("401") || error.message.includes("403"));
+			const statusCode = (error as { statusCode?: number })?.statusCode;
+			const isAuthError = statusCode === 401 || statusCode === 403;
 			if (isAuthError) {
 				this.log("Refresh token rejected by server, clearing auth");
 				this.user = undefined;

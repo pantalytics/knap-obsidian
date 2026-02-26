@@ -51,7 +51,10 @@
 			if (defaultServer && plugin.loginManager.getAuthProvider()) {
 				plugin.shareClient = new RelayOnPremShareClient(
 					defaultServer.controlPlaneUrl,
-					() => plugin.loginManager.getAuthProvider()?.getToken(),
+					async () => {
+						const provider = plugin.loginManager.getAuthProvider();
+						return provider ? await provider.getValidToken() : undefined;
+					},
 				);
 			}
 		}

@@ -224,6 +224,43 @@ export class LimitExceededApiError extends Error {
 }
 
 /**
+ * Visibility not allowed error response (403)
+ */
+export interface VisibilityNotAllowedError {
+	error: "visibility_not_allowed";
+	detail: string;
+	visibility: string;
+	allowed: string[];
+	plan: string;
+}
+
+/**
+ * Error thrown when a visibility tier is not in the user's plan (403 from server)
+ */
+export class VisibilityNotAllowedApiError extends Error {
+	public readonly visibilityInfo: VisibilityNotAllowedError;
+
+	constructor(visibilityInfo: VisibilityNotAllowedError) {
+		super(visibilityInfo.detail || `Visibility '${visibilityInfo.visibility}' requires a higher plan`);
+		this.name = "VisibilityNotAllowedApiError";
+		this.visibilityInfo = visibilityInfo;
+	}
+}
+
+/**
+ * Error thrown when a billing API call fails with an HTTP error
+ */
+export class BillingApiError extends Error {
+	public readonly status: number;
+
+	constructor(message: string, status: number) {
+		super(message);
+		this.name = "BillingApiError";
+		this.status = status;
+	}
+}
+
+/**
  * Share list response from API (returns array directly)
  */
 export type ShareListResponse = RelayOnPremShare[];
@@ -241,7 +278,7 @@ export class RelayOnPremShareClient {
 
 	constructor(
 		controlPlaneUrl: string,
-		private getAuthToken: () => string | undefined,
+		private getAuthToken: () => string | undefined | Promise<string | undefined>,
 	) {
 		// Normalize URL: remove trailing slashes to prevent double-slash issues
 		this.normalizedUrl = controlPlaneUrl.replace(/\/+$/, "");
@@ -249,10 +286,10 @@ export class RelayOnPremShareClient {
 	}
 
 	/**
-	 * Get authorization headers
+	 * Get authorization headers (awaits token refresh if needed)
 	 */
-	private getHeaders(): HeadersInit {
-		const token = this.getAuthToken();
+	private async getHeaders(): Promise<HeadersInit> {
+		const token = await Promise.resolve(this.getAuthToken());
 		if (!token) {
 			throw new Error("Not authenticated");
 		}
@@ -272,7 +309,7 @@ export class RelayOnPremShareClient {
 		try {
 			const response = await customFetch(`${this.normalizedUrl}/shares`, {
 				method: "GET",
-				headers: this.getHeaders(),
+				headers: await this.getHeaders(),
 			});
 
 			if (!response.ok) {
@@ -300,7 +337,7 @@ export class RelayOnPremShareClient {
 				`${this.normalizedUrl}/shares/${shareId}`,
 				{
 					method: "GET",
-					headers: this.getHeaders(),
+					headers: await this.getHeaders(),
 				},
 			);
 
@@ -329,7 +366,7 @@ export class RelayOnPremShareClient {
 				`${this.normalizedUrl}/shares/${shareId}/members`,
 				{
 					method: "GET",
-					headers: this.getHeaders(),
+					headers: await this.getHeaders(),
 				},
 			);
 
@@ -356,7 +393,7 @@ export class RelayOnPremShareClient {
 		try {
 			const response = await customFetch(`${this.normalizedUrl}/shares`, {
 				method: "POST",
-				headers: this.getHeaders(),
+				headers: await this.getHeaders(),
 				body: JSON.stringify(request),
 			});
 
@@ -394,13 +431,19 @@ export class RelayOnPremShareClient {
 				`${this.normalizedUrl}/shares/${shareId}`,
 				{
 					method: "PATCH",
-					headers: this.getHeaders(),
+					headers: await this.getHeaders(),
 					body: JSON.stringify(request),
 				},
 			);
 
 			if (!response.ok) {
 				const errorText = await response.text();
+				if (response.status === 403) {
+					const limitError = RelayOnPremShareClient.parseLimitExceededError(errorText);
+					if (limitError) throw new LimitExceededApiError(limitError);
+					const visError = RelayOnPremShareClient.parseVisibilityNotAllowedError(errorText);
+					if (visError) throw new VisibilityNotAllowedApiError(visError);
+				}
 				throw new Error(`Failed to update share: ${response.status} ${errorText}`);
 			}
 
@@ -424,7 +467,7 @@ export class RelayOnPremShareClient {
 				`${this.normalizedUrl}/shares/${shareId}`,
 				{
 					method: "DELETE",
-					headers: this.getHeaders(),
+					headers: await this.getHeaders(),
 				},
 			);
 
@@ -451,7 +494,7 @@ export class RelayOnPremShareClient {
 				`${this.normalizedUrl}/shares/${shareId}/members`,
 				{
 					method: "POST",
-					headers: this.getHeaders(),
+					headers: await this.getHeaders(),
 					body: JSON.stringify(request),
 				},
 			);
@@ -487,7 +530,7 @@ export class RelayOnPremShareClient {
 				`${this.normalizedUrl}/shares/${shareId}/members/${userId}`,
 				{
 					method: "DELETE",
-					headers: this.getHeaders(),
+					headers: await this.getHeaders(),
 				},
 			);
 
@@ -518,7 +561,7 @@ export class RelayOnPremShareClient {
 				`${this.normalizedUrl}/shares/${shareId}/members/${userId}`,
 				{
 					method: "PATCH",
-					headers: this.getHeaders(),
+					headers: await this.getHeaders(),
 					body: JSON.stringify({ role }),
 				},
 			);
@@ -550,7 +593,7 @@ export class RelayOnPremShareClient {
 				`${this.normalizedUrl}/users/search?email=${encodeURIComponent(email)}`,
 				{
 					method: "GET",
-					headers: this.getHeaders(),
+					headers: await this.getHeaders(),
 				},
 			);
 
@@ -582,7 +625,7 @@ export class RelayOnPremShareClient {
 				`${this.normalizedUrl}/shares/${shareId}/invites`,
 				{
 					method: "POST",
-					headers: this.getHeaders(),
+					headers: await this.getHeaders(),
 					body: JSON.stringify(request),
 				},
 			);
@@ -612,7 +655,7 @@ export class RelayOnPremShareClient {
 				`${this.normalizedUrl}/shares/${shareId}/invites`,
 				{
 					method: "GET",
-					headers: this.getHeaders(),
+					headers: await this.getHeaders(),
 				},
 			);
 
@@ -641,7 +684,7 @@ export class RelayOnPremShareClient {
 				`${this.normalizedUrl}/shares/${shareId}/invites/${inviteId}`,
 				{
 					method: "DELETE",
-					headers: this.getHeaders(),
+					headers: await this.getHeaders(),
 				},
 			);
 
@@ -731,7 +774,7 @@ export class RelayOnPremShareClient {
 				`${this.normalizedUrl}/v1/web/shares/${slug}/files?path=${encodeURIComponent(path)}`,
 				{
 					method: "POST",
-					headers: this.getHeaders(),
+					headers: await this.getHeaders(),
 					body: JSON.stringify({ content }),
 				},
 			);
@@ -766,7 +809,7 @@ export class RelayOnPremShareClient {
 		try {
 			const response = await customFetch(`${this.normalizedUrl}/v1/billing/plan`, {
 				method: "GET",
-				headers: this.getHeaders(),
+				headers: await this.getHeaders(),
 			});
 
 			if (!response.ok) {
@@ -818,13 +861,45 @@ export class RelayOnPremShareClient {
 		log(`Creating checkout for product ${productId}, price ${priceId}...`);
 		const response = await customFetch(`${this.normalizedUrl}/v1/billing/checkout`, {
 			method: "POST",
-			headers: this.getHeaders(),
+			headers: await this.getHeaders(),
 			body: JSON.stringify({ product_id: productId, price_id: priceId }),
 		});
 
 		if (!response.ok) {
 			const errorText = await response.text();
-			throw new Error(`Failed to create checkout: ${response.status} ${errorText}`);
+			let message = `Failed to create checkout: ${response.status}`;
+			try {
+				const body = JSON.parse(errorText);
+				message = body?.error?.message || body?.detail || message;
+			} catch { /* use default message */ }
+			throw new BillingApiError(message, response.status);
+		}
+
+		return response.json();
+	}
+
+	/**
+	 * Change plan on an existing subscription (e.g. upgrade/downgrade)
+	 */
+	async changePlan(productId: string, priceId?: string): Promise<{ status?: string; message?: string; product_id?: string }> {
+		log(`Changing plan to product ${productId}...`);
+		const body: Record<string, string> = { product_id: productId };
+		if (priceId) body.price_id = priceId;
+
+		const response = await customFetch(`${this.normalizedUrl}/v1/billing/change-plan`, {
+			method: "POST",
+			headers: await this.getHeaders(),
+			body: JSON.stringify(body),
+		});
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			let message = `Failed to change plan: ${response.status}`;
+			try {
+				const parsed = JSON.parse(errorText);
+				message = parsed?.error?.message || parsed?.detail || message;
+			} catch { /* use default message */ }
+			throw new BillingApiError(message, response.status);
 		}
 
 		return response.json();
@@ -837,7 +912,7 @@ export class RelayOnPremShareClient {
 		log("Cancelling subscription...");
 		const response = await customFetch(`${this.normalizedUrl}/v1/billing/cancel`, {
 			method: "POST",
-			headers: this.getHeaders(),
+			headers: await this.getHeaders(),
 		});
 
 		if (!response.ok) {
@@ -859,7 +934,7 @@ export class RelayOnPremShareClient {
 			`${this.normalizedUrl}/v1/billing/portal`,
 			{
 				method: "POST",
-				headers: this.getHeaders(),
+				headers: await this.getHeaders(),
 				body: JSON.stringify({
 					return_url: returnUrl || "",
 				}),
@@ -868,9 +943,12 @@ export class RelayOnPremShareClient {
 
 		if (!response.ok) {
 			const errorText = await response.text();
-			throw new Error(
-				`Failed to create portal session: ${response.status} ${errorText}`,
-			);
+			let message = `Failed to create portal session: ${response.status}`;
+			try {
+				const parsed = JSON.parse(errorText);
+				message = parsed?.error?.message || parsed?.detail || message;
+			} catch { /* use default message */ }
+			throw new BillingApiError(message, response.status);
 		}
 
 		return response.json();
@@ -887,6 +965,21 @@ export class RelayOnPremShareClient {
 			}
 		} catch {
 			// Not a JSON response or not a limit_exceeded error
+		}
+		return null;
+	}
+
+	/**
+	 * Parse a visibility_not_allowed error response from a 403 status
+	 */
+	static parseVisibilityNotAllowedError(errorText: string): VisibilityNotAllowedError | null {
+		try {
+			const data = JSON.parse(errorText);
+			if (data.error === "visibility_not_allowed") {
+				return data as VisibilityNotAllowedError;
+			}
+		} catch {
+			// Not a JSON response or not a visibility error
 		}
 		return null;
 	}

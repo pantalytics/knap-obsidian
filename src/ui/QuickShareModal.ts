@@ -134,7 +134,10 @@ export class QuickShareModal extends Modal {
 			if (defaultServer && this.plugin.loginManager.getAuthProvider()) {
 				this.plugin.shareClient = new RelayOnPremShareClient(
 					defaultServer.controlPlaneUrl,
-					() => this.plugin.loginManager.getAuthProvider()?.getToken(),
+					async () => {
+						const provider = this.plugin.loginManager.getAuthProvider();
+						return provider ? await provider.getValidToken() : undefined;
+					},
 				);
 			}
 		}

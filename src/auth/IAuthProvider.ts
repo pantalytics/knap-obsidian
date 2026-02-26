@@ -36,9 +36,14 @@ export interface IAuthProvider {
 	getCurrentUser(): AuthUser | undefined;
 
 	/**
-	 * Get current authentication token
+	 * Get current authentication token (may return expired token)
 	 */
 	getToken(): string | undefined;
+
+	/**
+	 * Get a valid token, refreshing if needed. Prefer this over getToken().
+	 */
+	getValidToken(): Promise<string | undefined>;
 
 	/**
 	 * Login with email and password

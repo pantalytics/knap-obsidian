@@ -16,6 +16,7 @@ import { Canvas } from "./Canvas";
 import { areObjectsEqual } from "./areObjectsEqual";
 import type { CanvasData } from "./CanvasView";
 import { SyncFile, isSyncFile } from "./SyncFile";
+import { diffMatchPatch } from "./y-diffMatchPatch";
 
 export interface QueueItem {
 	guid: string;
@@ -803,20 +804,29 @@ export class BackgroundSync extends HasLogging {
 			}
 		}
 
-		// For relay-onprem: after syncing with the relay, handle content reconciliation.
-		// If the relay provided content, it takes priority (server is authoritative).
-		// If the relay had no content for this doc, insert local file content.
-		if (isRelayOnPrem && !contentsMatch && currentFileContents) {
-			const syncedText = isDocument(doc) ? doc.text : "";
+		// For relay-onprem: after syncing with the relay, reconcile content.
+		// The vault file is the source of truth for edits that weren't committed
+		// to Y.Doc (e.g., file was modified without an active editor binding).
+		if (isRelayOnPrem && !contentsMatch && currentFileContents && isDocument(doc)) {
+			const syncedText = doc.text;
 			if (!syncedText) {
 				// Relay had no content — insert local file content into Y.Text
-				if (isDocument(doc)) {
-					doc.ydoc.getText("contents").insert(0, currentFileContents);
-				}
-				// Allow the update to propagate to the relay before disconnecting
-				await new Promise((resolve) => setTimeout(resolve, 500));
+				this.log(
+					`[syncDocumentWebsocket] Uploading new content for ${doc.path} (${currentFileContents.length} chars)`,
+				);
+				doc.ydoc.getText("contents").insert(0, currentFileContents);
+			} else if (syncedText !== currentFileContents) {
+				// Relay has stale/different content — reconcile with vault file.
+				// Use diffMatchPatch to produce minimal Y.Text operations instead
+				// of delete-all + insert-all, preserving CRDT history better.
+				this.log(
+					`[syncDocumentWebsocket] Reconciling stale content for ${doc.path} ` +
+						`(relay=${syncedText.length}, vault=${currentFileContents.length})`,
+				);
+				diffMatchPatch(doc.ydoc, currentFileContents);
 			}
-			// If syncedText is non-empty, relay provided content — use it as-is
+			// Allow the update to propagate to the relay before disconnecting
+			await new Promise((resolve) => setTimeout(resolve, 1000));
 		}
 
 		// promise can take some time

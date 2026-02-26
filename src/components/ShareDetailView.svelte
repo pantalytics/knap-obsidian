@@ -5,7 +5,7 @@
 	import type Live from "../main";
 	import type { RelayOnPremServer } from "../RelayOnPremConfig";
 	import type { ShareMember, Invite, FolderItem } from "../RelayOnPremShareClient";
-	import { LimitExceededApiError } from "../RelayOnPremShareClient";
+	import { LimitExceededApiError, VisibilityNotAllowedApiError } from "../RelayOnPremShareClient";
 	import type { ShareWithServer } from "../RelayOnPremShareClientManager";
 	import { FolderSuggestModal } from "../ui/FolderSuggestModal";
 	import { S3RN } from "../S3RN";
@@ -302,8 +302,17 @@
 				}
 				currentShare = { ...currentShare, visibility: newVisibility };
 			} catch (e) {
-				console.error("Failed to change visibility:", e);
-				new Notice("Failed to change visibility");
+				if (e instanceof VisibilityNotAllowedApiError) {
+					const info = e.visibilityInfo;
+					new Notice(
+						`'${info.visibility}' visibility requires a higher plan. ` +
+						`Your plan allows: ${info.allowed.join(", ")}. Upgrade to unlock.`,
+						8000,
+					);
+				} else {
+					console.error("Failed to change visibility:", e);
+					new Notice("Failed to change visibility");
+				}
 				return;
 			}
 		}
@@ -339,6 +348,13 @@
 				new Notice(
 					`Web publish limit reached (${info.current}/${info.max} on ${info.plan} plan). ` +
 					`Upgrade your plan to publish more.`,
+					8000,
+				);
+			} else if (e instanceof VisibilityNotAllowedApiError) {
+				const info = e.visibilityInfo;
+				new Notice(
+					`'${info.visibility}' visibility requires a higher plan. ` +
+					`Your plan allows: ${info.allowed.join(", ")}. Upgrade to unlock.`,
 					8000,
 				);
 			} else {

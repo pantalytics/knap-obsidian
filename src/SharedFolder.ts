@@ -772,6 +772,12 @@ export class SharedFolder extends HasProvider {
 		remoteIds: Set<string>,
 		diffLog: string[],
 	): OperationType {
+		// Skip files that are being locally deleted — prevents race condition
+		// where syncFileTree runs between disk deletion and syncStore removal
+		if (this.isPendingDelete(path)) {
+			return { op: "noop", path, promise: Promise.resolve() };
+		}
+
 		const file = this.files.get(guid);
 		const meta = this.syncStore.getMeta(path);
 		if (!meta) {
@@ -1059,6 +1065,10 @@ export class SharedFolder extends HasProvider {
 	}
 
 	flush(doc: IFile, content: string): Promise<void> {
+		if (this.isPendingDelete(doc.path)) {
+			this.log("skipping flush for pending delete", doc.path);
+			return Promise.resolve();
+		}
 		const vaultPath = join(this.path, doc.path);
 		this.log("writing to ", normalizePath(vaultPath));
 		return this.vault.adapter.write(normalizePath(vaultPath), content);
@@ -1727,15 +1737,27 @@ export class SharedFolder extends HasProvider {
 	deleteFile(vpath: string) {
 		const guid = this.syncStore?.get(vpath);
 		if (guid) {
+			const doc = this.files.get(guid);
 			this.ydoc.transact(() => {
 				this.syncStore.delete(vpath);
-				const doc = this.files.get(guid);
 				if (doc) {
 					doc.cleanup();
 					this.fset.delete(doc);
 				}
 				this.files.delete(guid);
 			}, this);
+			// Fully tear down the Document/Canvas after removing from syncStore:
+			// cancel pending debounced saves, disconnect WebSocket, destroy Y.Doc.
+			// Without this, a stale requestSave debounce can re-create the file
+			// on disk after clearPendingDelete runs.
+			if (doc) {
+				if (isDocument(doc)) {
+					doc.requestSave.cancel();
+					doc._tfile = null;
+				}
+				doc.disconnect();
+				doc.destroy();
+			}
 		}
 	}
 

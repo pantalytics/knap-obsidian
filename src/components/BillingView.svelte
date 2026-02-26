@@ -3,6 +3,7 @@
 	import { Notice } from "obsidian";
 	import type Live from "../main";
 	import type { RelayOnPremServer } from "../RelayOnPremConfig";
+	import { BillingApiError } from "../RelayOnPremShareClient";
 	import type { BillingPlanResponse, AvailablePlan } from "../RelayOnPremShareClient";
 
 	export let plugin: Live;
@@ -84,11 +85,15 @@
 
 	function isCurrentPlan(plan: AvailablePlan): boolean {
 		if (!billingData) return false;
-		const bp = billingData.plan?.toLowerCase();
-		const pn = plan.name?.toLowerCase();
-		return bp === pn || billingData.plan === plan.name
-			|| (plan.id === "prod_relay_free" && (bp === "free" || bp === "relay free"))
-			|| (plan.id !== "prod_relay_free" && (bp === "team relay pro" || bp === "relay pro"));
+		const bp = billingData.plan?.toLowerCase() || "";
+		const pn = plan.name?.toLowerCase() || "";
+		// Exact name match
+		if (bp === pn) return true;
+		// Free plan: match if user's plan contains "free"
+		const isFreeCard = plan.prices?.every(p => p.amount === 0) ?? true;
+		if (isFreeCard) return bp.includes("free") && !hasSub;
+		// Paid plan: match if user has active subscription and is NOT on free plan
+		return hasSub && !bp.includes("free");
 	}
 
 	function getPlanPrice(plan: AvailablePlan): string {
@@ -112,18 +117,29 @@
 		max_storage_bytes: "Storage",
 	};
 
+	// Non-numeric entitlements to skip in the plan feature list
+	const HIDDEN_ENTITLEMENTS = new Set(["allowed_web_visibility"]);
+
 	async function handleUpgrade(plan: AvailablePlan, priceId: string) {
 		checkingOut = true;
 		try {
 			const client = getClient();
 			if (!client) throw new Error("Not connected");
-			const result = await client.createCheckout(plan.id, priceId);
-			if (result.checkout_url) {
-				window.open(result.checkout_url);
-				new Notice("Opening checkout in browser...");
-			} else {
-				new Notice("Subscription activated!");
+
+			// Smart routing: existing active subscription → change plan, otherwise → new checkout
+			if (hasSub && !isCancelled && billingData?.subscription?.id) {
+				const result = await client.changePlan(plan.id, priceId);
+				new Notice(result.message || "Plan changed successfully!");
 				await loadBillingData();
+			} else {
+				const result = await client.createCheckout(plan.id, priceId);
+				if (result.checkout_url) {
+					window.open(result.checkout_url);
+					new Notice("Opening checkout in browser...");
+				} else {
+					new Notice("Subscription activated!");
+					await loadBillingData();
+				}
 			}
 		} catch (e) {
 			new Notice(`Upgrade failed: ${e instanceof Error ? e.message : "Unknown error"}`);
@@ -207,13 +223,15 @@
 						<!-- Entitlements -->
 						<div class="evc-plan-features">
 							{#each Object.entries(plan.entitlements || {}) as [key, value]}
-								{@const limit = getEntitlementLimit(value)}
-								<div class="evc-plan-feature">
-									<span class="evc-feature-value">
-										{key === "max_storage_bytes" ? formatBytes(limit) : formatLimit(limit)}
-									</span>
-									<span class="evc-feature-label">{ENTITLEMENT_LABELS[key] || key}</span>
-								</div>
+								{#if !HIDDEN_ENTITLEMENTS.has(key)}
+									{@const limit = getEntitlementLimit(value)}
+									<div class="evc-plan-feature">
+										<span class="evc-feature-value">
+											{key === "max_storage_bytes" ? formatBytes(limit) : formatLimit(limit)}
+										</span>
+										<span class="evc-feature-label">{ENTITLEMENT_LABELS[key] || key}</span>
+									</div>
+								{/if}
 							{/each}
 						</div>
 

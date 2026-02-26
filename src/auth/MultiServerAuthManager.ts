@@ -214,6 +214,14 @@ export class MultiServerAuthManager {
 	}
 
 	/**
+	 * Get a valid token for a specific server, refreshing if needed
+	 */
+	async getValidTokenForServer(serverId: string): Promise<string | undefined> {
+		const provider = this.providers.get(serverId);
+		return provider?.getValidToken();
+	}
+
+	/**
 	 * Refresh token for a specific server
 	 */
 	async refreshTokenForServer(serverId: string): Promise<void> {

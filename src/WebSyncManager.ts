@@ -4,8 +4,9 @@
  * Handles automatic synchronization of documents to web when shares have auto-sync enabled.
  */
 
-import { TFile, Vault, debounce } from "obsidian";
+import { TFile, TFolder, Vault, debounce } from "obsidian";
 import { RelayOnPremShareClientManager } from "./RelayOnPremShareClientManager";
+import type { FolderItem } from "./RelayOnPremShareClient";
 import { curryLog } from "./debug";
 
 const log = curryLog("[WebSyncManager]");
@@ -244,6 +245,160 @@ export class WebSyncManager {
 				error: error instanceof Error ? error.message : String(error),
 			});
 		}
+	}
+
+	/**
+	 * Handle file creation — update web_folder_items for affected folder shares
+	 */
+	async onFileCreated(file: TFile): Promise<void> {
+		for (const [folderPath, shareInfo] of this.autoSyncShares.entries()) {
+			if (shareInfo.kind !== "folder") continue;
+			if (!file.path.startsWith(folderPath + "/")) continue;
+
+			log("File created in auto-sync folder, updating web_folder_items", {
+				filePath: file.path,
+				folderPath,
+				shareId: shareInfo.shareId,
+			});
+
+			try {
+				const items = this.getFolderItems(folderPath);
+				await this.clientManager.updateShare(
+					shareInfo.serverId,
+					shareInfo.shareId,
+					{ web_folder_items: items }
+				);
+				log("Updated web_folder_items after creation", {
+					folderPath,
+					itemCount: items.length,
+				});
+			} catch (error) {
+				log("Failed to update web_folder_items after creation", {
+					filePath: file.path,
+					error: error instanceof Error ? error.message : String(error),
+				});
+			}
+			return;
+		}
+	}
+
+	/**
+	 * Handle file rename — update web_folder_items for affected folder shares
+	 */
+	async onFileRenamed(newPath: string, oldPath: string): Promise<void> {
+		for (const [folderPath, shareInfo] of this.autoSyncShares.entries()) {
+			if (shareInfo.kind !== "folder") continue;
+			// File moved into, out of, or within this folder
+			if (
+				!newPath.startsWith(folderPath + "/") &&
+				!oldPath.startsWith(folderPath + "/")
+			) continue;
+
+			log("File renamed in auto-sync folder, updating web_folder_items", {
+				oldPath,
+				newPath,
+				folderPath,
+				shareId: shareInfo.shareId,
+			});
+
+			try {
+				const items = this.getFolderItems(folderPath);
+				await this.clientManager.updateShare(
+					shareInfo.serverId,
+					shareInfo.shareId,
+					{ web_folder_items: items }
+				);
+				log("Updated web_folder_items after rename", {
+					folderPath,
+					itemCount: items.length,
+				});
+			} catch (error) {
+				log("Failed to update web_folder_items after rename", {
+					oldPath,
+					newPath,
+					error: error instanceof Error ? error.message : String(error),
+				});
+			}
+			// Don't return early — file could affect multiple folder shares (moved between)
+		}
+	}
+
+	/**
+	 * Handle file deletion — update web_folder_items for affected folder shares
+	 */
+	async onFileDeleted(filePath: string): Promise<void> {
+		for (const [folderPath, shareInfo] of this.autoSyncShares.entries()) {
+			if (shareInfo.kind !== "folder") continue;
+			if (!filePath.startsWith(folderPath + "/")) continue;
+
+			log("File deleted from auto-sync folder, updating web_folder_items", {
+				filePath,
+				folderPath,
+				shareId: shareInfo.shareId,
+			});
+
+			try {
+				const items = this.getFolderItems(folderPath);
+				await this.clientManager.updateShare(
+					shareInfo.serverId,
+					shareInfo.shareId,
+					{ web_folder_items: items }
+				);
+				log("Updated web_folder_items after deletion", {
+					folderPath,
+					itemCount: items.length,
+				});
+			} catch (error) {
+				log("Failed to update web_folder_items after deletion", {
+					filePath,
+					error: error instanceof Error ? error.message : String(error),
+				});
+			}
+			return;
+		}
+	}
+
+	/**
+	 * Scan folder for current items (md/canvas files and subfolders)
+	 */
+	private getFolderItems(folderPath: string): FolderItem[] {
+		const folder = this.vault.getAbstractFileByPath(folderPath);
+		if (!folder || !(folder instanceof TFolder)) return [];
+
+		const items: FolderItem[] = [];
+		const process = (f: TFolder) => {
+			for (const child of f.children) {
+				const rel = child.path.substring(folderPath.length + 1);
+				if (child instanceof TFile) {
+					if (child.extension === "canvas") {
+						items.push({ path: rel, name: child.basename, type: "canvas" });
+					} else if (child.extension === "md") {
+						items.push({ path: rel, name: child.basename, type: "doc" });
+					}
+				} else if (child instanceof TFolder) {
+					items.push({ path: rel, name: child.name, type: "folder" });
+					process(child);
+				}
+			}
+		};
+		process(folder);
+		return items;
+	}
+
+	/**
+	 * Sync folder structure (web_folder_items) to web for a specific share.
+	 * Called from context menu "Sync" to ensure deleted files are reflected on web-publish.
+	 */
+	async syncFolderStructureToWeb(
+		folderPath: string,
+		serverId: string,
+		shareId: string,
+	): Promise<void> {
+		const items = this.getFolderItems(folderPath);
+		await this.clientManager.updateShare(serverId, shareId, {
+			web_folder_items: items,
+		});
+		log("Synced folder structure to web", { folderPath, itemCount: items.length });
 	}
 
 	/**

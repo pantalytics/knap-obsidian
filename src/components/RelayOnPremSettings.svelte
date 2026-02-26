@@ -113,11 +113,18 @@
 				</div>
 			</a>
 			<div class="evc-quick-links">
-				<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=bug-report.yml" target="_blank" rel="noopener noreferrer">Bug report</a>
-				<span class="evc-link-sep">|</span>
-				<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=feature-request.yml" target="_blank" rel="noopener noreferrer">Feature request</a>
-				<span class="evc-link-sep">|</span>
-				<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=web-publish.yml" target="_blank" rel="noopener noreferrer">Web publish issue</a>
+				<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=bug-report.yml" class="evc-pill-btn" target="_blank" rel="noopener noreferrer">
+					<svg class="evc-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+					Bug report
+				</a>
+				<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=feature-request.yml" class="evc-pill-btn" target="_blank" rel="noopener noreferrer">
+					<svg class="evc-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
+					Feature request
+				</a>
+				<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=web-publish.yml" class="evc-pill-btn" target="_blank" rel="noopener noreferrer">
+					<svg class="evc-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+					Web publish issue
+				</a>
 			</div>
 		</div>
 		<a
@@ -209,7 +216,7 @@
 	.evc-header-left {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: 10px;
 	}
 
 	.evc-header-brand {
@@ -253,18 +260,18 @@
 		align-items: center;
 		gap: 6px;
 		padding: 6px 12px;
-		background: var(--background-modifier-border);
-		border-radius: 6px;
+		border: 1px solid var(--background-modifier-border);
+		border-radius: 16px;
 		text-decoration: none;
-		color: var(--text-muted);
+		color: var(--text-normal);
 		font-size: 0.85em;
 		font-weight: 500;
 		transition: all 0.15s;
 	}
 
 	.evc-github-badge:hover {
+		border-color: var(--text-muted);
 		background: var(--background-modifier-hover);
-		color: var(--text-normal);
 	}
 
 	.evc-github-icon {
@@ -272,25 +279,37 @@
 		height: 16px;
 	}
 
-	/* Quick Links */
+	/* Quick Links (pill buttons) */
 	.evc-quick-links {
+		display: flex;
+		gap: 8px;
 		padding-left: 56px;
+		flex-wrap: wrap;
+	}
+
+	.evc-pill-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 4px 12px;
+		border: 1px solid var(--background-modifier-border);
+		border-radius: 16px;
 		font-size: 0.8em;
-		color: var(--text-muted);
-	}
-
-	.evc-quick-links a {
-		color: var(--text-accent);
+		color: var(--text-normal);
 		text-decoration: none;
+		transition: all 0.15s;
+		white-space: nowrap;
 	}
 
-	.evc-quick-links a:hover {
-		text-decoration: underline;
+	.evc-pill-btn:hover {
+		border-color: var(--text-muted);
+		background: var(--background-modifier-hover);
 	}
 
-	.evc-link-sep {
-		margin: 0 6px;
-		opacity: 0.4;
+	.evc-pill-icon {
+		width: 14px;
+		height: 14px;
+		flex-shrink: 0;
 	}
 
 	/* Breadcrumbs */

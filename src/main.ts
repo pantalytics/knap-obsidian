@@ -75,7 +75,7 @@ import {
 } from "./RelayOnPremConfig";
 import { RelayOnPremTokenProvider } from "./auth/RelayOnPremTokenProvider";
 import type { IAuthProvider } from "./auth/IAuthProvider";
-import { RelayOnPremShareClient } from "./RelayOnPremShareClient";
+import { RelayOnPremShareClient, type FolderItem } from "./RelayOnPremShareClient";
 import { RelayOnPremShareClientManager } from "./RelayOnPremShareClientManager";
 import { QuickShareModal } from "./ui/QuickShareModal";
 
@@ -582,6 +582,10 @@ export default class Live extends Plugin {
 				isLoggedIn: () => this.loginManager.getAuthProvider()?.isLoggedIn() ?? false,
 				getCurrentUser: () => this.loginManager.getAuthProvider()?.getCurrentUser(),
 				getToken: () => this.loginManager.getAuthProvider()?.getToken(),
+				getValidToken: async () => {
+					const provider = this.loginManager.getAuthProvider();
+					return provider ? await provider.getValidToken() : undefined;
+				},
 				loginWithPassword: async () => { throw new Error("Use loginManager directly"); },
 				loginWithOAuth2: async () => { throw new Error("Use loginManager directly"); },
 				refreshToken: async () => {
@@ -601,7 +605,10 @@ export default class Live extends Plugin {
 			// Initialize share client for relay-onprem mode (backward compatibility)
 			this.shareClient = new RelayOnPremShareClient(
 				defaultServer.controlPlaneUrl,
-				() => this.loginManager.getAuthProvider()?.getToken(),
+				async () => {
+					const provider = this.loginManager.getAuthProvider();
+					return provider ? await provider.getValidToken() : undefined;
+				},
 			);
 		}
 
@@ -854,8 +861,24 @@ export default class Live extends Plugin {
 								item
 									.setTitle("EVC Relay: Sync")
 									.setIcon("folder-sync")
-									.onClick(() => {
+									.onClick(async () => {
 										folder.netSync();
+										// Also update web_folder_items if share is web-published
+										if (this.webSyncManager && this.shareClientManager && folder.guid) {
+											try {
+												const serverId = folder.settings?.onpremServerId;
+												if (serverId) {
+													const share = await this.shareClientManager.getShare(serverId, folder.guid);
+													if (share?.web_published) {
+														await this.webSyncManager.syncFolderStructureToWeb(
+															folder.path, serverId, folder.guid
+														);
+													}
+												}
+											} catch (e) {
+												// Web sync is best-effort, don't block CRDT sync
+											}
+										}
 									});
 							});
 						}
@@ -1237,22 +1260,30 @@ export default class Live extends Plugin {
 							});
 							webSynced++;
 						}
-					} else if (share.kind === "folder" && this.webSyncManager) {
-						// Trigger folder web-publish sync for all files
-						const folder = this.vault.getAbstractFileByPath(share.path);
-						if (folder instanceof TFolder) {
-							const files = folder.children.filter(f => f instanceof TFile) as TFile[];
-							for (const file of files) {
-								if (file.extension === "md" || file.extension === "canvas") {
-									const content = await this.vault.read(file);
-									const relativePath = file.path.substring(share.path.length);
-									const cleanPath = relativePath.startsWith("/") ? relativePath.slice(1) : relativePath;
-									if (share.web_slug) {
-										await this.shareClientManager.syncFolderFileContent(
-											share.serverId, share.web_slug, cleanPath, content
-										);
+					} else if (share.kind === "folder") {
+						const folderAbs = this.vault.getAbstractFileByPath(share.path);
+						if (folderAbs instanceof TFolder) {
+							// 1. Build recursive folder items and PATCH structure
+							const items = this.getFolderItemsRecursive(folderAbs);
+							await this.shareClientManager.updateShare(share.serverId, share.id, {
+								web_folder_items: items,
+							});
+							// 2. POST content for each doc/canvas
+							if (share.web_slug) {
+								for (const item of items) {
+									if (item.type === "doc" || item.type === "canvas") {
+										try {
+											const filePath = `${share.path}/${item.path}`;
+											const f = this.vault.getAbstractFileByPath(filePath);
+											if (f instanceof TFile) {
+												const content = await this.vault.read(f);
+												await this.shareClientManager.syncFolderFileContent(
+													share.serverId, share.web_slug, item.path, content
+												);
+												webSynced++;
+											}
+										} catch { /* skip individual file errors */ }
 									}
-									webSynced++;
 								}
 							}
 						}
@@ -1272,7 +1303,7 @@ export default class Live extends Plugin {
 	}
 
 	/**
-	 * Sync the current active file if it's a web-published share
+	 * Sync the current active file if it's a web-published share (doc or inside folder share)
 	 */
 	private async syncCurrentFile() {
 		const activeFile = this.app.workspace.getActiveFile();
@@ -1288,22 +1319,62 @@ export default class Live extends Plugin {
 
 		try {
 			const shares = await this.shareClientManager.getAllSharesFlat();
-			const share = shares.find(s => s.path === activeFile.path && s.web_published);
 
-			if (!share) {
-				new Notice("Current file is not a web-published share");
+			// Check direct doc share match
+			const docShare = shares.find(s => s.path === activeFile.path && s.web_published);
+			if (docShare) {
+				const content = await this.vault.read(activeFile);
+				await this.shareClientManager.updateShare(docShare.serverId, docShare.id, {
+					web_content: content,
+				});
+				new Notice(`Synced ${activeFile.name} to web`);
 				return;
 			}
 
-			const content = await this.vault.read(activeFile);
-			await this.shareClientManager.updateShare(share.serverId, share.id, {
-				web_content: content,
-			});
+			// Check if file is inside a folder share
+			const folderShare = shares.find(s =>
+				s.kind === "folder" && s.web_published && s.web_slug &&
+				activeFile.path.startsWith(s.path + "/")
+			);
+			if (folderShare && folderShare.web_slug) {
+				const content = await this.vault.read(activeFile);
+				const relativePath = activeFile.path.substring(folderShare.path.length + 1);
+				await this.shareClientManager.syncFolderFileContent(
+					folderShare.serverId, folderShare.web_slug, relativePath, content
+				);
+				new Notice(`Synced ${activeFile.name} to web`);
+				return;
+			}
 
-			new Notice(`Synced ${activeFile.name} to web`);
+			new Notice("Current file is not in a web-published share");
 		} catch (error) {
 			new Notice(`Sync failed: ${error instanceof Error ? error.message : "Unknown error"}`);
 		}
+	}
+
+	/**
+	 * Recursively build folder items for web publishing
+	 */
+	private getFolderItemsRecursive(folder: TFolder): FolderItem[] {
+		const items: FolderItem[] = [];
+		const basePath = folder.path;
+		const process = (f: TFolder) => {
+			for (const child of f.children) {
+				const rel = child.path.substring(basePath.length + 1);
+				if (child instanceof TFile) {
+					if (child.extension === "canvas") {
+						items.push({ path: rel, name: child.basename, type: "canvas" });
+					} else if (child.extension === "md") {
+						items.push({ path: rel, name: child.basename, type: "doc" });
+					}
+				} else if (child instanceof TFolder) {
+					items.push({ path: rel, name: child.name, type: "folder" });
+					process(child);
+				}
+			}
+		};
+		process(folder);
+		return items;
 	}
 
 	private _onLogout() {
@@ -1462,6 +1533,10 @@ export default class Live extends Plugin {
 						});
 					}
 				}
+				// Update web_folder_items for auto-sync folder shares
+				if (this.webSyncManager && tfile instanceof TFile) {
+					this.webSyncManager.onFileCreated(tfile);
+				}
 			}),
 		);
 
@@ -1487,6 +1562,8 @@ export default class Live extends Plugin {
 						folder.clearPendingDelete(vpath);
 					});
 				}
+				// Update web_folder_items for auto-sync folder shares
+				this.webSyncManager?.onFileDeleted(file.path);
 			}),
 		);
 
@@ -1519,6 +1596,8 @@ export default class Live extends Plugin {
 					this._liveViews.refresh("rename");
 					this.folderNavDecorations.refresh();
 				}
+				// Update web_folder_items for auto-sync folder shares
+				this.webSyncManager?.onFileRenamed(file.path, oldPath);
 			}),
 		);
 
@@ -1530,6 +1609,13 @@ export default class Live extends Plugin {
 					const file = folder.proxy.getFile(tfile);
 					if (file && isSyncFile(file)) {
 						file.sync();
+					}
+					// For Documents (folder share files): if the file has no active
+					// WS connection, edits bypass Y.Text entirely (no live CM binding).
+					// Enqueue a background sync to push vault content to relay.
+					// When connected, LiveCMPluginValue handles sync automatically.
+					if (file && isDocument(file) && !file.connected) {
+						folder.backgroundSync.enqueueSync(file);
 					}
 					// Trigger metadata resolve with the actual TFile (not our Document proxy)
 					this.timeProvider.setTimeout(() => {

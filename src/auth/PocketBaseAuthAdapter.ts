@@ -43,6 +43,10 @@ export class PocketBaseAuthAdapter implements IAuthProvider {
 		return this.pb.authStore.token;
 	}
 
+	async getValidToken(): Promise<string | undefined> {
+		return this.pb.authStore.token;
+	}
+
 	async loginWithPassword(email: string, password: string): Promise<AuthResponse> {
 		throw new Error(
 			"Password login is not supported in System 3 mode. Please use OAuth2 authentication."

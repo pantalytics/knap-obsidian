@@ -67,7 +67,7 @@ export class RelayOnPremShareClientManager {
 		this.servers.set(server.id, server);
 
 		const client = new RelayOnPremShareClient(server.controlPlaneUrl, () => {
-			return this.authManager.getTokenForServer(server.id);
+			return this.authManager.getValidTokenForServer(server.id);
 		});
 
 		this.clients.set(server.id, client);

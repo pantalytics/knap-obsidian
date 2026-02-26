@@ -48,20 +48,7 @@ export class RelayOnPremTokenProvider {
 		mode: "read" | "write" = "read",
 		filePath?: string
 	): Promise<ClientToken> {
-		let token = this.config.authProvider.getToken();
-
-		// If token is missing or expired, try refreshing before making the request
-		if (!token || !this.config.authProvider.isTokenValid()) {
-			this.log("Access token missing or expired, attempting refresh...");
-			try {
-				await this.config.authProvider.refreshToken();
-				token = this.config.authProvider.getToken();
-				this.log("Token refreshed successfully");
-			} catch (e) {
-				this.log("Token refresh failed:", e);
-				// Proceed with whatever token we have (may still work or give clear 401)
-			}
-		}
+		let token = await this.config.authProvider.getValidToken();
 
 		if (!token) {
 			throw new Error("Not authenticated");
