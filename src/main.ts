@@ -78,6 +78,7 @@ import type { IAuthProvider } from "./auth/IAuthProvider";
 import { RelayOnPremShareClient, type FolderItem } from "./RelayOnPremShareClient";
 import { RelayOnPremShareClientManager } from "./RelayOnPremShareClientManager";
 import { QuickShareModal } from "./ui/QuickShareModal";
+import { Telemetry, isEntireVCServer } from "./telemetry";
 
 interface DebugSettings {
 	debugging: boolean;
@@ -92,6 +93,9 @@ interface RelaySettings extends FeatureFlags, DebugSettings {
 	release: ReleaseSettings;
 	endpoints: EndpointSettings;
 	relayOnPrem: RelayOnPremSettings;
+	telemetryEnabled: boolean;
+	telemetryAnonymousId: string;
+	telemetryAsked: boolean;
 }
 
 const DEFAULT_SETTINGS: RelaySettings = {
@@ -101,6 +105,9 @@ const DEFAULT_SETTINGS: RelaySettings = {
 	sharedFolders: [],
 	endpoints: {},
 	relayOnPrem: DEFAULT_RELAY_ONPREM_SETTINGS,
+	telemetryEnabled: false,
+	telemetryAnonymousId: "",
+	telemetryAsked: false,
 	...FeatureFlagDefaults,
 	...DEFAULT_DEBUG_SETTINGS,
 };
@@ -139,6 +146,7 @@ export default class Live extends Plugin {
 	public shareClient?: RelayOnPremShareClient;
 	public shareClientManager?: RelayOnPremShareClientManager;
 	public webSyncManager?: import("./WebSyncManager").WebSyncManager;
+	public telemetry?: Telemetry;
 	debug!: (...args: unknown[]) => void;
 	log!: (...args: unknown[]) => void;
 	warn!: (...args: unknown[]) => void;
@@ -383,6 +391,25 @@ export default class Live extends Plugin {
 
 		const flagManager = FeatureFlagManager.getInstance();
 		flagManager.setSettings(this.featureSettings);
+
+		// Initialize telemetry (opt-in, only for *.entire.vc servers)
+		{
+			const s = this.settings.get();
+			let anonId = s.telemetryAnonymousId;
+			if (!anonId) {
+				anonId = crypto.randomUUID();
+				await this.settings.update((cur) => ({ ...cur, telemetryAnonymousId: anonId }));
+			}
+			const hasEntireVC = s.relayOnPrem.servers.some((srv) => isEntireVCServer(srv.controlPlaneUrl));
+			const canTelemetry = hasEntireVC && s.telemetryEnabled;
+			this.telemetry = new Telemetry(canTelemetry, anonId, this.manifest.version);
+			if (canTelemetry) {
+				this.telemetry.capture("plugin_activated", {
+					obsidian_version: this.manifest.minAppVersion,
+					platform: Platform.isDesktop ? "desktop" : "mobile",
+				});
+			}
+		}
 
 		this.settingsTab = new LiveSettingsTab(this.app, this);
 
@@ -725,6 +752,12 @@ export default class Live extends Plugin {
 						}
 					}
 					prevServerIds = currentIds;
+
+					// Disable telemetry if no *.entire.vc servers remain
+					if (this.telemetry) {
+						const hasEntireVC = currentServers.some((srv: RelayOnPremServer) => isEntireVCServer(srv.controlPlaneUrl));
+						this.telemetry.setEnabled(hasEntireVC && this.settings.get().telemetryEnabled);
+					}
 				})
 			);
 
@@ -927,6 +960,34 @@ export default class Live extends Plugin {
 			this.setup();
 			this._liveViews.refresh("init");
 			this.loadTime = moment.now() - start;
+
+			// Show telemetry opt-in notice on first load (only for *.entire.vc servers)
+			const showTelemetryNotice = !this.settings.get().telemetryAsked
+				&& this.settings.get().relayOnPrem.servers.some((srv) => isEntireVCServer(srv.controlPlaneUrl));
+			if (showTelemetryNotice) {
+				const frag = document.createDocumentFragment();
+				frag.createEl("span", { text: "Help improve EVC Relay? Send anonymous usage stats (no file content, no personal data). " });
+				const enableBtn = frag.createEl("a", { text: "Enable", href: "#" });
+				frag.createEl("span", { text: " | " });
+				const dismissBtn = frag.createEl("a", { text: "No thanks", href: "#" });
+				const notice = new Notice(frag, 0);
+				enableBtn.addEventListener("click", async (e) => {
+					e.preventDefault();
+					await this.settings.update((s) => ({ ...s, telemetryEnabled: true, telemetryAsked: true }));
+					this.telemetry?.setEnabled(true);
+					this.telemetry?.capture("plugin_installed", {
+						obsidian_version: this.manifest.minAppVersion,
+						platform: Platform.isDesktop ? "desktop" : "mobile",
+					});
+					notice.hide();
+					new Notice("Telemetry enabled. You can change this in settings.", 4000);
+				});
+				dismissBtn.addEventListener("click", async (e) => {
+					e.preventDefault();
+					await this.settings.update((s) => ({ ...s, telemetryAsked: true }));
+					notice.hide();
+				});
+			}
 		});
 	}
 
