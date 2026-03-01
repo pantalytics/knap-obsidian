@@ -3,9 +3,10 @@
  *
  * Starts a temporary local HTTP server to receive OAuth callbacks.
  * Used for handling OAuth redirects in the Obsidian plugin.
+ * Only works on desktop (Node.js environment).
  */
 
-import * as http from "http";
+import { Platform } from "obsidian";
 import { curryLog } from "../debug";
 
 const log = curryLog("[OAuthCallbackServer]");
@@ -16,7 +17,7 @@ export interface OAuthCallbackResult {
 }
 
 export class OAuthCallbackServer {
-	private server: http.Server | null = null;
+	private server: any = null;
 	private port: number = 0;
 
 	/**
@@ -24,9 +25,14 @@ export class OAuthCallbackServer {
 	 * @returns The port number the server is listening on
 	 */
 	async start(): Promise<number> {
+		if (!Platform.isDesktop) {
+			throw new Error("OAuth callback server is only supported on desktop");
+		}
+		// Dynamic import — only available in Node.js (Electron desktop)
+		const http = await import("http");
 		return new Promise((resolve, reject) => {
 			// Create a simple HTTP server
-			this.server = http.createServer((req, res) => {
+			this.server = http.createServer((req: any, res: any) => {
 				// We'll handle the request in waitForCallback
 				res.writeHead(200, { "Content-Type": "text/html" });
 				res.end(`
@@ -97,7 +103,7 @@ export class OAuthCallbackServer {
 				}
 			});
 
-			this.server.on("error", (error) => {
+			this.server.on("error", (error: Error) => {
 				log("Server error:", error);
 				reject(error);
 			});
@@ -123,7 +129,7 @@ export class OAuthCallbackServer {
 
 			// Override the request handler to capture callback
 			this.server.removeAllListeners("request");
-			this.server.on("request", (req, res) => {
+			this.server.on("request", (req: any, res: any) => {
 				log(`Received request: ${req.url}`);
 
 				// Parse URL to extract code and state

@@ -57,10 +57,6 @@ import { ObsidianFileAdapter, ObsidianNotifier } from "./debugObsididan";
 import { BugReportModal } from "./ui/BugReportModal";
 import { IndexedDBAnalysisModal } from "./ui/IndexedDBAnalysisModal";
 
-import { UpdateManager } from "./UpdateManager";
-import type { PluginWithApp } from "./UpdateManager";
-import { ReleaseManager } from "./ui/ReleaseManager";
-import type { ReleaseSettings } from "./UpdateManager";
 import { SyncSettingsManager } from "./SyncSettings";
 import { ContentAddressedFileStore, isSyncFile } from "./SyncFile";
 import { isDocument } from "./Document";
@@ -68,6 +64,7 @@ import { EndpointManager, type EndpointSettings } from "./EndpointManager";
 import { SelfHostModal } from "./ui/SelfHostModal";
 import {
 	DEFAULT_RELAY_ONPREM_SETTINGS,
+	EVC_SERVER_ID,
 	type RelayOnPremSettings,
 	type RelayOnPremServer,
 	migrateRelayOnPremSettings,
@@ -78,7 +75,6 @@ import type { IAuthProvider } from "./auth/IAuthProvider";
 import { RelayOnPremShareClient, type FolderItem } from "./RelayOnPremShareClient";
 import { RelayOnPremShareClientManager } from "./RelayOnPremShareClientManager";
 import { QuickShareModal } from "./ui/QuickShareModal";
-import { Telemetry, isEntireVCServer } from "./telemetry";
 
 interface DebugSettings {
 	debugging: boolean;
@@ -90,31 +86,20 @@ const DEFAULT_DEBUG_SETTINGS: DebugSettings = {
 
 interface RelaySettings extends FeatureFlags, DebugSettings {
 	sharedFolders: SharedFolderSettings[];
-	release: ReleaseSettings;
 	endpoints: EndpointSettings;
 	relayOnPrem: RelayOnPremSettings;
-	telemetryEnabled: boolean;
-	telemetryAnonymousId: string;
-	telemetryAsked: boolean;
 }
 
 const DEFAULT_SETTINGS: RelaySettings = {
-	release: {
-		channel: "stable",
-	},
 	sharedFolders: [],
 	endpoints: {},
 	relayOnPrem: DEFAULT_RELAY_ONPREM_SETTINGS,
-	telemetryEnabled: false,
-	telemetryAnonymousId: "",
-	telemetryAsked: false,
 	...FeatureFlagDefaults,
 	...DEFAULT_DEBUG_SETTINGS,
 };
 
 declare const HEALTH_URL: string;
 declare const GIT_TAG: string;
-declare const REPOSITORY: string;
 
 export default class Live extends Plugin {
 	appId!: string;
@@ -135,18 +120,15 @@ export default class Live extends Plugin {
 	relayManager!: RelayManager;
 	settingsTab!: LiveSettingsTab;
 	settings!: Settings<RelaySettings>;
-	updateManager!: UpdateManager;
 	private featureSettings!: NamespacedSettings<FeatureFlags>;
 	private debugSettings!: NamespacedSettings<DebugSettings>;
 	private folderSettings!: NamespacedSettings<SharedFolderSettings[]>;
-	public releaseSettings!: NamespacedSettings<ReleaseSettings>;
 	public loginSettings!: NamespacedSettings<LoginSettings>;
 	public endpointSettings!: NamespacedSettings<EndpointSettings>;
 	public relayOnPremSettings!: NamespacedSettings<RelayOnPremSettings>;
 	public shareClient?: RelayOnPremShareClient;
 	public shareClientManager?: RelayOnPremShareClientManager;
 	public webSyncManager?: import("./WebSyncManager").WebSyncManager;
-	public telemetry?: Telemetry;
 	debug!: (...args: unknown[]) => void;
 	log!: (...args: unknown[]) => void;
 	warn!: (...args: unknown[]) => void;
@@ -154,7 +136,6 @@ export default class Live extends Plugin {
 	private _liveViews!: LiveViewManager;
 	fileDiffMergeWarningKey = "file-diff-merge-warning";
 	version = GIT_TAG;
-	repo = REPOSITORY;
 	hashStore!: ContentAddressedFileStore;
 
 	enableDebugging(save?: boolean) {
@@ -370,12 +351,46 @@ export default class Live extends Plugin {
 
 		// Migrate relay-onprem settings from legacy single-server format to multi-server
 		const rawRelayOnPremSettings = this.settings.get().relayOnPrem;
-		const migratedRelayOnPremSettings = migrateRelayOnPremSettings(rawRelayOnPremSettings);
-		if (migratedRelayOnPremSettings !== rawRelayOnPremSettings) {
+		const migration = migrateRelayOnPremSettings(rawRelayOnPremSettings);
+		if (migration.changed) {
 			await this.settings.update((settings) => ({
 				...settings,
-				relayOnPrem: migratedRelayOnPremSettings,
+				relayOnPrem: migration.settings,
 			}));
+		}
+		// If an existing server was adopted as EVC, migrate its localStorage auth key
+		// and update all shared folder settings that reference the old server ID
+		if (migration.renamedServerId) {
+			const oldId = migration.renamedServerId;
+			const vaultName = this.app.vault.getName();
+			const prefix = "evc-team-relay_onprem_auth_";
+			const oldKey = `${prefix}${vaultName}_${oldId}`;
+			const newKey = `${prefix}${vaultName}_${EVC_SERVER_ID}`;
+			try {
+				const oldData = window.localStorage.getItem(oldKey);
+				if (oldData && !window.localStorage.getItem(newKey)) {
+					window.localStorage.setItem(newKey, oldData);
+					window.localStorage.removeItem(oldKey);
+				}
+			} catch {
+				// localStorage may not be available during startup
+			}
+			// Migrate onpremServerId in shared folder settings
+			const currentSettings = this.settings.get();
+			const folders = currentSettings.sharedFolders;
+			if (folders?.length) {
+				let folderChanged = false;
+				const updated = folders.map((f) => {
+					if (f.onpremServerId === oldId) {
+						folderChanged = true;
+						return { ...f, onpremServerId: EVC_SERVER_ID };
+					}
+					return f;
+				});
+				if (folderChanged) {
+					await this.settings.update((s) => ({ ...s, sharedFolders: updated }));
+				}
+			}
 		}
 
 		this.featureSettings = new NamespacedSettings(this.settings, "(enable*)");
@@ -384,32 +399,12 @@ export default class Live extends Plugin {
 			this.settings,
 			"sharedFolders",
 		);
-		this.releaseSettings = new NamespacedSettings(this.settings, "release");
 		this.loginSettings = new NamespacedSettings(this.settings, "login");
 		this.endpointSettings = new NamespacedSettings(this.settings, "endpoints");
 		this.relayOnPremSettings = new NamespacedSettings(this.settings, "relayOnPrem");
 
 		const flagManager = FeatureFlagManager.getInstance();
 		flagManager.setSettings(this.featureSettings);
-
-		// Initialize telemetry (opt-in, only for *.entire.vc servers)
-		{
-			const s = this.settings.get();
-			let anonId = s.telemetryAnonymousId;
-			if (!anonId) {
-				anonId = crypto.randomUUID();
-				await this.settings.update((cur) => ({ ...cur, telemetryAnonymousId: anonId }));
-			}
-			const hasEntireVC = s.relayOnPrem.servers.some((srv) => isEntireVCServer(srv.controlPlaneUrl));
-			const canTelemetry = hasEntireVC && s.telemetryEnabled;
-			this.telemetry = new Telemetry(canTelemetry, anonId, this.manifest.version);
-			if (canTelemetry) {
-				this.telemetry.capture("plugin_activated", {
-					obsidian_version: this.manifest.minAppVersion,
-					platform: Platform.isDesktop ? "desktop" : "mobile",
-				});
-			}
-		}
 
 		this.settingsTab = new LiveSettingsTab(this.app, this);
 
@@ -418,13 +413,6 @@ export default class Live extends Plugin {
 		this.addRibbonIcon("evc-relay", "EVC Team Relay", () => {
 			this.openSettings();
 		});
-
-		// Initialize update manager
-		this.updateManager = new UpdateManager(
-			this as unknown as PluginWithApp,
-			this.timeProvider,
-			this.releaseSettings,
-		);
 
 		this.register(
 			this.debugSettings.subscribe((settings) => {
@@ -461,15 +449,6 @@ export default class Live extends Plugin {
 						},
 					});
 					this.addCommand({
-						id: "show-release-manager",
-						name: "Show releases",
-						callback: () => {
-							const modal = new ReleaseManager(this.app, this);
-							this.openModals.push(modal);
-							modal.open();
-						},
-					});
-					this.addCommand({
 						id: "analyze-indexeddb",
 						name: "Analyze database",
 						callback: () => {
@@ -489,7 +468,6 @@ export default class Live extends Plugin {
 					this.removeCommand("toggle-feature-flags");
 					this.removeCommand("send-bug-report");
 					this.removeCommand("show-debug-info");
-					this.removeCommand("show-release-manager");
 					this.removeCommand("disable-debugging");
 					this.addCommand({
 						id: "enable-debugging",
@@ -550,25 +528,6 @@ export default class Live extends Plugin {
 			});
 		}
 
-		// Register handler for update availability changes
-		this.register(this.updateManager.subscribe(() => {
-			const newRelease = this.updateManager.getNewRelease();
-			if (newRelease) {
-				// Add update command when an update is available
-				this.removeCommand("update-plugin");
-				this.addCommand({
-					id: "update-plugin",
-					name: `Update Plugin (${this.version} → ${newRelease.tag_name})`,
-					callback: async () => {
-						await this.updateManager.installUpdate(newRelease);
-					},
-				});
-				this.log(`Update available: v${this.version} → ${newRelease.tag_name}`);
-			} else {
-				// Remove update command when no update is available
-				this.removeCommand("update-plugin");
-			}
-		}));
 
 		this.vault = this.app.vault;
 		const vaultName = this.vault.getName();
@@ -752,12 +711,6 @@ export default class Live extends Plugin {
 						}
 					}
 					prevServerIds = currentIds;
-
-					// Disable telemetry if no *.entire.vc servers remain
-					if (this.telemetry) {
-						const hasEntireVC = currentServers.some((srv: RelayOnPremServer) => isEntireVCServer(srv.controlPlaneUrl));
-						this.telemetry.setEnabled(hasEntireVC && this.settings.get().telemetryEnabled);
-					}
 				})
 			);
 
@@ -961,33 +914,6 @@ export default class Live extends Plugin {
 			this._liveViews.refresh("init");
 			this.loadTime = moment.now() - start;
 
-			// Show telemetry opt-in notice on first load (only for *.entire.vc servers)
-			const showTelemetryNotice = !this.settings.get().telemetryAsked
-				&& this.settings.get().relayOnPrem.servers.some((srv) => isEntireVCServer(srv.controlPlaneUrl));
-			if (showTelemetryNotice) {
-				const frag = document.createDocumentFragment();
-				frag.createEl("span", { text: "Help improve EVC Relay? Send anonymous usage stats (no file content, no personal data). " });
-				const enableBtn = frag.createEl("a", { text: "Enable", href: "#" });
-				frag.createEl("span", { text: " | " });
-				const dismissBtn = frag.createEl("a", { text: "No thanks", href: "#" });
-				const notice = new Notice(frag, 0);
-				enableBtn.addEventListener("click", async (e) => {
-					e.preventDefault();
-					await this.settings.update((s) => ({ ...s, telemetryEnabled: true, telemetryAsked: true }));
-					this.telemetry?.setEnabled(true);
-					this.telemetry?.capture("plugin_installed", {
-						obsidian_version: this.manifest.minAppVersion,
-						platform: Platform.isDesktop ? "desktop" : "mobile",
-					});
-					notice.hide();
-					new Notice("Telemetry enabled. You can change this in settings.", 4000);
-				});
-				dismissBtn.addEventListener("click", async (e) => {
-					e.preventDefault();
-					await this.settings.update((s) => ({ ...s, telemetryAsked: true }));
-					notice.hide();
-				});
-			}
 		});
 	}
 
@@ -1812,12 +1738,6 @@ export default class Live extends Plugin {
 			},
 		);
 
-		this.registerObsidianProtocolHandler("evc-team-relay/upgrade", async (e) => {
-			const parameters = e as unknown as Parameters;
-			const version = parameters.version?.trim();
-			this.installVersion(version);
-		});
-
 		this.registerObsidianProtocolHandler("evc-team-relay/billing-ok", async (e) => {
 			new Notice("Payment successful! Refreshing billing data...");
 			// Clear billing cache by refreshing settings
@@ -1825,18 +1745,6 @@ export default class Live extends Plugin {
 		});
 
 		this.backgroundSync.start();
-		this.updateManager.start();
-	}
-
-	installVersion(version?: string) {
-		const modal = new ReleaseManager(this.app, this, version);
-
-		const app = this.app as any;
-		const setting = app.setting;
-		setting.close();
-
-		this.openModals.push(modal);
-		modal.open();
 	}
 
 	removeCommand(command: string): void {
@@ -1871,12 +1779,6 @@ export default class Live extends Plugin {
 		this.folderNavDecorations?.destroy();
 
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_DIFFERENCES);
-
-		// Explicitly destroy the update manager
-		if (this.updateManager) {
-			this.updateManager.destroy();
-			this.updateManager = null as any;
-		}
 
 		this._liveViews?.destroy();
 		this._liveViews = null as any;
@@ -1936,8 +1838,6 @@ export default class Live extends Plugin {
 
 		this.featureSettings.destroy();
 		this.featureSettings = null as any;
-		this.releaseSettings.destroy();
-		this.releaseSettings = null as any;
 		this.loginSettings.destroy();
 		this.loginSettings = null as any;
 		this.endpointSettings.destroy();

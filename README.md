@@ -124,6 +124,21 @@ Publish your vault as a beautiful website. Better than Obsidian Publish — cust
 ---
 
 
+## Network Usage
+
+This plugin makes network requests to **user-configured servers only**. No data is sent to third parties.
+
+| Connection | Protocol | Purpose | When |
+|------------|----------|---------|------|
+| Control plane server | HTTPS | Authentication (login, token refresh), share management (list, create, invite), server info, billing | On login, share operations, periodic token refresh |
+| Relay server | WebSocket (WSS) | Real-time CRDT document synchronization between collaborators | While editing shared documents |
+| Control plane server | HTTPS | Relay token issuance (Ed25519-signed) | Before opening a WebSocket connection |
+| OAuth callback (localhost) | HTTP | Receives OAuth redirect on `127.0.0.1` (desktop only) | During OAuth login flow |
+
+**All server URLs are configured by the user** in plugin settings. The default configuration includes `https://cp.tr.entire.vc` (EVC Team Relay hosted), but the user can add, remove, or change servers.
+
+**No telemetry or analytics data is collected.** The plugin does not phone home, track usage, or send any data to third-party services.
+
 ## Community
 
 - 🌐 [entire.vc](https://entire.vc)

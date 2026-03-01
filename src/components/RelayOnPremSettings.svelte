@@ -9,14 +9,12 @@
 	import CreateInviteView from "./CreateInviteView.svelte";
 	import BillingView from "./BillingView.svelte";
 	import Breadcrumbs from "./Breadcrumbs.svelte";
-	import { isEntireVCServer } from "../telemetry";
 	import evcLogo from "../assets/evc-logo.png";
 
 	export let plugin: Live;
 
-	$: hasEntireVC = plugin.settings.get().relayOnPrem.servers.some(
-		(srv: RelayOnPremServer) => isEntireVCServer(srv.controlPlaneUrl)
-	);
+	// Refresh key — incremented on login/logout via serversChanged event
+	let authRefreshKey = 0;
 
 	const EVC_URL = "https://github.com/entire-vc";
 
@@ -86,7 +84,7 @@
 		}
 
 		if (view === "billing") {
-			items.push({ type: "text", text: "Billing" });
+			items.push({ type: "text", text: "Plan & Usage" });
 		} else if (view === "createShare") {
 			items.push({ type: "text", text: "Create Share" });
 		} else if (view === "createInvite" && share) {
@@ -163,29 +161,8 @@
 						Configure your relay-onprem servers. Click "Shares" to manage shares.
 					</div>
 				</div>
-				<RelayOnPremServerList {plugin} on:openShares={handleOpenShares} on:openBilling={handleOpenBilling} />
+				<RelayOnPremServerList {plugin} on:openShares={handleOpenShares} on:openBilling={handleOpenBilling} on:serversChanged={() => { authRefreshKey++; }} />
 			</div>
-
-			{#if hasEntireVC}
-				<div class="evc-telemetry-section">
-					<label class="evc-telemetry-toggle">
-						<input
-							type="checkbox"
-							checked={plugin.settings.get().telemetryEnabled}
-							on:change={async (e) => {
-								const enabled = e.currentTarget.checked;
-								await plugin.settings.update((s) => ({ ...s, telemetryEnabled: enabled }));
-								plugin.telemetry?.setEnabled(enabled);
-							}}
-						/>
-						<span>Help improve EVC Relay by sending anonymous usage statistics</span>
-					</label>
-					<div class="evc-telemetry-desc">
-						No file contents, file names, or personal data are collected.
-						<a href="https://entire.vc/legal/privacy" target="_blank" rel="noopener">Privacy Policy</a>
-					</div>
-				</div>
-			{/if}
 		{:else if currentView === "shares" && selectedServer}
 			<ShareListView
 				{plugin}
@@ -227,32 +204,6 @@
 <style>
 	.evc-relay-settings {
 		padding: 0;
-	}
-
-	/* Telemetry */
-	.evc-telemetry-section {
-		margin-top: 24px;
-		padding-top: 16px;
-		border-top: 1px solid var(--background-modifier-border);
-	}
-
-	.evc-telemetry-toggle {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		cursor: pointer;
-		font-size: 0.9em;
-	}
-
-	.evc-telemetry-desc {
-		color: var(--text-muted);
-		font-size: 0.8em;
-		margin-top: 4px;
-		padding-left: 26px;
-	}
-
-	.evc-telemetry-desc a {
-		color: var(--text-accent);
 	}
 
 	/* Header */

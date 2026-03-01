@@ -269,13 +269,7 @@
 	}
 
 	function install() {
-		if (plugin.networkStatus.status?.versions) {
-			if (plugin.releaseSettings.get().channel === "stable") {
-				plugin.installVersion(plugin.networkStatus.status.versions.stable);
-			} else if (plugin.releaseSettings.get().channel === "beta") {
-				plugin.installVersion(plugin.networkStatus.status.versions.beta);
-			}
-		}
+		// Update installation via announcement banner is not supported in relay-onprem mode
 	}
 </script>
 
