@@ -69,14 +69,14 @@
 				try {
 					plugin.sharedFolders.new(share.path, share.id, "relay-onprem", false);
 					plugin.folderNavDecorations?.quickRefresh();
-				} catch (e) {
+				} catch (e: unknown) {
 					console.error("[RelayOnPrem] Failed to create SharedFolder:", e);
 				}
 			}
 
 			new Notice(`Share "${share.path}" created!`);
 			dispatch("created", { share });
-		} catch (e) {
+		} catch (e: unknown) {
 			if (e instanceof LimitExceededApiError) {
 				const info = e.limitInfo;
 				new Notice(

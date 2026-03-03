@@ -40,13 +40,14 @@ export class LiveSettingsTab extends PluginSettingTab {
 			this.component?.$destroy();
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			//(this as any).setting.close();
-		} catch (e) {
+		} catch (e: unknown) {
 			console.warn(e);
 		}
 	}
 
 	destroy() {
 		this.hide();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.plugin = null as any;
 	}
 }

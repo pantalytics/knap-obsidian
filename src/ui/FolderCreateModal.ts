@@ -63,8 +63,7 @@ export class FolderCreateModal extends Modal {
 
 		// Buttons
 		const buttonContainer = contentEl.createDiv("modal-button-container");
-		buttonContainer.style.display = "flex";
-		buttonContainer.style.justifyContent = "flex-end";
+		buttonContainer.addClass("evc-flex", "evc-justify-end");
 		buttonContainer.style.gap = "8px";
 		buttonContainer.style.marginTop = "20px";
 
@@ -153,7 +152,7 @@ export class FolderCreateModal extends Modal {
 
 			this.onSuccess();
 			this.close();
-		} catch (error) {
+		} catch (error: unknown) {
 			console.error("Failed to create folder:", error);
 			// Could add a notice here for user feedback
 		}

@@ -15,9 +15,12 @@ export interface Mail<T> {
 export class PostOffice {
 	private static _destroyed: boolean = false;
 	private static instance: PostOffice;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private mailboxes: Map<(value: any) => void, Set<IObservable<any>>> =
 		new Map();
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private allMailLog: Mail<any>[] = [];
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private deliveredMailLog: Mail<any>[] = [];
 	private isDelivering: boolean = false;
 	private deliveryInterval: number | null = null;
@@ -122,10 +125,12 @@ export class PostOffice {
 		}
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	getAllMailLog(): Mail<any>[] {
 		return [...this.allMailLog];
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	getDeliveredMailLog(): Mail<any>[] {
 		return [...this.deliveredMailLog];
 	}
@@ -142,6 +147,7 @@ export class PostOffice {
 		);
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private prettyPrintMailLog(log: Mail<any>[]): string {
 		let text = "";
 		const _log = (msg: string) => {
@@ -163,6 +169,7 @@ export class PostOffice {
 		return text;
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	getFunctionOrigin(func: (...args: any[]) => any): string {
 		// If the function has a name, return it
 		if (func.name) {
@@ -194,6 +201,7 @@ export class PostOffice {
 	static destroy(): void {
 		if (PostOffice.instance) {
 			// Clear all mailboxes
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			PostOffice.instance.mailboxes = null as any;
 
 			// Clear mail logs
@@ -202,6 +210,7 @@ export class PostOffice {
 
 			// Cancel any pending delivery
 			PostOffice.instance.timeProvider.destroy();
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			PostOffice.instance.timeProvider = null as any;
 
 			// Reset flags
@@ -214,6 +223,7 @@ export class PostOffice {
 			PostOffice._destroyed = true;
 
 			// Remove the singleton instance
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			PostOffice.instance = undefined as any;
 		}
 	}
@@ -227,6 +237,7 @@ export class PostOffice {
 			PostOffice.instance.timeProvider?.destroy();
 		}
 		PostOffice._destroyed = false;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		PostOffice.instance = undefined as any;
 		if (timeProvider) {
 			PostOffice.instance = new PostOffice(timeProvider);

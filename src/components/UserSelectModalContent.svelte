@@ -114,7 +114,7 @@
 
 		try {
 		    await onAdd(Array.from(currentSelectedUsers), "Member");
-		} catch (error) {
+		} catch (error: unknown) {
 			handleServerError(error);
 		}
 	}

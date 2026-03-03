@@ -115,7 +115,7 @@ async function refreshSystem3(
 
 		const clientToken = (await response.json()) as ClientToken;
 		onSuccess(clientToken);
-	} catch (reason) {
+	} catch (reason: unknown) {
 		error(reason, payload);
 		onError(reason as Error);
 	}
@@ -153,7 +153,7 @@ async function refreshRelayOnPrem(
 		);
 
 		onSuccess(clientToken);
-	} catch (reason) {
+	} catch (reason: unknown) {
 		error(reason);
 		onError(reason as Error);
 	}

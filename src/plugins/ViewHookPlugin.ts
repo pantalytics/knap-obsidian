@@ -55,7 +55,9 @@ export class ViewHookPlugin extends HasLogging {
 			this.unsubscribes.push(
 				getPatcher().patch(view, {
 					// @ts-ignore
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					saveFrontmatter(old: any) {
+						// eslint-disable-next-line @typescript-eslint/no-explicit-any
 						return function (data: any) {
 							that.debug("saveFrontmatter hook triggered");
 							that.saving = true;
@@ -73,7 +75,9 @@ export class ViewHookPlugin extends HasLogging {
 		this.unsubscribes.push(
 			getPatcher().patch(view, {
 				// @ts-ignore
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				save(old: any) {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					return function (data: any) {
 						// @ts-ignore
 						const result = old.call(this, data);
@@ -88,7 +92,7 @@ export class ViewHookPlugin extends HasLogging {
 									that.document,
 								);
 							}
-						} catch (e) {
+						} catch (e: unknown) {
 							that.error("Error syncing during save:", e);
 						}
 						return result;
@@ -100,7 +104,9 @@ export class ViewHookPlugin extends HasLogging {
 		// Hook 3: Preview mode direct edits (if enablePreviewViewHooks)
 		if (flags().enablePreviewViewHooks) {
 			this.unsubscribes.push(
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				getPatcher().patch(view.previewMode as any, {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					edit(old: any) {
 						return function (data: string) {
 							that.debug("Preview edit hook triggered");
@@ -172,7 +178,7 @@ export class ViewHookPlugin extends HasLogging {
 		this.renderers.forEach((renderer) => {
 			try {
 				renderer.render(this.document, viewMode);
-			} catch (error) {
+			} catch (error: unknown) {
 				this.error("Error in renderer:", error);
 			}
 		});
@@ -250,8 +256,11 @@ export class ViewHookPlugin extends HasLogging {
 		this.renderers.length = 0;
 
 		// Clear references
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this._ytext = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.view = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.document = null as any;
 	}
 }

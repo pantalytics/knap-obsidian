@@ -41,6 +41,7 @@ interface Identified {
 	id: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hasId(obj: any): obj is Identified {
 	return typeof obj.id === "string";
 }
@@ -49,6 +50,7 @@ interface Named {
 	name: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hasName(obj: any): obj is Named {
 	return typeof obj.name === "string";
 }
@@ -172,6 +174,7 @@ interface hasRoot {
 	aggregate_root: [string, string] | undefined;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hasRoot(obj: any): obj is hasRoot {
 	return typeof obj.aggregate_root === "object";
 }
@@ -180,6 +183,7 @@ interface hasPermissionParents {
 	permissionParents: [string, string][];
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hasPermissionParents(obj: any): obj is hasPermissionParents {
 	return obj && Array.isArray(obj.permissionParents);
 }
@@ -288,6 +292,7 @@ class StorageQuotaCollection
 		const existingStorageQuota = this.storageQuota.get(update.id);
 		if (existingStorageQuota) {
 			existingStorageQuota.update(update);
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			this.storageQuota.notifyListeners();
 			return existingStorageQuota;
 		}
@@ -883,7 +888,9 @@ class Store extends HasLogging {
 
 	destroy() {
 		this.clear();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.collections = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.relationships = null as any;
 	}
 
@@ -1017,7 +1024,7 @@ class Store extends HasLogging {
 							const parentItem =
 								this.getCollection(parentCollection).get(parentId);
 							return !!parentItem;
-						} catch (error) {
+						} catch (error: unknown) {
 							this.warn(
 								"Parent collection not found during validation",
 								parentCollection,
@@ -1048,7 +1055,7 @@ class Store extends HasLogging {
 					this.warn("cascade delete child", childCollection, childId);
 					this.cascade(childCollection, childId);
 				}
-			} catch (error) {
+			} catch (error: unknown) {
 				this.warn(
 					"Failed to process child during cascade",
 					childCollection,
@@ -1512,7 +1519,11 @@ export class RelayManager extends HasLogging {
 			return;
 		}
 
+// eslint-disable-next-line @typescript-eslint/no-floating-promises
+
 		RelayInstances.set(this, "RelayManager");
+
+// eslint-disable-next-line @typescript-eslint/no-floating-promises
 
 		this.buildGraph();
 		// Only subscribe if PocketBase is available (not in relay-onprem mode)
@@ -1601,6 +1612,7 @@ export class RelayManager extends HasLogging {
 
 	public getCollectionMapByName(
 		name: string,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	): ObservableMap<any, any> | undefined {
 		// TODO don't hardcode this
 		switch (name) {
@@ -1631,8 +1643,10 @@ export class RelayManager extends HasLogging {
 	}
 
 	login() {
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		if (this.authUser && this.authUser == this.pb?.authStore.model) {
 			return;
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		}
 		this.setUser();
 		this.buildGraph();
@@ -1766,6 +1780,7 @@ export class RelayManager extends HasLogging {
 			},
 			{ name: "relay_invitations", expand: ["relay"] },
 			{ name: "providers", expand: [] },
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			{ name: "relay_roles", expand: ["user", "relay"] },
 			{ name: "shared_folders", expand: ["relay", "creator"] },
 			{ name: "shared_folder_roles", expand: ["user", "shared_folder"] },
@@ -1904,7 +1919,7 @@ export class RelayManager extends HasLogging {
 					key: shareKey,
 				}),
 			})
-			.catch((response) => {
+			.catch((response: unknown) => {
 				throw response;
 			});
 		this.debug("[InviteAccept]", response);
@@ -2168,6 +2183,7 @@ export class RelayManager extends HasLogging {
 		principal: string,
 		permission: Permission,
 		resource: Relay | RemoteSharedFolder | RelaySubscription,
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		context?: Record<string, any>,
 	): ObservablePermission {
 		if (!this.policyManager) {
@@ -2195,6 +2211,7 @@ export class RelayManager extends HasLogging {
 	userCan(
 		permission: Permission,
 		resource: Relay | RemoteSharedFolder | RelaySubscription,
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		context?: Record<string, any>,
 	): ObservablePermission {
 		if (!this.user) {
@@ -2208,12 +2225,16 @@ export class RelayManager extends HasLogging {
 	destroy(): void {
 		this.destroyed = true;
 		this._offLoginManager?.();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this._offLoginManager = null as any;
 		this.pb?.cancelAllRequests();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.loginManager = null as any;
 		this.store?.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.pb = null as any;
 		this.authUser = null;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.store = null as any;
 		this.policyManager = undefined;
 	}

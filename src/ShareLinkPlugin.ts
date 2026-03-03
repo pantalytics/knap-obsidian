@@ -63,6 +63,7 @@ export class ShareLinkPluginValue implements PluginValue {
 		this.view = this.connectionManager.findView(editor);
 		this.editor = editor;
 		if (this.view) {
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			this.view.document?.whenSynced().then(async () => {
 				const hasKnownPeers = await this.view?.document?.hasKnownPeers();
 				if (this.view?.document?.text || !hasKnownPeers) {

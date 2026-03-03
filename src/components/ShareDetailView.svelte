@@ -65,7 +65,7 @@
 			members = membersResult;
 			invites = invitesResult;
 			editingSlug = currentShare.web_slug || "";
-		} catch (e) {
+		} catch (e: unknown) {
 			new Notice(`Failed to load share details: ${e instanceof Error ? e.message : "Unknown error"}`);
 		} finally {
 			loading = false;
@@ -100,7 +100,7 @@
 			} else if (plugin.shareClient) {
 				return await plugin.shareClient.listInvites(share.id);
 			}
-		} catch (e) {
+		} catch (e: unknown) {
 			const msg = e instanceof Error ? e.message : "";
 			if (msg.includes("403") || msg.includes("Insufficient permissions")) {
 				isOwner = false;
@@ -134,7 +134,7 @@
 			new Notice("Member added");
 			newMemberEmail = "";
 			members = await loadMembers();
-		} catch (e) {
+		} catch (e: unknown) {
 			if (e instanceof LimitExceededApiError) {
 				const info = e.limitInfo;
 				new Notice(
@@ -157,7 +157,7 @@
 			}
 			new Notice(`Role changed to ${role}`);
 			members = await loadMembers();
-		} catch (e) {
+		} catch (e: unknown) {
 			new Notice(`Failed to change role: ${e instanceof Error ? e.message : "Unknown error"}`);
 		}
 	}
@@ -171,7 +171,7 @@
 			}
 			new Notice("Member removed");
 			members = await loadMembers();
-		} catch (e) {
+		} catch (e: unknown) {
 			new Notice(`Failed to remove member: ${e instanceof Error ? e.message : "Unknown error"}`);
 		}
 	}
@@ -215,7 +215,7 @@
 			}
 			new Notice("Invite revoked");
 			invites = await loadInvites();
-		} catch (e) {
+		} catch (e: unknown) {
 			new Notice(`Failed to revoke invite: ${e instanceof Error ? e.message : "Unknown error"}`);
 		}
 	}
@@ -247,7 +247,7 @@
 			}
 			if (updated) currentShare = { ...currentShare, ...updated };
 			new Notice(`Visibility changed to ${newVisibility}`);
-		} catch (e) {
+		} catch (e: unknown) {
 			new Notice(`Failed: ${e instanceof Error ? e.message : "Unknown error"}`);
 			currentShare = { ...currentShare };
 		}
@@ -270,7 +270,7 @@
 			}
 			new Notice("Share deleted");
 			dispatch("deleted");
-		} catch (e) {
+		} catch (e: unknown) {
 			new Notice(`Failed to delete: ${e instanceof Error ? e.message : "Unknown error"}`);
 		}
 	}
@@ -301,7 +301,7 @@
 					await plugin.shareClient.updateShare(share.id, payload);
 				}
 				currentShare = { ...currentShare, visibility: newVisibility };
-			} catch (e) {
+			} catch (e: unknown) {
 				if (e instanceof VisibilityNotAllowedApiError) {
 					const info = e.visibilityInfo;
 					new Notice(
@@ -342,7 +342,7 @@
 				editingSlug = currentShare.web_slug || "";
 			}
 			new Notice(enabled ? "Published to web!" : "Unpublished from web");
-		} catch (e) {
+		} catch (e: unknown) {
 			if (e instanceof LimitExceededApiError) {
 				const info = e.limitInfo;
 				new Notice(
@@ -376,7 +376,7 @@
 				}
 				if (updated) currentShare = { ...currentShare, ...updated };
 				new Notice("Content synced!");
-			} catch (e) {
+			} catch (e: unknown) {
 				new Notice(`Failed to sync: ${e instanceof Error ? e.message : "Unknown error"}`);
 			}
 		} else if (currentShare.kind === "folder") {
@@ -414,7 +414,7 @@
 				} else {
 					new Notice(`Folder synced: ${items.length} items`);
 				}
-			} catch (e) {
+			} catch (e: unknown) {
 				new Notice(`Failed to sync: ${e instanceof Error ? e.message : "Unknown error"}`);
 			}
 		}
@@ -430,7 +430,7 @@
 			}
 			if (updated) currentShare = { ...currentShare, ...updated };
 			new Notice(noindex ? "Indexing disabled" : "Indexing enabled");
-		} catch (e) {
+		} catch (e: unknown) {
 			new Notice(`Failed: ${e instanceof Error ? e.message : "Unknown error"}`);
 		}
 	}
@@ -458,7 +458,7 @@
 			} else {
 				new Notice(`Sync mode: ${mode}`);
 			}
-		} catch (e) {
+		} catch (e: unknown) {
 			new Notice(`Failed: ${e instanceof Error ? e.message : "Unknown error"}`);
 		}
 	}
@@ -478,7 +478,7 @@
 				editingSlug = currentShare.web_slug || "";
 			}
 			new Notice(`Slug updated: ${newSlug}`);
-		} catch (e) {
+		} catch (e: unknown) {
 			new Notice(`Failed: ${e instanceof Error ? e.message : "Unknown error"}`);
 		}
 	}
@@ -558,7 +558,7 @@
 					plugin.folderNavDecorations?.quickRefresh();
 					new Notice("Folder connected! Syncing...");
 					checkLocalConnection();
-				} catch (e) {
+				} catch (e: unknown) {
 					new Notice(`Failed to connect folder: ${e instanceof Error ? e.message : "Unknown error"}`);
 				}
 			},

@@ -149,7 +149,7 @@
 				isPrivate,
 				userIds,
 			);
-		} catch (error) {
+		} catch (error: unknown) {
 			handleServerError(error, "Failed to share folder.");
 		}
 	}

@@ -312,3 +312,28 @@
 .is-phone .modal .setting-item-control button.system3-button {
 	width: auto !important;
 }
+
+/* Layout utility classes (replacing inline styles per Obsidian guidelines) */
+.evc-flex {
+	display: flex;
+}
+
+.evc-inline-flex {
+	display: inline-flex;
+}
+
+.evc-hidden {
+	display: none;
+}
+
+.evc-align-center {
+	align-items: center;
+}
+
+.evc-justify-end {
+	justify-content: flex-end;
+}
+
+.evc-justify-between {
+	justify-content: space-between;
+}

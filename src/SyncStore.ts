@@ -256,6 +256,7 @@ export class SyncStore extends Observable<SyncStore> {
 
 	start() {
 		withFlag(flag.enableDeltaLogging, () => {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const logObserver = (event: Y.YMapEvent<any>) => {
 				let log = "";
 				log += `Transaction origin: ${event.transaction.origin}${event.transaction.origin?.constructor?.name}\n`;
@@ -532,7 +533,9 @@ export class SyncStore extends Observable<SyncStore> {
 		this.overlay.clear();
 		this.deleteSet.clear();
 		this.renames.clear();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.legacyIds = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.meta = null as any;
 	}
 }

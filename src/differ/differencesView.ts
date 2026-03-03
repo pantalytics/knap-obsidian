@@ -68,11 +68,13 @@ export async function openDiffView(
 
 	// Opens a new leaf (view) of the type VIEW_TYPE_DIFFERENCES
 	const leaf = workspace.getLeaf(true);
+	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	leaf.setViewState({
 		type: VIEW_TYPE_DIFFERENCES,
 		active: true,
 		state,
 	});
+	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	workspace.revealLeaf(leaf);
 }
 
@@ -117,6 +119,7 @@ export class DifferencesView extends ItemView {
 		state: ViewState,
 		result: ViewStateResult,
 	): Promise<void> {
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		super.setState(state, result);
 		this.state = state;
 
@@ -125,6 +128,7 @@ export class DifferencesView extends ItemView {
 	}
 
 	async onunload(): Promise<void> {
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.state?.onResolve?.();
 	}
 

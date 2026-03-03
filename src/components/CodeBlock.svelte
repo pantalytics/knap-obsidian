@@ -21,7 +21,7 @@
 				copied = false;
 			}, 2000);
 			dispatch("copy", { value });
-		} catch (err) {
+		} catch (err: unknown) {
 			console.error("Failed to copy text: ", err);
 		}
 	}

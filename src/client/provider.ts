@@ -309,6 +309,7 @@ export class YSweetProvider extends Observable<string> {
 	_bcSubscriber: Function;
 	_updateHandler: (
 		arg0: Uint8Array,
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		arg1: any,
 		arg2: Y.Doc,
 		arg3: Y.Transaction,
@@ -388,6 +389,7 @@ export class YSweetProvider extends Observable<string> {
 			}, resyncInterval);
 		}
 
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this._bcSubscriber = (data: ArrayBuffer, origin: any) => {
 			if (origin !== this) {
 				const encoder = readMessage(this, new Uint8Array(data), false);
@@ -400,6 +402,7 @@ export class YSweetProvider extends Observable<string> {
 		/**
 		 * Listens to Yjs updates and sends them to remote peers (ws and broadcastchannel)
 		 */
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this._updateHandler = (update: Uint8Array, origin: any) => {
 			if (origin !== this) {
 				const encoder = encoding.createEncoder();
@@ -409,6 +412,7 @@ export class YSweetProvider extends Observable<string> {
 			}
 		};
 
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.doc.on("update", this._updateHandler as any);
 
 		// TODO: I think we can get more specific with the array types.
@@ -419,7 +423,9 @@ export class YSweetProvider extends Observable<string> {
 				added,
 				updated,
 				removed,
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			}: { added: Array<any>; updated: Array<any>; removed: Array<any> },
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			_origin: any,
 		) => {
 			const changedClients = added.concat(updated).concat(removed);
@@ -441,8 +447,10 @@ export class YSweetProvider extends Observable<string> {
 		};
 
 		if (typeof window !== "undefined") {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			window.addEventListener("unload", this._unloadHandler as any);
 		} else if (typeof process !== "undefined") {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			process.on("exit", this._unloadHandler as any);
 		}
 
@@ -535,9 +543,11 @@ export class YSweetProvider extends Observable<string> {
 		this._observers.clear();
 
 		if (typeof window !== "undefined") {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			window.removeEventListener("unload", this._unloadHandler as any);
 			window.clearInterval(this.awareness._checkInterval);
 		} else if (typeof process !== "undefined") {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			process.off("exit", this._unloadHandler as any);
 		}
 		this.awareness.off("update", this._awarenessUpdateHandler);
@@ -550,6 +560,7 @@ export class YSweetProvider extends Observable<string> {
 			return;
 		}
 		if (!this.bcconnected) {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			bc.subscribe(this.bcChannel, this._bcSubscriber as any);
 			this.bcconnected = true;
 		}
@@ -602,6 +613,7 @@ export class YSweetProvider extends Observable<string> {
 		);
 		broadcastMessage(this, encoding.toUint8Array(encoder));
 		if (this.bcconnected) {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			bc.unsubscribe(this.bcChannel, this._bcSubscriber as any);
 			this.bcconnected = false;
 		}

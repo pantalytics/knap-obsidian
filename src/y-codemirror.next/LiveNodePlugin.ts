@@ -41,6 +41,7 @@ export class LiveNodePluginValue implements PluginValue {
 	node?: CanvasNodeData;
 
 	private getNode() {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const state = (this.editor.state as any).values.find((state: any) => {
 			if (state && state.node) return state.node;
 		});
@@ -52,6 +53,7 @@ export class LiveNodePluginValue implements PluginValue {
 	private getYText(): YText | undefined {
 		this.view = this.connectionManager?.findCanvas(this.editor);
 
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const state = (this.editor.state as any).values.find((state: any) => {
 			if (state && state.node) return state.node;
 		});
@@ -138,7 +140,7 @@ export class LiveNodePluginValue implements PluginValue {
 		this.observer = (event, tr) => {
 			try {
 				this._observer?.(event, tr);
-			} catch (e) {
+			} catch (e: unknown) {
 				if (e instanceof RangeError) {
 					console.warn("range errors!");
 				}
@@ -183,9 +185,11 @@ export class LiveNodePluginValue implements PluginValue {
 		if (this.observer) {
 			this._ytext?.unobserve(this.observer);
 		}
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.connectionManager = null as any;
 		this.view = undefined;
 		this._ytext = undefined;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.editor = null as any;
 	}
 }

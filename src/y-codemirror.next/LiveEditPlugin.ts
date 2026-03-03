@@ -94,7 +94,7 @@ export class LiveCMPluginValue implements PluginValue {
 				let stale: boolean;
 				try {
 					stale = await this.document.checkStale();
-				} catch (e) {
+				} catch (e: unknown) {
 					this.warn("[mergeBanner] checkStale failed:", (e as Error).message);
 					return true;
 				}
@@ -181,6 +181,7 @@ export class LiveCMPluginValue implements PluginValue {
 		if (this.view?.view) {
 			this.unsubscribes.push(
 				getPatcher().patch(this.view.view, {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					setViewData(old: any) {
 						return function (data: string, clear: boolean) {
 							if (clear) {
@@ -202,7 +203,9 @@ export class LiveCMPluginValue implements PluginValue {
 						};
 					},
 					// @ts-ignore
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					saveFrontmatter(old: any) {
+						// eslint-disable-next-line @typescript-eslint/no-explicit-any
 						return function (data: any) {
 							fmSave = true;
 							// @ts-ignore
@@ -211,6 +214,7 @@ export class LiveCMPluginValue implements PluginValue {
 							return result;
 						};
 					},
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					requestSave(old: any) {
 						return function () {
 							// @ts-ignore
@@ -219,7 +223,7 @@ export class LiveCMPluginValue implements PluginValue {
 								try {
 									// @ts-ignore
 									this.app.metadataCache.trigger("resolve", this.file);
-								} catch (e) {
+								} catch (e: unknown) {
 									// pass
 								}
 							}
@@ -242,7 +246,7 @@ export class LiveCMPluginValue implements PluginValue {
 
 		// Initialize ViewHookPlugin
 		if (this.viewHookPlugin) {
-			this.viewHookPlugin.initialize().catch((error) => {
+			this.viewHookPlugin.initialize().catch((error: unknown) => {
 				this.error("Error initializing ViewHookPlugin:", error);
 			});
 		}
@@ -325,7 +329,7 @@ export class LiveCMPluginValue implements PluginValue {
 		this.observer = (event: YTextEvent, tr: Transaction) => {
 			try {
 				this._observer?.(event, tr);
-			} catch (e) {
+			} catch (e: unknown) {
 				if (e instanceof RangeError) {
 					if (isLiveMd(this.view)) {
 						this.view.tracking = false;
@@ -474,7 +478,7 @@ export class LiveCMPluginValue implements PluginValue {
 				if (stale && !this.destroyed && this.editor) {
 					this.mergeBanner();
 				}
-			} catch (e) {
+			} catch (e: unknown) {
 				this.warn("[getKeyFrame] checkStale failed, relying on WS sync:", (e as Error).message);
 			}
 		}
@@ -517,7 +521,7 @@ export class LiveCMPluginValue implements PluginValue {
 					adj += insertText.length - (toA - fromA);
 				});
 			}, this);
-		} catch (e) {
+		} catch (e: unknown) {
 			// Yjs internal error (e.g., ydoc destroyed while editor still active).
 			// Skip Yjs update — local edit is preserved, sync resumes on reconnect.
 			this.warn("[update] Yjs transact failed:", (e as Error).message);
@@ -542,9 +546,11 @@ export class LiveCMPluginValue implements PluginValue {
 		if (this.embed && this.sourceView) {
 			this.sourceView.classList.remove("relay-live-editor");
 		}
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.connectionManager = null as any;
 		this.view = undefined;
 		this._ytext = undefined;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.editor = null as any;
 	}
 }

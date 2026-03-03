@@ -36,7 +36,7 @@ export class RelayOnPremLoginModal extends Modal {
 		if (this.shareClient) {
 			try {
 				this.oauthProviders = await this.shareClient.getOAuthProviders();
-			} catch (error) {
+			} catch (error: unknown) {
 				// OAuth providers not available, continue with password-only login
 				console.log("OAuth providers not available:", error);
 			}
@@ -73,14 +73,13 @@ export class RelayOnPremLoginModal extends Modal {
 		this.errorDiv = form.createDiv({ cls: "relay-onprem-error" });
 		this.errorDiv.style.color = "var(--text-error)";
 		this.errorDiv.style.marginTop = "10px";
-		this.errorDiv.style.display = "none";
+		this.errorDiv.addClass("evc-hidden");
 
 		// Buttons
 		const buttonGroup = form.createDiv({ cls: "modal-button-container" });
 		buttonGroup.style.marginTop = "20px";
-		buttonGroup.style.display = "flex";
+		buttonGroup.addClass("evc-flex", "evc-justify-end");
 		buttonGroup.style.gap = "10px";
-		buttonGroup.style.justifyContent = "flex-end";
 
 		// Cancel button
 		const cancelButton = buttonGroup.createEl("button", {
@@ -128,7 +127,7 @@ export class RelayOnPremLoginModal extends Modal {
 			oauthLabel.style.color = "var(--text-muted)";
 
 			const oauthButtons = oauthSection.createDiv({ cls: "relay-onprem-oauth-buttons" });
-			oauthButtons.style.display = "flex";
+			oauthButtons.addClass("evc-flex");
 			oauthButtons.style.flexDirection = "column";
 			oauthButtons.style.gap = "8px";
 
@@ -190,7 +189,7 @@ export class RelayOnPremLoginModal extends Modal {
 			new Notice("Successfully logged in to relay-onprem!");
 			this.close();
 			this.onSuccess();
-		} catch (error) {
+		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "Login failed";
 			// Clean up error message for better UX
 			let displayMessage = errorMessage;
@@ -216,11 +215,11 @@ export class RelayOnPremLoginModal extends Modal {
 
 	private showError(message: string) {
 		this.errorDiv.setText(message);
-		this.errorDiv.style.display = "block";
+		this.errorDiv.removeClass("evc-hidden");
 	}
 
 	private hideError() {
-		this.errorDiv.style.display = "none";
+		this.errorDiv.addClass("evc-hidden");
 	}
 
 	private async handleOAuthLogin(provider: string) {
@@ -246,7 +245,7 @@ export class RelayOnPremLoginModal extends Modal {
 			new Notice(`Successfully logged in with ${provider}!`);
 			this.close();
 			this.onSuccess();
-		} catch (error) {
+		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "OAuth login failed";
 			let displayMessage = errorMessage;
 

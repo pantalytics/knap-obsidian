@@ -157,6 +157,7 @@ export interface ISettingsStorage {
 }
 
 export class ObsidianSettingsStorage implements ISettingsStorage {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	constructor(private plugin: StorageAdapter<any>) {}
 
 	getData<T>(): T {
@@ -175,6 +176,7 @@ export class ObsidianSettingsStorage implements ISettingsStorage {
 }
 
 export class MemorySettingsStorage implements ISettingsStorage {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private data: any = null;
 
 	getData<T>(): T {
@@ -251,7 +253,9 @@ export class Settings<T> extends Observable<T> {
 }
 
 export class NamespacedSettings<
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	T extends Record<string, any>,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	Parent extends Record<string, any> = Record<string, any>,
 > extends Observable<T> {
 	private readonly path: string[];
@@ -261,6 +265,7 @@ export class NamespacedSettings<
 	private lastKnown?: T;
 
 	constructor(
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		public readonly settings: Settings<any>,
 		namespace: string,
 	) {
@@ -335,6 +340,7 @@ export class NamespacedSettings<
 						obj[key] = value;
 						return obj;
 					},
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					{} as Record<string, any>,
 				);
 			return filtered as T;
@@ -392,7 +398,7 @@ export class NamespacedSettings<
 
 				return this.setNestedValue(data, value);
 			});
-		} catch (error) {
+		} catch (error: unknown) {
 			const errorMessage =
 				error instanceof Error ? error.message : "Unknown error";
 			throw new SettingsError(
@@ -465,6 +471,7 @@ export class NamespacedSettings<
 		return [path, basePath, patterns];
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private getNestedValue(obj: Record<string, any>): T | undefined {
 		let current = obj;
 
@@ -480,6 +487,7 @@ export class NamespacedSettings<
 						obj[key] = value;
 						return obj;
 					},
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					{} as Record<string, any>,
 				);
 			return filtered as T;
@@ -492,6 +500,7 @@ export class NamespacedSettings<
 			if (!Array.isArray(current[baseKey])) return undefined;
 
 			const matchedItem = current[baseKey].find(
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				(item: Record<string, any>) =>
 					item[firstPattern.key] === firstPattern.value,
 			);
@@ -522,8 +531,10 @@ export class NamespacedSettings<
 	}
 
 	private setNestedValue(
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		obj: Record<string, any>,
 		value: T,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	): Record<string, any> {
 		const result = { ...obj };
 
@@ -538,6 +549,7 @@ export class NamespacedSettings<
 			}
 
 			const index = result[baseKey].findIndex(
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				(item: Record<string, any>) =>
 					item[arrayPattern.key] === arrayPattern.value,
 			);
@@ -569,9 +581,11 @@ export class NamespacedSettings<
 				// Add new item
 				if (remainingPath.length > 0) {
 					// Handle nested properties in new array item
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					const newItem: Record<string, any> = {
 						[arrayPattern.key]: arrayPattern.value,
 					};
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					let current: Record<string, any> = newItem;
 					for (let i = 0; i < remainingPath.length - 1; i++) {
 						const key = remainingPath[i];
@@ -616,10 +630,12 @@ export class NamespacedSettings<
 	}
 
 	getChild<
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		C extends Record<string, any>,
 		R extends NamespacedSettings<C> = NamespacedSettings<C>,
 	>(
 		childPath: string,
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		factory?: (settings: Settings<any>, path: string) => R,
 	): R {
 		const fullPath = [...this.path, childPath].join("/");
@@ -660,6 +676,7 @@ export class NamespacedSettings<
 				const baseKey = this.basePath[0];
 				if (Array.isArray(result[baseKey])) {
 					result[baseKey] = result[baseKey].filter(
+						// eslint-disable-next-line @typescript-eslint/no-explicit-any
 						(item: Record<string, any>) =>
 							item[arrayPattern.key] !== arrayPattern.value,
 					);

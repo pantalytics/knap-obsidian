@@ -214,7 +214,7 @@
 				/\{url\}/g,
 				relay.provider?.url || "",
 			);
-		} catch (err) {
+		} catch (err: unknown) {
 			relayConfigError =
 				err instanceof Error
 					? err.message
@@ -279,7 +279,7 @@
 				.then((invite) => {
 					isShareKeyEnabled.set(invite.enabled);
 				})
-				.catch((error) => {
+				.catch((error: unknown) => {
 					// Revert the toggle state
 					isShareKeyEnabled.set(!checked);
 					handleServerError(error, "Failed to toggle share key");
@@ -310,7 +310,7 @@
 		if (relayInvitation) {
 			try {
 				relayInvitation = await plugin.relayManager.rotateKey(relayInvitation);
-			} catch (error) {
+			} catch (error: unknown) {
 				handleServerError(error, "Failed to rotate key.");
 			}
 		}
@@ -357,7 +357,7 @@
 	}
 
 	function handleKick(relay_role: RelayRole) {
-		plugin.relayManager.kick(relay_role).catch((error) => {
+		plugin.relayManager.kick(relay_role).catch((error: unknown) => {
 			handleServerError(error, "Failed to remove user");
 		});
 	}
@@ -365,7 +365,7 @@
 	async function handleRoleChange(relay_role: RelayRole, newRole: Role) {
 		try {
 			await plugin.relayManager.updateRelayRole(relay_role, newRole);
-		} catch (error) {
+		} catch (error: unknown) {
 			handleServerError(error, "Failed to change user role.");
 			throw error;
 		}
@@ -378,7 +378,7 @@
 			const originalRole = relayRole.role;
 			try {
 				await handleRoleChange(relayRole, target.value as Role);
-			} catch (e) {
+			} catch (e: unknown) {
 				// Revert dropdown to the original role value
 				target.value = originalRole;
 			}

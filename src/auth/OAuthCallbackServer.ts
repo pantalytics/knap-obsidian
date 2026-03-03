@@ -17,6 +17,7 @@ export interface OAuthCallbackResult {
 }
 
 export class OAuthCallbackServer {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private server: any = null;
 	private port: number = 0;
 
@@ -32,6 +33,7 @@ export class OAuthCallbackServer {
 		const http = await import("http");
 		return new Promise((resolve, reject) => {
 			// Create a simple HTTP server
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			this.server = http.createServer((req: any, res: any) => {
 				// We'll handle the request in waitForCallback
 				res.writeHead(200, { "Content-Type": "text/html" });
@@ -129,6 +131,7 @@ export class OAuthCallbackServer {
 
 			// Override the request handler to capture callback
 			this.server.removeAllListeners("request");
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			this.server.on("request", (req: any, res: any) => {
 				log(`Received request: ${req.url}`);
 

@@ -62,9 +62,13 @@ export class ShareFolderModal extends Modal {
 	}
 
 	destroy() {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.relay = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.sharedFolders = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.relayManager = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.onConfirm = null as any;
 	}
 }

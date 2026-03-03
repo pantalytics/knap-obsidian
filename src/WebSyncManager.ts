@@ -176,7 +176,7 @@ export class WebSyncManager {
 				relativePath,
 				slug: shareInfo.webSlug,
 			});
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Failed to auto-sync folder file", {
 				filePath: file.path,
 				error: error instanceof Error ? error.message : String(error),
@@ -239,7 +239,7 @@ export class WebSyncManager {
 				filePath,
 				slug: share.web_slug,
 			});
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Failed to auto-sync file", {
 				filePath,
 				error: error instanceof Error ? error.message : String(error),
@@ -272,7 +272,7 @@ export class WebSyncManager {
 					folderPath,
 					itemCount: items.length,
 				});
-			} catch (error) {
+			} catch (error: unknown) {
 				log("Failed to update web_folder_items after creation", {
 					filePath: file.path,
 					error: error instanceof Error ? error.message : String(error),
@@ -312,7 +312,7 @@ export class WebSyncManager {
 					folderPath,
 					itemCount: items.length,
 				});
-			} catch (error) {
+			} catch (error: unknown) {
 				log("Failed to update web_folder_items after rename", {
 					oldPath,
 					newPath,
@@ -348,7 +348,7 @@ export class WebSyncManager {
 					folderPath,
 					itemCount: items.length,
 				});
-			} catch (error) {
+			} catch (error: unknown) {
 				log("Failed to update web_folder_items after deletion", {
 					filePath,
 					error: error instanceof Error ? error.message : String(error),

@@ -54,7 +54,7 @@ export class MetadataRenderer extends HasLogging implements ViewRenderer {
 			} else {
 				this.debug("No frontmatter found in document");
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			this.error("Error rendering metadata:", error);
 		}
 	}
@@ -62,6 +62,7 @@ export class MetadataRenderer extends HasLogging implements ViewRenderer {
 	destroy(): void {
 		this.destroyed = true;
 		this.debug("destroyed");
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.view = null as any;
 	}
 }

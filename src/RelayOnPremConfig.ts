@@ -5,6 +5,10 @@
  * Supports multiple servers with independent authentication
  */
 
+/** Well-known EVC Team Relay server */
+export const EVC_SERVER_ID = "evc-team-relay";
+export const EVC_CP_URL = "https://cp.tr.entire.vc";
+
 /**
  * Generate a unique server ID from URL
  */
@@ -15,7 +19,7 @@ export function generateServerId(controlPlaneUrl: string): string {
 		const hostPart = url.hostname.replace(/\./g, "-");
 		const portPart = url.port || (url.protocol === "https:" ? "443" : "80");
 		return `${hostPart}-${portPart}`;
-	} catch (e) {
+	} catch (e: unknown) {
 		// Fallback to timestamp-based ID if URL parsing fails
 		return `server-${Date.now()}`;
 	}
@@ -97,30 +101,130 @@ interface LegacyRelayOnPremSettings {
 export const DEFAULT_RELAY_ONPREM_SETTINGS: RelayOnPremSettings = {
 	// EVC Team Relay always uses relay-onprem mode (no System 3 cloud)
 	enabled: true,
-	servers: [],
-	defaultServerId: undefined,
+	servers: [
+		{
+			id: EVC_SERVER_ID,
+			name: "EVC Team Relay",
+			controlPlaneUrl: EVC_CP_URL,
+			isValidated: false,
+		},
+	],
+	defaultServerId: EVC_SERVER_ID,
 };
+
+/**
+ * Result of settings migration, includes renamed server IDs for auth store migration
+ */
+export interface MigrationResult {
+	settings: RelayOnPremSettings;
+	/** If an existing server was adopted as EVC, this is the old server ID */
+	renamedServerId?: string;
+	/** Whether any changes were made */
+	changed: boolean;
+}
 
 /**
  * Migrate from legacy single-server settings to multi-server format
  */
 export function migrateRelayOnPremSettings(
 	oldSettings: LegacyRelayOnPremSettings | RelayOnPremSettings | undefined | null
-): RelayOnPremSettings {
+): MigrationResult {
 	// Already migrated or null
 	if (!oldSettings) {
-		return DEFAULT_RELAY_ONPREM_SETTINGS;
+		return { settings: DEFAULT_RELAY_ONPREM_SETTINGS, changed: true };
 	}
 
 	// Check if already in new format (has servers array)
 	if ("servers" in oldSettings && Array.isArray(oldSettings.servers)) {
-		return oldSettings as RelayOnPremSettings;
+		const orig = oldSettings as RelayOnPremSettings;
+		let changed = false;
+		let renamedServerId: string | undefined;
+
+		// Work on a shallow copy of servers to avoid mutating stored data
+		let servers = orig.servers.map((s) => ({ ...s }));
+		let defaultServerId = orig.defaultServerId;
+
+		const evcByIdIdx = servers.findIndex((s) => s.id === EVC_SERVER_ID);
+		// Find the BEST EVC-URL server: prefer one with isValidated or lastValidated (has auth)
+		const evcByUrlIdxAll = servers
+			.map((s, i) => ({ s, i }))
+			.filter(({ s }) => s.controlPlaneUrl === EVC_CP_URL && s.id !== EVC_SERVER_ID);
+
+		if (evcByIdIdx >= 0 && evcByUrlIdxAll.length > 0) {
+			// Dedup: EVC by id exists AND there are duplicate(s) with same URL but different id.
+			// Keep the richer duplicate (the one with auth/validation) under the EVC_SERVER_ID,
+			// remove the empty stub.
+			const richest = evcByUrlIdxAll.reduce((best, cur) =>
+				(cur.s.isValidated || cur.s.lastValidated) ? cur : best, evcByUrlIdxAll[0]);
+			const evcStub = servers[evcByIdIdx];
+			const richServer = richest.s;
+
+			// Merge: take all fields from the rich server, set id to EVC_SERVER_ID
+			servers[evcByIdIdx] = {
+				...richServer,
+				id: EVC_SERVER_ID,
+				name: richServer.name || evcStub.name || "EVC Team Relay",
+			};
+			renamedServerId = richServer.id;
+
+			// Update defaultServerId if it pointed to the old id
+			if (defaultServerId === richServer.id) {
+				defaultServerId = EVC_SERVER_ID;
+			}
+
+			// Remove all duplicate-URL entries (keep only the one we merged into evcByIdIdx)
+			const removeIds = new Set(evcByUrlIdxAll.map(({ s }) => s.id));
+			servers = servers.filter((s) => !removeIds.has(s.id));
+			changed = true;
+		} else if (evcByIdIdx < 0) {
+			// No EVC server by id — check if there's one by URL to adopt
+			if (evcByUrlIdxAll.length > 0) {
+				const richest = evcByUrlIdxAll.reduce((best, cur) =>
+					(cur.s.isValidated || cur.s.lastValidated) ? cur : best, evcByUrlIdxAll[0]);
+				renamedServerId = richest.s.id;
+				servers[richest.i] = { ...richest.s, id: EVC_SERVER_ID };
+				if (!servers[richest.i].name || servers[richest.i].name === new URL(EVC_CP_URL).hostname) {
+					servers[richest.i].name = "EVC Team Relay";
+				}
+				if (defaultServerId === renamedServerId) {
+					defaultServerId = EVC_SERVER_ID;
+				}
+				// Remove other duplicates
+				if (evcByUrlIdxAll.length > 1) {
+					const removeIds = new Set(
+						evcByUrlIdxAll.filter(({ i }) => i !== richest.i).map(({ s }) => s.id)
+					);
+					servers = servers.filter((s) => !removeIds.has(s.id));
+				}
+				changed = true;
+			} else {
+				// No EVC server at all — prepend it
+				servers.unshift({
+					id: EVC_SERVER_ID,
+					name: "EVC Team Relay",
+					controlPlaneUrl: EVC_CP_URL,
+					isValidated: false,
+				});
+				changed = true;
+			}
+		}
+
+		if (!defaultServerId) {
+			defaultServerId = EVC_SERVER_ID;
+			changed = true;
+		}
+
+		return {
+			settings: { ...orig, servers, defaultServerId },
+			renamedServerId,
+			changed,
+		};
 	}
 
 	// Legacy format - migrate if enabled and has URL
 	const legacy = oldSettings as LegacyRelayOnPremSettings;
 	if (!legacy.enabled || !legacy.controlPlaneUrl) {
-		return DEFAULT_RELAY_ONPREM_SETTINGS;
+		return { settings: DEFAULT_RELAY_ONPREM_SETTINGS, changed: true };
 	}
 
 	// Create server from legacy settings
@@ -128,24 +232,27 @@ export function migrateRelayOnPremSettings(
 	let serverName: string;
 	try {
 		serverName = new URL(legacy.controlPlaneUrl).hostname;
-	} catch (e) {
+	} catch (e: unknown) {
 		serverName = "Relay Server";
 	}
 
 	return {
-		enabled: true,
-		servers: [
-			{
-				id: serverId,
-				name: serverName,
-				controlPlaneUrl: legacy.controlPlaneUrl,
-				relayServerUrl: legacy.relayServerUrl,
-				lastUserEmail: legacy.credentials?.email,
-				isValidated: true,
-				lastValidated: Date.now(),
-			},
-		],
-		defaultServerId: serverId,
+		settings: {
+			enabled: true,
+			servers: [
+				{
+					id: serverId,
+					name: serverName,
+					controlPlaneUrl: legacy.controlPlaneUrl,
+					relayServerUrl: legacy.relayServerUrl,
+					lastUserEmail: legacy.credentials?.email,
+					isValidated: true,
+					lastValidated: Date.now(),
+				},
+			],
+			defaultServerId: serverId,
+		},
+		changed: true,
 	};
 }
 
@@ -174,7 +281,7 @@ export function validateServerConfig(server: RelayOnPremServer): {
 			if (!url.protocol.match(/^https?:$/)) {
 				errors.push("Control Plane URL must use HTTP or HTTPS protocol");
 			}
-		} catch (e) {
+		} catch (e: unknown) {
 			errors.push("Control Plane URL is invalid");
 		}
 	}
@@ -185,7 +292,7 @@ export function validateServerConfig(server: RelayOnPremServer): {
 			if (!url.protocol.match(/^wss?:$/)) {
 				errors.push("Relay Server URL must use WS or WSS protocol");
 			}
-		} catch (e) {
+		} catch (e: unknown) {
 			errors.push("Relay Server URL is invalid");
 		}
 	}

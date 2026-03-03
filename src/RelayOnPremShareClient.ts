@@ -320,7 +320,7 @@ export class RelayOnPremShareClient {
 			const data: ShareListResponse = await response.json();
 			log(`Retrieved ${data.length} shares`);
 			return data;
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error listing shares:", error);
 			throw error;
 		}
@@ -349,7 +349,7 @@ export class RelayOnPremShareClient {
 			const data: ShareDetailResponse = await response.json();
 			log(`Retrieved share: ${data.path}`);
 			return data;
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error getting share:", error);
 			throw error;
 		}
@@ -378,7 +378,7 @@ export class RelayOnPremShareClient {
 			const members: ShareMember[] = await response.json();
 			log(`Retrieved ${members.length} members`);
 			return members;
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error getting share members:", error);
 			throw error;
 		}
@@ -411,7 +411,7 @@ export class RelayOnPremShareClient {
 			const share: RelayOnPremShare = await response.json();
 			log(`Created share: ${share.id}`);
 			return share;
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error creating share:", error);
 			throw error;
 		}
@@ -450,7 +450,7 @@ export class RelayOnPremShareClient {
 			const share: RelayOnPremShare = await response.json();
 			log(`Updated share: ${share.id}`);
 			return share;
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error updating share:", error);
 			throw error;
 		}
@@ -477,7 +477,7 @@ export class RelayOnPremShareClient {
 			}
 
 			log(`Deleted share: ${shareId}`);
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error deleting share:", error);
 			throw error;
 		}
@@ -513,7 +513,7 @@ export class RelayOnPremShareClient {
 			const member: ShareMember = await response.json();
 			log(`Added member: ${member.user_id}`);
 			return member;
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error adding member:", error);
 			throw error;
 		}
@@ -540,7 +540,7 @@ export class RelayOnPremShareClient {
 			}
 
 			log(`Removed member: ${userId}`);
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error removing member:", error);
 			throw error;
 		}
@@ -576,7 +576,7 @@ export class RelayOnPremShareClient {
 			const member: ShareMember = await response.json();
 			log(`Updated member role: ${member.user_id}`);
 			return member;
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error updating member role:", error);
 			throw error;
 		}
@@ -608,7 +608,7 @@ export class RelayOnPremShareClient {
 			const user: User = await response.json();
 			log(`Found user: ${user.id}`);
 			return user;
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error searching user:", error);
 			throw error;
 		}
@@ -638,7 +638,7 @@ export class RelayOnPremShareClient {
 			const invite: Invite = await response.json();
 			log(`Created invite: ${invite.id}`);
 			return invite;
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error creating invite:", error);
 			throw error;
 		}
@@ -667,7 +667,7 @@ export class RelayOnPremShareClient {
 			const invites: Invite[] = await response.json();
 			log(`Retrieved ${invites.length} invites`);
 			return invites;
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error listing invites:", error);
 			throw error;
 		}
@@ -694,7 +694,7 @@ export class RelayOnPremShareClient {
 			}
 
 			log(`Revoked invite: ${inviteId}`);
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error revoking invite:", error);
 			throw error;
 		}
@@ -725,7 +725,7 @@ export class RelayOnPremShareClient {
 			const providers: OAuthProvider[] = await response.json();
 			log(`Retrieved ${providers.length} OAuth providers`);
 			return providers;
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error getting OAuth providers:", error);
 			throw error;
 		}
@@ -753,7 +753,7 @@ export class RelayOnPremShareClient {
 			const info: ServerInfo = await response.json();
 			log(`Retrieved server info: ${info.name} v${info.version}`);
 			return info;
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error getting server info:", error);
 			throw error;
 		}
@@ -787,7 +787,7 @@ export class RelayOnPremShareClient {
 			}
 
 			log(`Successfully synced file content: ${path}`);
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error syncing folder file content:", error);
 			throw error;
 		}
@@ -820,7 +820,7 @@ export class RelayOnPremShareClient {
 			const plan: BillingPlanResponse = await response.json();
 			log(`Retrieved billing plan: ${plan.plan}`);
 			return plan;
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error getting billing plan:", error);
 			throw error;
 		}
@@ -848,7 +848,7 @@ export class RelayOnPremShareClient {
 			const data = await response.json();
 			log(`Retrieved ${data.plans.length} available plans`);
 			return data.plans;
-		} catch (error) {
+		} catch (error: unknown) {
 			log("Error getting available plans:", error);
 			throw error;
 		}

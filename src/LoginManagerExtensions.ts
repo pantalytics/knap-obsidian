@@ -36,7 +36,7 @@ export async function loginWithEmailPassword(
 
 		log(`Successfully logged in as ${user.email}`);
 		return user;
-	} catch (error) {
+	} catch (error: unknown) {
 		log("Login error:", error);
 		throw error;
 	}
@@ -61,7 +61,7 @@ export async function refreshAuthToken(authProvider: IAuthProvider): Promise<Use
 
 		log("Token refreshed successfully");
 		return user;
-	} catch (error) {
+	} catch (error: unknown) {
 		log("Token refresh error:", error);
 		throw error;
 	}
@@ -76,7 +76,7 @@ export async function logoutUser(authProvider: IAuthProvider): Promise<void> {
 	try {
 		await authProvider.logout();
 		log("Logged out successfully");
-	} catch (error) {
+	} catch (error: unknown) {
 		log("Logout error:", error);
 		throw error;
 	}

@@ -39,7 +39,7 @@
 				onProgress: (p) => progress.set(p),
 			});
 			stats.set(results);
-		} catch (e) {
+		} catch (e: unknown) {
 			error.set(`Analysis failed: ${e.message}`);
 		} finally {
 			isLoading.set(false);
@@ -61,7 +61,7 @@
 					(store) => store.slug !== slug,
 				);
 			}
-		} catch (e) {
+		} catch (e: unknown) {
 			error.set(`Failed to delete ${slug}: ${e.message}`);
 		}
 	}

@@ -142,6 +142,7 @@ export default class Live extends Plugin {
 		setDebugging(true);
 		console.warn("RelayInstances", RelayInstances);
 		if (save) {
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			this.debugSettings.update((settings) => ({
 				...settings,
 				debugging: true,
@@ -152,6 +153,7 @@ export default class Live extends Plugin {
 	disableDebugging(save?: boolean) {
 		setDebugging(false);
 		if (save) {
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			this.debugSettings.update((settings) => ({
 				...settings,
 				debugging: false,
@@ -222,7 +224,7 @@ export default class Live extends Plugin {
 				}));
 				new Notice(`❌ Validation failed: ${result.error}`, 8000);
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			notice.hide();
 			const errorMessage =
 				error instanceof Error ? error.message : "Unknown error";
@@ -303,7 +305,7 @@ export default class Live extends Plugin {
 					8000,
 				);
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			const errorMessage =
 				error instanceof Error ? error.message : "Unknown error";
 			this.error("Startup endpoint validation error:", errorMessage);
@@ -317,6 +319,7 @@ export default class Live extends Plugin {
 		}
 	}
 	async onload() {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.appId = (this.app as any).appId;
 		const start = moment.now();
 		RelayInstances.set(this, "plugin");
@@ -481,7 +484,9 @@ export default class Live extends Plugin {
 		);
 
 		// Store app reference for reload function (avoid window.app per Obsidian guidelines)
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const appRef = this.app as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		(this.app as any).reloadRelay = async () => {
 			await appRef.plugins.disablePlugin("evc-team-relay");
 			await appRef.plugins.enablePlugin("evc-team-relay");
@@ -490,6 +495,7 @@ export default class Live extends Plugin {
 		this.addCommand({
 			id: "reload",
 			name: "Reload Relay",
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			callback: async () => await (this.app as any).reloadRelay(),
 		});
 
@@ -833,7 +839,7 @@ export default class Live extends Plugin {
 												this.sharedFolders.delete(folder);
 												this.folderNavDecorations?.quickRefresh();
 												new Notice(`Folder "${folder.path}" unshared`);
-											} catch (error) {
+											} catch (error: unknown) {
 												new Notice(
 													`Failed to unshare: ${error instanceof Error ? error.message : "Unknown error"}`
 												);
@@ -861,7 +867,7 @@ export default class Live extends Plugin {
 														);
 													}
 												}
-											} catch (e) {
+											} catch (e: unknown) {
 												// Web sync is best-effort, don't block CRDT sync
 											}
 										}
@@ -918,6 +924,7 @@ export default class Live extends Plugin {
 	}
 
 	async reload() {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		(this.app as any).reloadRelay()();
 	}
 
@@ -1121,7 +1128,7 @@ export default class Live extends Plugin {
 			// Refresh visual indicators
 			this.folderNavDecorations?.quickRefresh();
 			log("Relay-onprem shares loaded");
-		} catch (error) {
+		} catch (error: unknown) {
 			err("Failed to load relay-onprem shares:", error);
 		}
 	}
@@ -1275,7 +1282,7 @@ export default class Live extends Plugin {
 							}
 						}
 					}
-				} catch (e) {
+				} catch (e: unknown) {
 					console.error(`Failed to sync ${share.path}:`, e);
 				}
 			}
@@ -1284,7 +1291,7 @@ export default class Live extends Plugin {
 			if (relaySynced > 0) parts.push(`${relaySynced} relay`);
 			if (webSynced > 0) parts.push(`${webSynced} web`);
 			new Notice(parts.length > 0 ? `Synced: ${parts.join(", ")}` : "No shares to sync");
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(`Sync failed: ${error instanceof Error ? error.message : "Unknown error"}`);
 		}
 	}
@@ -1334,7 +1341,7 @@ export default class Live extends Plugin {
 			}
 
 			new Notice("Current file is not in a web-published share");
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(`Sync failed: ${error instanceof Error ? error.message : "Unknown error"}`);
 		}
 	}
@@ -1397,6 +1404,7 @@ export default class Live extends Plugin {
 				return;
 			}
 
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const webviewer = (this.app as any).internalPlugins?.plugins?.webviewer;
 			if (!webviewer?.instance?.options || !webviewer.enabled) {
 				this.warn("Webviewer plugin not found or not initialized");
@@ -1416,6 +1424,7 @@ export default class Live extends Plugin {
 
 			Object.defineProperty(options, "openExternalURLs", {
 				get() {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					const currentEvent = window.event as any;
 					if (currentEvent?.type === "open-url" && currentEvent?.detail?.url) {
 						const url = currentEvent.detail.url;
@@ -1457,7 +1466,7 @@ export default class Live extends Plugin {
 
 			this.webviewerPatched = true;
 			this.debug("patched webviewer options");
-		} catch (error) {
+		} catch (error: unknown) {
 			this.error("Failed to patch webviewer:", error);
 		}
 	}
@@ -1622,7 +1631,9 @@ export default class Live extends Plugin {
 
 		getPatcher().patch(MarkdownView.prototype, {
 			// When this is called, the active editors haven't yet updated.
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			onUnloadFile(old: any) {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				return function (file: any) {
 					plugin._liveViews.wipe();
 					// @ts-ignore
@@ -1632,10 +1643,13 @@ export default class Live extends Plugin {
 		});
 
 		getPatcher().patch(this.app.vault, {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			process(old: any) {
 				return function (
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					tfile: any,
 					fn: (data: string) => string,
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					options: any,
 				) {
 					try {
@@ -1646,6 +1660,7 @@ export default class Live extends Plugin {
 								file.process(fn);
 							}
 						}
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					} catch (e: any) {
 						plugin.log(e);
 					}
@@ -1684,6 +1699,7 @@ export default class Live extends Plugin {
 									: file.name;
 							const normalizedFileName = normalizePath(file.name);
 							const destinationFiles = (
+								// eslint-disable-next-line @typescript-eslint/no-explicit-any
 								plugin.app.metadataCache as any
 							).uniqueFileLookup.get(normalizedFileName.toLowerCase());
 
@@ -1753,6 +1769,7 @@ export default class Live extends Plugin {
 			// @ts-ignore
 			super.removeCommand(command);
 		} else {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const appAny = this.app as any;
 			const appCommands = appAny.commands;
 			const qualifiedCommand = `evc-team-relay:${command}`;
@@ -1781,18 +1798,22 @@ export default class Live extends Plugin {
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_DIFFERENCES);
 
 		this._liveViews?.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this._liveViews = null as any;
 
 		this.relayManager?.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.relayManager = null as any;
 
 		this.tokenStore?.stop();
 		this.tokenStore?.clearState();
 		this.tokenStore?.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.tokenStore = null as any;
 
 		this.networkStatus?.stop();
 		this.networkStatus?.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.networkStatus = null as any;
 
 		this.openModals.forEach((modal) => {
@@ -1801,15 +1822,19 @@ export default class Live extends Plugin {
 		this.openModals.length = 0;
 
 		this.sharedFolders?.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.sharedFolders = null as any;
 
 		this.settingsTab?.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.settingsTab = null as any;
 
 		this.loginManager?.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.loginManager = null as any;
 
 		this.backgroundSync?.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.backgroundSync = null as any;
 
 		// Cleanup WebSyncManager (v1.8.1)
@@ -1819,35 +1844,48 @@ export default class Live extends Plugin {
 		}
 
 		this.hashStore.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.hashStore = null as any;
 
 		this.app?.workspace.updateOptions();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		(this.app as any).reloadRelay = undefined;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.app = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.fileManager = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.manifest = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.vault = null as any;
 
 		this.debugSettings.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.debugSettings = null as any;
 		this.folderSettings.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.folderSettings = null as any;
 
 		// Destroy FeatureFlagManager before destroying featureSettings
 		FeatureFlagManager.destroy();
 
 		this.featureSettings.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.featureSettings = null as any;
 		this.loginSettings.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.loginSettings = null as any;
 		this.endpointSettings.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.endpointSettings = null as any;
 		this.relayOnPremSettings.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.relayOnPremSettings = null as any;
 
 		this.interceptedUrls.length = 0;
 		PostOffice.destroy();
 
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.notifier = null as any;
 
 		auditTeardown();

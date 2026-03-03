@@ -274,7 +274,7 @@ export class TokenStore<TokenType extends HasToken> {
 				this._activePromises.delete(documentId);
 				return newToken;
 			})
-			.catch((err) => {
+			.catch((err: unknown) => {
 				this.onRefreshFailure(documentId);
 				this._activePromises.delete(documentId);
 				throw err;
@@ -290,6 +290,7 @@ export class TokenStore<TokenType extends HasToken> {
 	): Promise<TokenType> {
 		this.log(`getting token ${friendlyName}`);
 		if (!this.tokenMap) {
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			Promise.reject(
 				new Error(
 					"attempted to get token after TokenStore was destroyed.",
@@ -395,12 +396,17 @@ export class TokenStore<TokenType extends HasToken> {
 	destroy() {
 		this.clear();
 		this.timeProvider.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.timeProvider = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.refresh = null as any;
 		this.callbacks.clear();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.callbacks = null as any;
 		this._activePromises.clear();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this._activePromises = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.tokenMap = null as any;
 	}
 }

@@ -40,7 +40,7 @@
 			} catch {
 				// Non-critical
 			}
-		} catch (e) {
+		} catch (e: unknown) {
 			error = e instanceof Error ? e.message : "Failed to load billing data";
 		} finally {
 			loading = false;
@@ -141,7 +141,7 @@
 					await loadBillingData();
 				}
 			}
-		} catch (e) {
+		} catch (e: unknown) {
 			new Notice(`Upgrade failed: ${e instanceof Error ? e.message : "Unknown error"}`);
 		} finally {
 			checkingOut = false;
@@ -160,7 +160,7 @@
 			} else {
 				new Notice(result.message || "Portal not available");
 			}
-		} catch (e) {
+		} catch (e: unknown) {
 			new Notice(`Failed to open portal: ${e instanceof Error ? e.message : "Unknown error"}`);
 		} finally {
 			openingPortal = false;
@@ -175,7 +175,7 @@
 			await client.cancelSubscription();
 			new Notice("Subscription cancelled. Access continues until end of billing period.");
 			await loadBillingData();
-		} catch (e) {
+		} catch (e: unknown) {
 			new Notice(`Cancel failed: ${e instanceof Error ? e.message : "Unknown error"}`);
 		} finally {
 			cancellingSubscription = false;

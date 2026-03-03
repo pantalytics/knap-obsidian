@@ -120,7 +120,7 @@
 				showInputError = true;
 				forceUpdate(); // Force UI refresh to show error
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			const errorMsg = error instanceof Error ? error.message : "Unknown error occurred";
 			errorMessage = `Error adding tenant: ${errorMsg}`;
 			showInputError = true;
@@ -139,7 +139,7 @@
 			} else {
 				errorMessage = result.error || "Failed to switch tenant";
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			const errorMsg = error instanceof Error ? error.message : "Unknown error occurred";
 			errorMessage = `Error switching tenant: ${errorMsg}`;
 		}
@@ -155,7 +155,7 @@
 			} else {
 				errorMessage = "Failed to remove tenant";
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			const errorMsg = error instanceof Error ? error.message : "Unknown error occurred";
 			errorMessage = `Error removing tenant: ${errorMsg}`;
 		}
@@ -187,7 +187,7 @@
 		try {
 			const endpointManager = plugin.loginManager.getEndpointManager();
 			defaultTenantInfo = await endpointManager.getDefaultTenantInfo();
-		} catch (error) {
+		} catch (error: unknown) {
 			console.log("Failed to load default tenant info:", error);
 			defaultTenantInfo = null;
 		}

@@ -362,6 +362,7 @@ class FilePillDecoration {
 			el.remove();
 		});
 		this.pill?.$destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.file = null as any;
 	}
 }
@@ -388,7 +389,7 @@ class FilePillVisitor extends BaseVisitor<FilePillDecoration> {
 						}
 						return new FilePillDecoration(item.selfEl, file);
 					}
-				} catch (e) {
+				} catch (e: unknown) {
 					const error = curryLog("FilePillVisitor.visitFile", "error");
 					error(e);
 				}
@@ -503,7 +504,7 @@ class FileStatusVisitor extends BaseVisitor<DocumentStatus> {
 				if (!(document instanceof Document)) return null;
 				if (!document) return null;
 				return storage || new DocumentStatus(item.el, document, file);
-			} catch (e) {
+			} catch (e: unknown) {
 				// document doesn't exist yet...
 				return null;
 			}
@@ -544,7 +545,7 @@ class FileExplorerWalker {
 		try {
 			//@ts-expect-error this is a private API
 			return this.fileExplorer.view.fileItems[path];
-		} catch (e) {
+		} catch (e: unknown) {
 			return null;
 		}
 	}
@@ -800,10 +801,15 @@ export class FolderNavigationDecorations {
 		this.treeState.clear();
 		this.offLayoutChange();
 
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.vault = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.workspace = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.sharedFolders = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.backgroundSync = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.offFolderListener = null as any;
 	}
 }

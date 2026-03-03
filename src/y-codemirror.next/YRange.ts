@@ -18,6 +18,7 @@ export class YRange {
 		this.yhead = yhead;
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	toJSON(): any {
 		return {
 			yanchor: Y.relativePositionToJSON(this.yanchor),
@@ -25,6 +26,7 @@ export class YRange {
 		};
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	static fromJSON(json: any): YRange {
 		return new YRange(
 			Y.createRelativePositionFromJSON(json.yanchor),

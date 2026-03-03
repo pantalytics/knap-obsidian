@@ -81,7 +81,7 @@ export class DiskBufferStore {
 				const request = store.put({ guid, contents });
 				request.onerror = () => reject(request.error);
 				request.onsuccess = () => resolve();
-			} catch (e) {
+			} catch (e: unknown) {
 				reject(e);
 			}
 		});
@@ -97,7 +97,7 @@ export class DiskBufferStore {
 				request.onerror = () => reject(request.error);
 				request.onsuccess = () =>
 					resolve(request.result ? request.result.contents : null);
-			} catch (e) {
+			} catch (e: unknown) {
 				reject(e);
 			}
 		});
@@ -112,7 +112,7 @@ export class DiskBufferStore {
 				const request = store.delete(guid);
 				request.onerror = () => reject(request.error);
 				request.onsuccess = () => resolve();
-			} catch (e) {
+			} catch (e: unknown) {
 				reject(e);
 			}
 		});

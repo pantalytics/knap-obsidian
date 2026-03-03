@@ -70,10 +70,12 @@ export class SyncFolder extends HasLogging implements IFile {
 				}
 			},
 		);
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		(async () => {
 			if (this.createPromise) {
 				await this.createPromise;
 			}
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			parent.markUploaded(this);
 		})();
 		this.log("created");
@@ -142,8 +144,11 @@ export class SyncFolder extends HasLogging implements IFile {
 
 	destroy() {
 		this.offFolderStatusListener?.();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.offFolderStatusListener = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this._parent = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this._tfolder = null as any;
 	}
 }

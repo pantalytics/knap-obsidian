@@ -98,7 +98,7 @@ async function refresh(
 
 		const clientToken = (await response.json()) as ClientToken;
 		onSuccess(clientToken);
-	} catch (reason) {
+	} catch (reason: unknown) {
 		error(reason, payload);
 		onError(reason as Error);
 	}

@@ -11,12 +11,15 @@ export class AwarenessViewPlugin extends HasLogging {
 	private awarenessComponent?: UserAwareness;
 	private targetElement?: HTMLElement;
 	private awarenessElement?: HTMLElement;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private relayUsersStore: any;
 
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	constructor(view: LiveView<MarkdownView>, relayUsersStore: any) {
 		super();
 		this.view = view;
 		this.doc = view.document;
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.relayUsersStore = relayUsersStore;
 		this.setLoggers(`[AwarenessView](${this.doc.path})`);
 		this.install();
@@ -53,9 +56,7 @@ export class AwarenessViewPlugin extends HasLogging {
 		// Create a wrapper div to contain both title and avatars
 		const titleWrapper = document.createElement("div");
 		titleWrapper.className = "title-with-awareness";
-		titleWrapper.style.display = "flex";
-		titleWrapper.style.alignItems = "center";
-		titleWrapper.style.justifyContent = "space-between";
+		titleWrapper.addClass("evc-flex", "evc-align-center", "evc-justify-between");
 		titleWrapper.style.width = "100%";
 
 		// Create container for the awareness component
@@ -87,7 +88,7 @@ export class AwarenessViewPlugin extends HasLogging {
 			});
 
 			this.log("Awareness component successfully mounted");
-		} catch (error) {
+		} catch (error: unknown) {
 			this.warn("Failed to create awareness component:", error);
 		}
 	}
@@ -100,7 +101,7 @@ export class AwarenessViewPlugin extends HasLogging {
 				this.awarenessComponent.$destroy();
 				this.awarenessComponent = undefined;
 				this.log("Awareness component destroyed");
-			} catch (error) {
+			} catch (error: unknown) {
 				this.warn("Error destroying awareness component:", error);
 			}
 		}
@@ -120,7 +121,9 @@ export class AwarenessViewPlugin extends HasLogging {
 			this.awarenessElement = undefined;
 		}
 
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.view = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.doc = null as any;
 	}
 }

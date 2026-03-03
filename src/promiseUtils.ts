@@ -131,6 +131,7 @@ export class SharedPromise<T> {
 
 export function withTimeoutWarning<T>(
 	promise: Promise<T>,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	...logArgs: any[]
 ): Promise<T> {
 	return new Promise((resolve, reject) => {

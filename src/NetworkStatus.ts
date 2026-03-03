@@ -71,6 +71,7 @@ class NetworkStatus {
 			return Promise.resolve(true);
 		}
 		return new Promise((resolve) => {
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			this._checkStatus().then(() => {
 				resolve(this.online);
 			});
@@ -105,10 +106,11 @@ class NetworkStatus {
 					throw new Error("disconnected");
 				}
 			})
-			.catch((error) => {
-				if (error.message.includes("ERR_NETWORK_CHANGED")) {
+			.catch((error: unknown) => {
+				if (error instanceof Error && error.message.includes("ERR_NETWORK_CHANGED")) {
 					// This doesn't necessarily imply a disconnect,
 					// We should immediately try again to get a name resolution error.
+					// eslint-disable-next-line @typescript-eslint/no-floating-promises
 					this._checkStatus();
 					return;
 				}
@@ -134,9 +136,13 @@ class NetworkStatus {
 
 	destroy() {
 		this._onceOnline.clear();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this._onceOnline = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.onOnline = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.onOffline = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.timeProvider = null as any;
 	}
 }

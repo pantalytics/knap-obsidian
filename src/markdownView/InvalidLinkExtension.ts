@@ -21,7 +21,7 @@ export const invalidLinkSyncAnnotation = Annotation.define();
 class FileWarningWidget extends WidgetType {
 	toDOM() {
 		const span = document.createElement("span");
-		span.style.display = "inline-flex";
+		span.addClass("evc-inline-flex");
 		span.addClass("invalid-link");
 		// Use Obsidian's setIcon API instead of innerHTML for security
 		setIcon(span, "file-warning");
@@ -198,7 +198,7 @@ export class InvalidLinkPluginValue {
 					link: cacheLink.link,
 					original: cacheLink.original,
 				});
-			} catch (e) {
+			} catch (e: unknown) {
 				this.metadata.delete(cacheFrom);
 			}
 		}
@@ -289,10 +289,13 @@ export class InvalidLinkPluginValue {
 		if (this.connectionManager && this.view?.document?.tfile) {
 			this.connectionManager.offMeta(this.view.document.tfile);
 		}
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.connectionManager = null as any;
 		this.view = undefined;
 		this.metadata.clear();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.metadata = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.editor = null as any;
 	}
 }

@@ -42,6 +42,7 @@ export class Patcher extends HasLogging {
 	 * Create a monkeypatch and register its cleanup function
 	 * Prevents duplicate patches of the same method on the same instance
 	 */
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	patch<T extends Record<string, any>>(target: T, patches: any): () => void {
 		const existingMethods = this.patchedMethods.get(target) || new Set();
 		const requestedMethods = Object.keys(patches);
@@ -53,6 +54,7 @@ export class Patcher extends HasLogging {
 			this.warn(`Methods [${conflicts.join(', ')}] already patched on ${target.constructor?.name}, skipping duplicates`);
 			
 			// Only patch non-conflicting methods
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const safePatch: any = {};
 			requestedMethods
 				.filter(method => !conflicts.includes(method))
@@ -127,7 +129,7 @@ export class Patcher extends HasLogging {
 			try {
 				unsubscribe();
 				this.debug("Cleaned up monkeypatch", { index: index + 1, total: count });
-			} catch (error) {
+			} catch (error: unknown) {
 				this.error("Error during monkeypatch cleanup", { index: index + 1, error });
 			}
 		});

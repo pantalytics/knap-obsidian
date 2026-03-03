@@ -78,7 +78,7 @@ export class OAuthHandler {
 				callbackUrl,
 				port,
 			};
-		} catch (error) {
+		} catch (error: unknown) {
 			this.stopCallbackServer();
 			throw error;
 		}

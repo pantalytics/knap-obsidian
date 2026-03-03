@@ -51,7 +51,7 @@
 
 			new Notice("Invite link created!");
 			dispatch("created");
-		} catch (e) {
+		} catch (e: unknown) {
 			new Notice(`Failed to create invite: ${e instanceof Error ? e.message : "Unknown error"}`);
 		} finally {
 			creating = false;

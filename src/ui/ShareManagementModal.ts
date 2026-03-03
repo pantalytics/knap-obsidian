@@ -67,7 +67,7 @@ export class ShareManagementModal extends Modal {
 			await this.loadShares();
 			contentEl.empty();
 			this.renderContent();
-		} catch (error) {
+		} catch (error: unknown) {
 			contentEl.empty();
 			this.showError(
 				contentEl,
@@ -204,7 +204,7 @@ export class ShareManagementModal extends Modal {
 					} else if (this.plugin.shareClient) {
 						return await this.plugin.shareClient.listInvites(share.id);
 					}
-				} catch (inviteError) {
+				} catch (inviteError: unknown) {
 					const errorMessage = inviteError instanceof Error ? inviteError.message : "";
 					if (errorMessage.includes("403") || errorMessage.includes("Insufficient permissions")) {
 						console.log("[ShareManagement] User is not owner, skipping invites");
@@ -228,7 +228,7 @@ export class ShareManagementModal extends Modal {
 			this.invites = invites;
 
 			this.renderContent();
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(
 				`Failed to load share details: ${error instanceof Error ? error.message : "Unknown error"}`,
 			);
@@ -253,8 +253,7 @@ export class ShareManagementModal extends Modal {
 
 		// Create button row (no duplicate header - modal title is enough)
 		const headerDiv = contentEl.createDiv({ cls: "relay-onprem-share-header" });
-		headerDiv.style.display = "flex";
-		headerDiv.style.justifyContent = "flex-end";
+		headerDiv.addClass("evc-flex", "evc-justify-end");
 		headerDiv.style.marginBottom = "1em";
 
 		const createButton = headerDiv.createEl("button", {
@@ -519,7 +518,7 @@ export class ShareManagementModal extends Modal {
 										this.plugin.folderNavDecorations?.quickRefresh();
 										new Notice("Folder connected! Syncing...");
 										this.renderContent();
-									} catch (e) {
+									} catch (e: unknown) {
 										new Notice(`Failed to connect folder: ${e instanceof Error ? e.message : "Unknown error"}`);
 									}
 								},
@@ -623,7 +622,7 @@ export class ShareManagementModal extends Modal {
 
 			new Notice(`Visibility changed to ${visibility}`);
 			this.renderContent();
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(
 				`Failed to change visibility: ${error instanceof Error ? error.message : "Unknown error"}`
 			);
@@ -790,7 +789,7 @@ export class ShareManagementModal extends Modal {
 
 			new Notice(`Web slug updated to: ${newSlug}`);
 			this.renderContent();
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(
 				`Failed to update slug: ${error instanceof Error ? error.message : "Unknown error"}`
 			);
@@ -874,7 +873,7 @@ export class ShareManagementModal extends Modal {
 								syncedFiles++;
 								console.log("[WebSync] Successfully synced:", item.path);
 							}
-						} catch (error) {
+						} catch (error: unknown) {
 							console.error(`[WebSync] Failed to sync content for ${item.path}:`, error);
 							failedFiles.push(item.path);
 						}
@@ -889,7 +888,7 @@ export class ShareManagementModal extends Modal {
 				console.log("[WebSync] No web_slug, skipping content sync");
 				new Notice(`Folder synced with ${items.length} items!`);
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			console.error("[WebSync] syncFolderItems error:", error);
 			new Notice(
 				`Failed to sync folder: ${error instanceof Error ? error.message : "Unknown error"}`
@@ -934,7 +933,7 @@ export class ShareManagementModal extends Modal {
 			};
 
 			new Notice("Web content synced successfully!");
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(
 				`Failed to sync content: ${error instanceof Error ? error.message : "Unknown error"}`
 			);
@@ -955,7 +954,7 @@ export class ShareManagementModal extends Modal {
 			const docId = S3RN.encode(sharedFolder.s3rn);
 			console.log("[ShareManagement] Got doc_id for path:", path, "->", docId);
 			return docId;
-		} catch (error) {
+		} catch (error: unknown) {
 			console.error("[ShareManagement] Failed to get doc_id for path:", path, error);
 			return null;
 		}
@@ -986,7 +985,7 @@ export class ShareManagementModal extends Modal {
 						);
 					}
 					this.selectedShare = { ...this.selectedShare, visibility: "public" };
-				} catch (e) {
+				} catch (e: unknown) {
 					console.error("Failed to change visibility:", e);
 				}
 			}
@@ -1044,7 +1043,7 @@ export class ShareManagementModal extends Modal {
 
 			new Notice(enabled ? "Share published to web!" : "Share unpublished from web");
 			this.renderContent();
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(
 				`Failed to update web publishing: ${error instanceof Error ? error.message : "Unknown error"}`
 			);
@@ -1058,11 +1057,12 @@ export class ShareManagementModal extends Modal {
 		try {
 			const file = this.app.vault.getAbstractFileByPath(path);
 			if (file && "extension" in file) {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				const content = await this.app.vault.read(file as any);
 				return content;
 			}
 			return null;
-		} catch (error) {
+		} catch (error: unknown) {
 			console.error("Failed to read document content:", error);
 			return null;
 		}
@@ -1113,7 +1113,7 @@ export class ShareManagementModal extends Modal {
 
 			processFolder(folder, "");
 			return items;
-		} catch (error) {
+		} catch (error: unknown) {
 			console.error("Failed to get folder items:", error);
 			return [];
 		}
@@ -1147,7 +1147,7 @@ export class ShareManagementModal extends Modal {
 			};
 
 			new Notice(noindex ? "Search engine indexing disabled" : "Search engine indexing enabled");
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(
 				`Failed to update indexing: ${error instanceof Error ? error.message : "Unknown error"}`
 			);
@@ -1202,7 +1202,7 @@ export class ShareManagementModal extends Modal {
 			} else {
 				new Notice(`Sync mode changed to ${mode}`);
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(
 				`Failed to update sync mode: ${error instanceof Error ? error.message : "Unknown error"}`
 			);
@@ -1216,9 +1216,7 @@ export class ShareManagementModal extends Modal {
 
 		// Invites section header
 		const invitesHeaderDiv = contentEl.createDiv({ cls: "relay-onprem-invites-header" });
-		invitesHeaderDiv.style.display = "flex";
-		invitesHeaderDiv.style.justifyContent = "space-between";
-		invitesHeaderDiv.style.alignItems = "center";
+		invitesHeaderDiv.addClass("evc-flex", "evc-justify-between", "evc-align-center");
 		invitesHeaderDiv.style.marginTop = "1.5em";
 
 		invitesHeaderDiv.createEl("h4", { text: "Invite Links" });
@@ -1411,7 +1409,7 @@ export class ShareManagementModal extends Modal {
 
 			new Notice("Invite link created successfully!");
 			await this.loadShareDetails(this.selectedShare);
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(
 				`Failed to create invite: ${error instanceof Error ? error.message : "Unknown error"}`,
 			);
@@ -1471,7 +1469,7 @@ export class ShareManagementModal extends Modal {
 
 			new Notice("Invite link revoked");
 			await this.loadShareDetails(this.selectedShare);
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(
 				`Failed to revoke invite: ${error instanceof Error ? error.message : "Unknown error"}`,
 			);
@@ -1577,7 +1575,7 @@ export class ShareManagementModal extends Modal {
 		// Password field container (hidden by default)
 		let passwordInput: HTMLInputElement;
 		const passwordSettingEl = contentEl.createDiv({ cls: "relay-onprem-password-setting" });
-		passwordSettingEl.style.display = "none";
+		passwordSettingEl.addClass("evc-hidden");
 
 		new Setting(passwordSettingEl)
 			.setName("Password")
@@ -1599,7 +1597,7 @@ export class ShareManagementModal extends Modal {
 				dropdown.setValue("private");
 				dropdown.onChange((value) => {
 					// Show/hide password field based on visibility
-					passwordSettingEl.style.display = value === "protected" ? "block" : "none";
+					passwordSettingEl.toggleClass("evc-hidden", value !== "protected");
 				});
 			});
 
@@ -1668,7 +1666,7 @@ export class ShareManagementModal extends Modal {
 
 			await this.loadShares();
 			this.renderContent();
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(
 				`Failed to create share: ${error instanceof Error ? error.message : "Unknown error"}`,
 			);
@@ -1694,7 +1692,7 @@ export class ShareManagementModal extends Modal {
 			this.plugin.folderNavDecorations?.quickRefresh();
 
 			console.log(`[RelayOnPrem] Created SharedFolder for ${folderPath} on server ${serverId}`);
-		} catch (error) {
+		} catch (error: unknown) {
 			console.error(`[RelayOnPrem] Failed to create SharedFolder:`, error);
 		}
 	}
@@ -1727,7 +1725,7 @@ export class ShareManagementModal extends Modal {
 
 			new Notice(`Added member to share`);
 			await this.loadShareDetails(this.selectedShare);
-		} catch (error) {
+		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "Failed to add member";
 			new Notice(errorMessage);
 		}
@@ -1750,7 +1748,7 @@ export class ShareManagementModal extends Modal {
 
 			new Notice(`Member role changed to ${role}`);
 			await this.loadShareDetails(this.selectedShare);
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(
 				`Failed to change role: ${error instanceof Error ? error.message : "Unknown error"}`,
 			);
@@ -1773,7 +1771,7 @@ export class ShareManagementModal extends Modal {
 
 			new Notice("Member removed from share");
 			await this.loadShareDetails(this.selectedShare);
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(
 				`Failed to remove member: ${error instanceof Error ? error.message : "Unknown error"}`,
 			);
@@ -1815,7 +1813,7 @@ export class ShareManagementModal extends Modal {
 			this.invites = [];
 			await this.loadShares();
 			this.renderContent();
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(
 				`Failed to delete share: ${error instanceof Error ? error.message : "Unknown error"}`,
 			);

@@ -88,12 +88,13 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 		try {
 			const key = `${this.sharedFolder.appId}-relay-doc-${this.guid}`;
 			this._persistence = new IndexeddbPersistence(key, this.ydoc);
-		} catch (e) {
+		} catch (e: unknown) {
 			this.warn("Unable to open persistence.", this.guid);
 			console.error(e);
 			throw e;
 		}
 
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.whenSynced().then(() => {
 			const statsObserver = (event: Y.YTextEvent) => {
 				const origin = event.transaction.origin;
@@ -107,20 +108,26 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 			});
 			this.updateStats();
 			try {
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				this._persistence.set("path", this.path);
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				this._persistence.set("relay", this.sharedFolder.relayId || "");
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				this._persistence.set("appId", this.sharedFolder.appId);
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				this._persistence.set("s3rn", S3RN.encode(this.s3rn));
-			} catch (e) {
+			} catch (e: unknown) {
 				// pass
 			}
 
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			(async () => {
 				const serverSynced = await this.getServerSynced();
 				if (!serverSynced) {
 					await this.onceProviderSynced();
 					await this.markSynced();
 				}
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				this.sharedFolder.markUploaded(this);
 			})();
 		});
@@ -206,7 +213,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 			try {
 				const storedContents = await this._parent.diskBufferStore
 					.loadDiskBuffer(this.guid)
-					.catch((e) => {
+					.catch((e: unknown) => {
 						return null;
 					});
 				if (storedContents !== null && storedContents !== "") {
@@ -215,7 +222,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 					fileContents = await this._parent.read(this);
 				}
 				return this.setDiskBuffer(fileContents.replace(/\r\n/g, "\n"));
-			} catch (e) {
+			} catch (e: unknown) {
 				console.error(e);
 				throw e;
 			}
@@ -235,7 +242,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 		}
 		this._parent.diskBufferStore
 			.saveDiskBuffer(this.guid, contents)
-			.catch((e) => {});
+			.catch((e: unknown) => {});
 		return this._diskBuffer;
 	}
 
@@ -246,7 +253,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 		}
 		await this._parent.diskBufferStore
 			.removeDiskBuffer(this.guid)
-			.catch((e) => {});
+			.catch((e: unknown) => {});
 	}
 
 	public async checkStale(): Promise<boolean> {
@@ -276,6 +283,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 			applied.push(fn);
 
 			if (text == contents) {
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				this.clearDiskBuffer();
 				if (og == this.text) {
 					diffMatchPatch(this.ydoc, text, this);
@@ -297,6 +305,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 		}
 		this.pendingOps = [];
 		if (!stale) {
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			this.clearDiskBuffer();
 		}
 		return stale;
@@ -350,6 +359,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 			if (awaitingUpdates) {
 				// If this is a brand new shared folder, we want to wait for a connection before we start reserving new guids for local files.
 				this.log("awaiting updates");
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				this.connect();
 				await this.onceConnected();
 				this.log("connected");
@@ -409,6 +419,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 			this.warn("skipping save for pending delete", this.path);
 			return;
 		}
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.vault.modify(this.tfile, this.text);
 		this.warn("file saved", this.path);
 	}
@@ -446,15 +457,20 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 			this._diskBuffer.contents = "";
 			this._diskBuffer = undefined;
 		}
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this._diskBufferStore = null as any;
 		this.whenSyncedPromise?.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.whenSyncedPromise = null as any;
 		this.readyPromise?.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.readyPromise = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this._parent = null as any;
 	}
 
 	public async read(): Promise<string> {
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		return this.text;
 	}
 

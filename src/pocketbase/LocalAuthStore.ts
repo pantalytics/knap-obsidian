@@ -8,6 +8,7 @@
 import { BaseAuthStore, type AuthModel } from "pocketbase";
 
 export class LocalAuthStore extends BaseAuthStore {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private storageFallback: { [key: string]: any } = {};
 	private storageKey: string;
 
@@ -69,12 +70,13 @@ export class LocalAuthStore extends BaseAuthStore {
 	 * Retrieves `key` from the browser's local storage
 	 * (or runtime/memory if local storage is undefined).
 	 */
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private _storageGet(key: string): any {
 		if (typeof window !== "undefined" && window?.localStorage) {
 			const rawValue = window.localStorage.getItem(key) || "";
 			try {
 				return JSON.parse(rawValue);
-			} catch (e) {
+			} catch (e: unknown) {
 				// not a json
 				return rawValue;
 			}
@@ -88,6 +90,7 @@ export class LocalAuthStore extends BaseAuthStore {
 	 * Stores a new data in the browser's local storage
 	 * (or runtime/memory if local storage is undefined).
 	 */
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private _storageSet(key: string, value: any) {
 		if (typeof window !== "undefined" && window?.localStorage) {
 			// store in local storage

@@ -59,6 +59,7 @@ export function showServerToast(
  * Example: HTTP 403 with custom message from server
  */
 export function handleServerError(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	error: any,
 	fallbackMessage: string = "An error occurred",
 ) {

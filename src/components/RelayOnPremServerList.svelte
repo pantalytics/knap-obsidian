@@ -3,7 +3,7 @@
 	import { createEventDispatcher } from "svelte";
 	import type Live from "../main";
 	import type { RelayOnPremServer } from "../RelayOnPremConfig";
-	import { generateServerId, validateServerConfig } from "../RelayOnPremConfig";
+	import { EVC_SERVER_ID, generateServerId, validateServerConfig } from "../RelayOnPremConfig";
 	import { RelayOnPremLoginModal } from "../ui/RelayOnPremLoginModal";
 	import { customFetch } from "../customFetch";
 
@@ -129,7 +129,7 @@
 			} else {
 				console.warn("[RelayOnPrem] Server info failed with status:", response.status);
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			// Server info endpoint might not exist on older servers
 			console.error("[RelayOnPrem] Server info fetch error:", error);
 		}
@@ -149,7 +149,7 @@
 				new Notice(`Connection failed: ${response.status}`);
 				return false;
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(`Connection failed: ${error instanceof Error ? error.message : "Unknown error"}`);
 			return false;
 		} finally {
@@ -295,7 +295,7 @@
 					new Notice(`Logged in to ${server.name}`);
 					refreshAuthStatus();
 					return;
-				} catch (error) {
+				} catch (error: unknown) {
 					// OAuth failed, fall back to password login
 					console.error("[RelayOnPrem] OAuth login failed:", error);
 					new Notice(`OAuth failed: ${error instanceof Error ? error.message : "Unknown error"}. Falling back to password.`);
@@ -324,7 +324,7 @@
 			await plugin.loginManager.logoutFromServer(serverId);
 			new Notice("Logged out");
 			refreshAuthStatus();
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(`Logout failed: ${error instanceof Error ? error.message : "Unknown error"}`);
 		}
 	}
@@ -399,16 +399,18 @@
 					</button>
 					{#if serverBillingSupport[server.id]}
 						<button class="relay-server-btn" on:click={() => dispatch('openBilling', { server })}>
-							Billing
+							Plan & Usage
 						</button>
 					{/if}
 				{/if}
 				<button class="relay-server-btn" on:click={() => startEditServer(server)}>
 					Edit
 				</button>
-				<button class="relay-server-btn mod-warning" on:click={() => removeServer(server.id)}>
-					Remove
-				</button>
+				{#if server.id !== EVC_SERVER_ID}
+					<button class="relay-server-btn mod-warning" on:click={() => removeServer(server.id)}>
+						Remove
+					</button>
+				{/if}
 			</div>
 			<div class="relay-server-default">
 				<label class="relay-default-checkbox">

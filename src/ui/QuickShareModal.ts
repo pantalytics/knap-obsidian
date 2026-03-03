@@ -88,8 +88,7 @@ export class QuickShareModal extends Modal {
 		// Create button
 		const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
 		buttonContainer.style.marginTop = "20px";
-		buttonContainer.style.display = "flex";
-		buttonContainer.style.justifyContent = "flex-end";
+		buttonContainer.addClass("evc-flex", "evc-justify-end");
 		buttonContainer.style.gap = "10px";
 
 		const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
@@ -191,7 +190,7 @@ export class QuickShareModal extends Modal {
 
 			new Notice(`Folder shared on ${server.name}`);
 			this.close();
-		} catch (error) {
+		} catch (error: unknown) {
 			new Notice(
 				`Failed to create share: ${error instanceof Error ? error.message : "Unknown error"}`
 			);

@@ -81,7 +81,7 @@
 			} else {
 				error = "Please add a server and log in first.";
 			}
-		} catch (e) {
+		} catch (e: unknown) {
 			error = e instanceof Error ? e.message : "Failed to load shares";
 		} finally {
 			loading = false;

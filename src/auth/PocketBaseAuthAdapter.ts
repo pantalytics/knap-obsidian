@@ -78,7 +78,7 @@ export class PocketBaseAuthAdapter implements IAuthProvider {
 					expiresAt: this.getTokenExpiry(),
 				},
 			};
-		} catch (error) {
+		} catch (error: unknown) {
 			this.log("OAuth2 login error:", error);
 			throw error;
 		}
@@ -109,7 +109,7 @@ export class PocketBaseAuthAdapter implements IAuthProvider {
 					expiresAt: this.getTokenExpiry(),
 				},
 			};
-		} catch (error) {
+		} catch (error: unknown) {
 			this.log("Token refresh error:", error);
 			throw error;
 		}
@@ -135,7 +135,7 @@ export class PocketBaseAuthAdapter implements IAuthProvider {
 			const [, payload] = token.split(".");
 			const decodedPayload = JSON.parse(atob(payload));
 			return (decodedPayload.exp || 0) * 1000; // Convert to milliseconds
-		} catch (error) {
+		} catch (error: unknown) {
 			this.log("Failed to decode token expiry:", error);
 			return 0;
 		}

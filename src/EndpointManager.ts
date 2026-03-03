@@ -91,6 +91,7 @@ function isLicense(obj: unknown): obj is License {
 	return typeof obj === 'object' && 
 		obj !== null && 
 		'license' in obj && 
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		typeof (obj as any).license === 'string';
 }
 
@@ -179,7 +180,7 @@ export class EndpointManager {
 		try {
 			this._publicKeyCache = await importSPKI(ENDPOINT_VALIDATION_PUBLIC_KEY, 'RS256');
 			return this._publicKeyCache;
-		} catch (error) {
+		} catch (error: unknown) {
 			throw new ValidationError(
 				'Failed to import public key',
 				ValidationErrorType.JWT_VERIFICATION_FAILED,
@@ -242,7 +243,7 @@ export class EndpointManager {
 			const result = await Promise.race([validationPromise, timeoutPromise]);
 			return result;
 
-		} catch (error) {
+		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "Unknown error";
 			this.log("Failed to validate tenant:", errorMessage);
 			return {
@@ -316,7 +317,7 @@ export class EndpointManager {
 				licenseInfo: validation.licenseInfo
 			};
 
-		} catch (error) {
+		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "Unknown error";
 			return {
 				success: false,
@@ -381,7 +382,7 @@ export class EndpointManager {
 				license: license.license
 			};
 
-		} catch (error) {
+		} catch (error: unknown) {
 			let errorMessage = error instanceof Error ? error.message : "Unknown error";
 			
 			// Make connection errors more user-friendly
@@ -424,7 +425,7 @@ export class EndpointManager {
 					this.log(`Found matching license for ${endpointType}: ${this.sanitizeUrlForLog(endpointUrl)}`);
 					return lic;
 				}
-			} catch (error) {
+			} catch (error: unknown) {
 				// Skip invalid tokens
 				continue;
 			}
@@ -481,7 +482,7 @@ export class EndpointManager {
 				licenseInfo
 			};
 
-		} catch (error) {
+		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "Unknown error";
 			this.log(`Tenant license validation failed: ${this.sanitizeUrlForLog(tenantUrl)} - ${errorMessage}`);
 			
@@ -544,7 +545,7 @@ export class EndpointManager {
 			});
 			
 			return payload as EndpointJWTPayload;
-		} catch (error) {
+		} catch (error: unknown) {
 			this.log("JWT verification failed:", error);
 			throw new ValidationError(
 				`JWT verification failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -677,7 +678,7 @@ export class EndpointManager {
 				licenseInfo: validationResult?.licenseInfo
 			};
 
-		} catch (error) {
+		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "Unknown error";
 			return {
 				success: false,
@@ -784,7 +785,7 @@ export class EndpointManager {
 					logo: payload.logo
 				};
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			this.log("Failed to get customer info:", error);
 		}
 
@@ -807,7 +808,7 @@ export class EndpointManager {
 					environment: BUILD_TYPE === 'debug' ? 'staging' : 'production'
 				};
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			this.log("Failed to get default tenant info:", error);
 		}
 
@@ -832,7 +833,7 @@ export class EndpointManager {
 			const result = await Promise.race([validationPromise, timeoutPromise]);
 			return result;
 
-		} catch (error) {
+		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "Unknown error";
 			this.log("Failed to test validate endpoints:", errorMessage);
 			return {
@@ -886,7 +887,7 @@ export class EndpointManager {
 				licenseInfo: validation.licenseInfo
 			};
 
-		} catch (error) {
+		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "Unknown error";
 			return {
 				success: false,
@@ -965,7 +966,7 @@ export class EndpointManager {
 				license: matchingLicense.license
 			};
 
-		} catch (error) {
+		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "Unknown error";
 			this.log("License fetch error:", errorMessage);
 			return {

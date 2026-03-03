@@ -81,7 +81,7 @@ export async function flushLogs() {
 			const logContent = entries.map(formatLogEntry).join("\n") + "\n";
 			await fileAdapter.append(currentLogFile, logContent);
 			return;
-		} catch (error) {
+		} catch (error: unknown) {
 			console.error(`Failed to write logs (attempt ${retry + 1}):`, error);
 			if (retry === logConfig.maxRetries - 1) {
 				console.error("Max retries reached. Discarding log entries.");
@@ -169,7 +169,7 @@ function serializeArg(arg: unknown): string {
 				},
 				2,
 			);
-		} catch (error) {
+		} catch (error: unknown) {
 			if (error instanceof Error) {
 				if (error instanceof RangeError) {
 					// Handle stack overflow

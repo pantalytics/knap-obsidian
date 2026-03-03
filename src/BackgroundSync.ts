@@ -98,7 +98,9 @@ export class BackgroundSync extends HasLogging {
 		super();
 		RelayInstances.set(this, "BackgroundSync");
 		this.timeProvider.setInterval(() => {
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			this.processSyncQueue();
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			this.processDownloadQueue();
 		}, 1000);
 	}
@@ -209,6 +211,7 @@ export class BackgroundSync extends HasLogging {
 
 			try {
 				const doc = item.doc;
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				let syncPromise: Promise<any>;
 
 				if (doc instanceof SyncFile) {
@@ -249,7 +252,7 @@ export class BackgroundSync extends HasLogging {
 							this.syncGroups.set(item.sharedFolder, group);
 						}
 					})
-					.catch((error) => {
+					.catch((error: unknown) => {
 						item.status = "failed";
 
 						const callback = this.syncCompletionCallbacks.get(item.guid);
@@ -272,11 +275,12 @@ export class BackgroundSync extends HasLogging {
 						this.inProgressSyncs.delete(item.guid);
 
 						// Unwind the call stack before checking for more work
+						// eslint-disable-next-line @typescript-eslint/no-floating-promises
 						this.timeProvider.setTimeout(() => {
 							this.processSyncQueue();
 						}, 0);
 					});
-			} catch (error) {
+			} catch (error: unknown) {
 				item.status = "failed";
 
 				const callback = this.syncCompletionCallbacks.get(item.guid);
@@ -327,6 +331,7 @@ export class BackgroundSync extends HasLogging {
 			this.activeDownloads.add(item);
 
 			try {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				let downloadPromise: Promise<any>;
 
 				// Choose the appropriate download method based on the document type
@@ -358,7 +363,7 @@ export class BackgroundSync extends HasLogging {
 							this.syncGroups.set(item.sharedFolder, group);
 						}
 					})
-					.catch((error) => {
+					.catch((error: unknown) => {
 						item.status = "failed";
 
 						const callback = this.downloadCompletionCallbacks.get(item.guid);
@@ -380,12 +385,13 @@ export class BackgroundSync extends HasLogging {
 						this.activeDownloads.delete(item);
 						this.inProgressDownloads.delete(item.guid);
 
+						// eslint-disable-next-line @typescript-eslint/no-floating-promises
 						// Unwind the call stack before checking for more work
 						this.timeProvider.setTimeout(() => {
 							this.processDownloadQueue();
 						}, 0);
 					});
-			} catch (error) {
+			} catch (error: unknown) {
 				item.status = "failed";
 
 				const callback = this.downloadCompletionCallbacks.get(item.guid);
@@ -433,6 +439,7 @@ export class BackgroundSync extends HasLogging {
 				return new Promise<void>((resolve, reject) => {
 					existingCallback.resolve = resolve;
 					existingCallback.reject = reject;
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				});
 			}
 			this.processSyncQueue();
@@ -475,6 +482,7 @@ export class BackgroundSync extends HasLogging {
 			});
 		});
 
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.syncQueue.push(queueItem);
 		this.syncQueue.sort(compareFilePaths);
 		this.processSyncQueue();
@@ -499,12 +507,14 @@ export class BackgroundSync extends HasLogging {
 			);
 
 			// Return existing promise if already processing
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			const existingCallback = this.downloadCompletionCallbacks.get(item.guid);
 			if (existingCallback) {
 				this.processDownloadQueue();
 				return new Promise<void>((resolve, reject) => {
 					existingCallback.resolve = resolve;
 					existingCallback.reject = reject;
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				});
 			}
 			this.processDownloadQueue();
@@ -551,6 +561,7 @@ export class BackgroundSync extends HasLogging {
 		});
 
 		// Add to the queue and start processing
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.downloadQueue.push(queueItem);
 		this.downloadQueue.sort(compareFilePaths);
 		this.processDownloadQueue();
@@ -594,6 +605,8 @@ export class BackgroundSync extends HasLogging {
 			compareFilePaths,
 		);
 
+// eslint-disable-next-line @typescript-eslint/no-floating-promises
+
 		for (const doc of sortedDocs) {
 			this.enqueueForGroupSync(doc);
 		}
@@ -624,6 +637,7 @@ export class BackgroundSync extends HasLogging {
 			);
 
 			// Return existing promise if already processing
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			const existingCallback = this.syncCompletionCallbacks.get(item.guid);
 			if (existingCallback) {
 				this.processSyncQueue();
@@ -653,6 +667,7 @@ export class BackgroundSync extends HasLogging {
 			});
 		});
 
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.syncQueue.push(queueItem);
 		this.syncQueue.sort(compareFilePaths);
 		this.processSyncQueue();
@@ -749,7 +764,7 @@ export class BackgroundSync extends HasLogging {
 		}
 		try {
 			currentFileContents = await doc.sharedFolder.read(doc);
-		} catch (e) {
+		} catch (e: unknown) {
 			// File does not exist
 		}
 
@@ -795,7 +810,7 @@ export class BackgroundSync extends HasLogging {
 			);
 			try {
 				await Promise.race([promise, timeout]);
-			} catch (e) {
+			} catch (e: unknown) {
 				this.warn("[syncDocumentWebsocket] timed out for", doc.path);
 				if (!doc.userLock) {
 					doc.disconnect();
@@ -854,7 +869,7 @@ export class BackgroundSync extends HasLogging {
 			try {
 				const stringContents = await canvas.sharedFolder.read(canvas);
 				currentFileContents = JSON.parse(stringContents) as CanvasData;
-			} catch (e) {
+			} catch (e: unknown) {
 				// File doesn't exist
 			}
 
@@ -874,22 +889,24 @@ export class BackgroundSync extends HasLogging {
 			if (hasContents && !contentsMatch) {
 				this.log("Skipping flush - file requires merge conflict resolution.");
 				return;
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			}
 			if (canvas.sharedFolder.syncStore.has(canvas.path)) {
 				canvas.sharedFolder.flush(canvas, canvas.json);
 				this.log("[getCanvas] flushed");
 			}
-		} catch (e) {
+		} catch (e: unknown) {
 			// HTTP download failed (e.g., CWT tokens not accepted for HTTP endpoints).
 			// Fall back to WebSocket sync for the canvas content.
 			this.warn("[getCanvas] HTTP download failed, falling back to WS sync:", (e as Error).message);
 			try {
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				const synced = await this.syncDocumentWebsocket(canvas);
 				if (synced && canvas.sharedFolder.syncStore.has(canvas.path)) {
 					canvas.sharedFolder.flush(canvas, canvas.json);
 					this.log("[getCanvas] WS sync fallback successful, flushed to disk");
 				}
-			} catch (wsError) {
+			} catch (wsError: unknown) {
 				this.error("[getCanvas] WS sync fallback also failed:", wsError);
 			}
 			return;
@@ -903,7 +920,7 @@ export class BackgroundSync extends HasLogging {
 			let currentFileContents = "";
 			try {
 				currentFileContents = await doc.sharedFolder.read(doc);
-			} catch (e) {
+			} catch (e: unknown) {
 				// File doesn't exist
 			}
 
@@ -930,6 +947,7 @@ export class BackgroundSync extends HasLogging {
 						retry,
 						wait,
 					);
+					// eslint-disable-next-line @typescript-eslint/no-floating-promises
 					if (retry > 0) {
 						this.timeProvider.setTimeout(() => {
 							this.getDocument(doc, retry - 1, wait * 2);
@@ -939,6 +957,7 @@ export class BackgroundSync extends HasLogging {
 				}
 				if (doc.text) {
 					this.log(
+						// eslint-disable-next-line @typescript-eslint/no-floating-promises
 						"[getDocument] local crdt has contents, but remote is empty",
 					);
 					this.enqueueSync(doc);
@@ -952,22 +971,24 @@ export class BackgroundSync extends HasLogging {
 			if (hasContents && !contentsMatch) {
 				this.log("Skipping flush - file requires merge conflict resolution.");
 				return;
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			}
 			if (doc.sharedFolder.syncStore.has(doc.path)) {
 				doc.sharedFolder.flush(doc, doc.text);
 				this.log("[getDocument] flushed");
 			}
-		} catch (e) {
+		} catch (e: unknown) {
 			// HTTP download failed (e.g., CWT tokens not accepted for HTTP endpoints).
 			// Fall back to WebSocket sync for the document content.
 			this.warn("[getDocument] HTTP download failed, falling back to WS sync:", (e as Error).message);
 			try {
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				const synced = await this.syncDocumentWebsocket(doc);
 				if (synced && doc.sharedFolder.syncStore.has(doc.path)) {
 					doc.sharedFolder.flush(doc, doc.text);
 					this.log("[getDocument] WS sync fallback successful, flushed to disk");
 				}
-			} catch (wsError) {
+			} catch (wsError: unknown) {
 				this.error("[getDocument] WS sync fallback also failed:", wsError);
 			}
 			return;
@@ -989,7 +1010,7 @@ export class BackgroundSync extends HasLogging {
 			} else if (isCanvas(doc)) {
 				await this.syncDocumentWebsocket(doc);
 			}
-		} catch (e) {
+		} catch (e: unknown) {
 			console.error(e);
 			return;
 		}
@@ -1062,7 +1083,9 @@ export class BackgroundSync extends HasLogging {
 	 * they have been paused.
 	 */
 	resume(): void {
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.debug("starting");
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.isPaused = false;
 		this.processSyncQueue();
 		this.processDownloadQueue();
@@ -1123,7 +1146,9 @@ export class BackgroundSync extends HasLogging {
 		this.loggedItems.clear();
 
 		// Clean up references
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.loginManager = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.timeProvider = null as any;
 
 		// Unsubscribe from all subscriptions

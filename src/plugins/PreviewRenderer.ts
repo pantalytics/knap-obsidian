@@ -51,7 +51,7 @@ export class PreviewRenderer extends HasLogging implements ViewRenderer {
 			this.view.onInternalDataChange?.();
 
 			this.debug("Preview render completed");
-		} catch (error) {
+		} catch (error: unknown) {
 			this.error("Error rendering preview:", error);
 		}
 	}
@@ -59,6 +59,7 @@ export class PreviewRenderer extends HasLogging implements ViewRenderer {
 	destroy(): void {
 		this.destroyed = true;
 		this.debug("destroyed");
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.view = null as any;
 	}
 }

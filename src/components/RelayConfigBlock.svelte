@@ -134,7 +134,7 @@
 			setTimeout(() => {
 				copied = false;
 			}, 2000);
-		} catch (err) {
+		} catch (err: unknown) {
 			console.error("Failed to copy text: ", err);
 		}
 	}

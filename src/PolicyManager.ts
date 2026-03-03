@@ -11,6 +11,7 @@ export interface AuthorizationRequest {
 	principal: string; // User ID
 	action: string; // What action to perform
 	resource: Resource; // Resource identifier (["relay", id])
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	context?: Record<string, any>; // Additional context (file size, etc.)
 }
 
@@ -50,6 +51,7 @@ export interface PolicyDefinition {
 	 */
 	dependencies: Record<
 		string,
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		(item: any, request: AuthorizationRequest) => boolean
 	>;
 
@@ -77,6 +79,7 @@ export class ObservablePermission
 
 	constructor(
 		private evaluate: () => boolean,
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		dependencies: ObservableMap<any, any>[],
 	) {
 		super();
@@ -147,6 +150,7 @@ export interface IPolicyManager {
 		principal: string,
 		permission: Permission,
 		resource: Resource,
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		context?: Record<string, any>,
 	): ObservablePermission;
 
@@ -199,7 +203,7 @@ export class PolicyManager implements IPolicyManager {
 					principal: request.principal,
 				},
 			};
-		} catch (error) {
+		} catch (error: unknown) {
 			return {
 				allowed: false,
 				policy: policyKey,
@@ -216,6 +220,7 @@ export class PolicyManager implements IPolicyManager {
 		principal: string,
 		permission: Permission,
 		resource: Resource,
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		context?: Record<string, any>,
 	): ObservablePermission {
 		const resourceType = this.getResourceType(resource);
@@ -260,10 +265,13 @@ export class PolicyManager implements IPolicyManager {
 	private getFilteredCollections(
 		dependencies: Record<
 			string,
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			(item: any, request: AuthorizationRequest) => boolean
 		>,
 		request: AuthorizationRequest,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	): ObservableMap<any, any>[] {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const collections: ObservableMap<any, any>[] = [];
 
 		for (const collectionKey of Object.keys(dependencies)) {

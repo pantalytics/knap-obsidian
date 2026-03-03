@@ -130,7 +130,7 @@
 			isCreating = true;
 			try {
 				await onConfirm(undefined, $selectedProvider.id, organizationId);
-			} catch (error) {
+			} catch (error: unknown) {
 				errors.submit =
 					error instanceof Error
 						? error.message
@@ -149,7 +149,7 @@
 
 			try {
 				await onConfirm(url.trim(), undefined, organizationId);
-			} catch (error) {
+			} catch (error: unknown) {
 				errors.submit =
 					error instanceof Error
 						? error.message
@@ -203,7 +203,7 @@
 
 			// Get the text from the response and store as template
 			configTemplate = await response.text();
-		} catch (err) {
+		} catch (err: unknown) {
 			configError =
 				err instanceof Error ? err.message : "Failed to fetch configuration";
 		} finally {

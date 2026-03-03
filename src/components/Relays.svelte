@@ -88,7 +88,7 @@
 			invitePending = true;
 			const relay = await plugin.relayManager
 				.acceptInvitation(shareKey)
-				.catch((response) => {
+				.catch((response: unknown) => {
 					if (response.status === 429) {
 						new Notice("Slow down");
 					}
@@ -96,7 +96,7 @@
 				});
 			invitePending = false;
 			dispatch("joinRelay", { relay });
-		} catch (e) {
+		} catch (e: unknown) {
 			invalidShareKey = true;
 			invitePending = false;
 		}

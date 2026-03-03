@@ -1,11 +1,14 @@
 import { App, Modal } from "obsidian";
 
 export class GenericSuggestModal<T> extends Modal {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private component?: any;
 
 	constructor(
 		app: App,
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		private ComponentClass: any,
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		private componentProps: any,
 		private onSelect: (item: T) => void,
 	) {
@@ -17,7 +20,7 @@ export class GenericSuggestModal<T> extends Modal {
 
 		// Find the modal container and hide the modal wrapper
 		const modalContainer = modalEl.closest(".modal-container");
-		modalEl.style.display = "none";
+		modalEl.addClass("evc-hidden");
 		const contentEl = modalContainer || modalEl;
 
 		this.component = new this.ComponentClass({
@@ -38,8 +41,11 @@ export class GenericSuggestModal<T> extends Modal {
 	}
 
 	destroy() {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.onSelect = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.componentProps = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.ComponentClass = null as any;
 	}
 }

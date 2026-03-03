@@ -72,7 +72,7 @@
 					showClipboardIcon.set(false);
 				}, 800);
 			})
-			.catch((err) => {
+			.catch((err: unknown) => {
 				console.error("Failed to copy: ", err);
 			});
 	}

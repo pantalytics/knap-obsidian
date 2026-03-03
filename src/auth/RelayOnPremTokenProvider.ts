@@ -101,7 +101,7 @@ export class RelayOnPremTokenProvider {
 			this.log(`Successfully obtained relay token, expires at ${data.expires_at}`);
 
 			return clientToken;
-		} catch (error) {
+		} catch (error: unknown) {
 			this.log("Token request error:", error);
 			throw error;
 		}

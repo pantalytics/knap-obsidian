@@ -22,6 +22,7 @@ export class CanvasPlugin extends HasLogging {
 	unsubscribes: Array<() => void>;
 	relayCanvasView: RelayCanvasView;
 	observedTextNodes: Set<string>;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	trackedEmbedViews: Set<any>;
 
 	constructor(
@@ -55,8 +56,11 @@ export class CanvasPlugin extends HasLogging {
 			this.unsubscribes = [];
 		}
 		this.relayCanvasView.tracking = false;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.canvas = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.relayCanvas = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.relayCanvasView = null as any;
 		this.unsubscribes.length = 0;
 	}
@@ -97,10 +101,12 @@ export class CanvasPlugin extends HasLogging {
 		}
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private isEmbedAlreadyTracked(embedView: any): boolean {
 		return this.trackedEmbedViews.has(embedView);
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private connectEmbedView(embedView: any): void {
 		if (!embedView.file) {
 			return;
@@ -113,7 +119,7 @@ export class CanvasPlugin extends HasLogging {
 					embedView,
 					this.relayCanvas.sharedFolder.proxy.getDoc(embedView.file.path),
 				);
-				plugin.initialize().catch((error) => {
+				plugin.initialize().catch((error: unknown) => {
 					this.error(
 						"Error initializing ViewHookPlugin for canvas embed:",
 						error,
@@ -148,26 +154,31 @@ export class CanvasPlugin extends HasLogging {
 		}
 
 		this.unsubscribes.push(
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			getPatcher().patch(this.canvas, {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				requestSave(old: any) {
 					return function () {
 						// @ts-ignore
 						const res = old.call(this);
 						try {
 							that.relayCanvas.importFromView(that.view);
-						} catch (e) {
+						} catch (e: unknown) {
 							that.log(e);
 						}
 						return res;
+					// eslint-disable-next-line @typescript-eslint/no-floating-promises
 					};
 				},
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				applyHistory(old: any) {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					return function (data: any) {
 						// @ts-ignore
 						const res = old.call(this, data);
 						try {
 							that.relayCanvas.importFromView(that.view);
-						} catch (e) {
+						} catch (e: unknown) {
 							that.log(e);
 						}
 						return res;

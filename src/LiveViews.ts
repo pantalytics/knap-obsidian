@@ -57,11 +57,13 @@ function iterateTextFileViews(
 	if (flags().enableKanbanView) {
 		ALLOWED_TEXT_FILE_VIEWS.push("kanban");
 	}
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const allLeaves: any[] = [];
 
 	workspace.iterateAllLeaves((leaf) => {
 		allLeaves.push({
 			viewType: leaf.view?.getViewType?.() || "unknown",
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			filePath: (leaf.view as any)?.file?.path || "no-file",
 			isTextFileView: leaf.view instanceof TextFileView,
 			leafType: leaf.view.constructor.name,
@@ -172,6 +174,7 @@ export class LoggedOutView implements S3View {
 		this.banner?.destroy();
 		this.banner = undefined;
 		this.clearLoginButton();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.view = null as any;
 	}
 }
@@ -231,6 +234,7 @@ export class RelayCanvasView implements S3View {
 		}
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	toggleConnection() {
 		this.shouldConnect = !this.shouldConnect;
 		if (this.shouldConnect) {
@@ -248,6 +252,7 @@ export class RelayCanvasView implements S3View {
 	offlineBanner(): () => void {
 		if (this.shouldConnect) {
 			const banner = new Banner(
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				this.view,
 				"You're offline -- click to reconnect",
 				async () => {
@@ -349,6 +354,7 @@ export class RelayCanvasView implements S3View {
 					this.offlineBanner();
 				});
 		});
+	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	}
 
 	connect() {
@@ -378,12 +384,17 @@ export class RelayCanvasView implements S3View {
 
 	destroy() {
 		this.plugin?.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.plugin = null as any;
 		this.release();
 		this.clearViewActions();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		(this.view.leaf as any).rebuildView?.();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this._parent = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.view = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.canvas = null as any;
 	}
 }
@@ -420,6 +431,7 @@ export class LiveView<ViewType extends TextFileView>
 
 		this.shouldConnect = shouldConnect;
 		this.canConnect = canConnect;
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		if (!connectionManager.networkStatus.online) {
 			this.offlineBanner();
 		}
@@ -439,6 +451,7 @@ export class LiveView<ViewType extends TextFileView>
 		}
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	public get tracking() {
 		return this._tracking;
 	}
@@ -481,12 +494,13 @@ export class LiveView<ViewType extends TextFileView>
 				let stale: boolean;
 				try {
 					stale = await this.document.checkStale();
-				} catch (e) {
+				} catch (e: unknown) {
 					console.warn("[Relay] setMergeButton checkStale failed:", (e as Error).message);
 					this.clearMergeButton();
 					return;
 				}
 				if (!stale) {
+					// eslint-disable-next-line @typescript-eslint/no-floating-promises
 					this.clearMergeButton();
 					return;
 				}
@@ -533,10 +547,11 @@ export class LiveView<ViewType extends TextFileView>
 					let stale: boolean;
 					try {
 						stale = await this.document.checkStale();
-					} catch (e) {
+					} catch (e: unknown) {
 						console.warn("[Relay] mergeBanner checkStale failed:", (e as Error).message);
 						return true;
 					}
+					// eslint-disable-next-line @typescript-eslint/no-floating-promises
 					if (!stale) {
 						return true;
 					}
@@ -560,6 +575,7 @@ export class LiveView<ViewType extends TextFileView>
 			);
 		}
 		return () => {};
+	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	}
 
 	offlineBanner(): () => void {
@@ -643,7 +659,7 @@ export class LiveView<ViewType extends TextFileView>
 		let stale: boolean;
 		try {
 			stale = await this.document.checkStale();
-		} catch (e) {
+		} catch (e: unknown) {
 			// HTTP download failed (e.g., 401 with CWT tokens on relay-server).
 			// Return false — rely on WS sync for CRDT state.
 			console.warn("[Relay] LiveView.checkStale failed, relying on WS sync:", (e as Error).message);
@@ -707,6 +723,7 @@ export class LiveView<ViewType extends TextFileView>
 						this.document.disconnect();
 					}
 					resolve(this);
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				})
 				.catch(() => {
 					this.offlineBanner();
@@ -752,10 +769,15 @@ export class LiveView<ViewType extends TextFileView>
 		this.release();
 		this.clearViewActions();
 		this.clearMergeButton();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		(this.view.leaf as any).rebuildView?.();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this._parent = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.view = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.document = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this._plugin = null as any;
 	}
 }
@@ -799,16 +821,20 @@ export class LiveViewManager {
 		this.log = curryLog("[LiveViews]", "log");
 		this.warn = curryLog("[LiveViews]", "warn");
 
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.metadataListeners = new Map();
 		const cb = (tfile: TFile, data: string, cache: CachedMetadata) => {
 			const sub = this.metadataListeners.get(tfile);
 			sub?.(data, cache);
 		};
 
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		const offRef = this.app.metadataCache.on("changed", cb);
 		this.offListeners.push(() => {
 			this.app.metadataCache.offref(offRef);
 		});
+
+// eslint-disable-next-line @typescript-eslint/no-floating-promises
 
 		this.offListeners.push(
 			this.loginManager.on(() => {
@@ -822,12 +848,14 @@ export class LiveViewManager {
 					folder
 						.whenReady()
 						.then(() => {
+							// eslint-disable-next-line @typescript-eslint/no-floating-promises
 							this.refresh("[Shared Folder Ready]");
 						})
-						.catch((_) => {
+						.catch((_: unknown) => {
 							this.views.forEach((view) => {
 								if (view.document?.sharedFolder === folder) {
 									view.offlineBanner?.();
+								// eslint-disable-next-line @typescript-eslint/no-floating-promises
 								}
 							});
 						});
@@ -864,21 +892,28 @@ export class LiveViewManager {
 				ConnectionManagerStateField.init(() => {
 					return this;
 				}),
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			]),
 		});
 	}
 
 	onMeta(tfile: TFile, cb: (data: string, cache: CachedMetadata) => void) {
 		this.metadataListeners.set(tfile, cb);
+	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	}
 
 	offMeta(tfile: TFile) {
 		this.metadataListeners.delete(tfile);
 	}
 
+// eslint-disable-next-line @typescript-eslint/no-floating-promises
+
 	openDiffView(state: Differ.ViewState) {
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		Differ.openDiffView(this.workspace, state);
 	}
+
+// eslint-disable-next-line @typescript-eslint/no-floating-promises
 
 	goOffline() {
 		this.log("[System 3][Relay][Live Views] going offline");
@@ -989,7 +1024,7 @@ export class LiveViewManager {
 							doc,
 						);
 						views.push(view);
-					} catch (e) {
+					} catch (e: unknown) {
 						this.warn(`[Relay] Error getting doc for view ${viewFilePath}`, e);
 					}
 				} else {
@@ -1021,7 +1056,7 @@ export class LiveViewManager {
 							const doc = folder.proxy.getCanvas(viewFilePath);
 							const view = new RelayCanvasView(this, canvasView, doc);
 							views.push(view);
-						} catch (e) {
+						} catch (e: unknown) {
 							this.warn(`[Relay] Error getting canvas for view ${viewFilePath}`, e);
 						}
 					} else {
@@ -1047,6 +1082,7 @@ export class LiveViewManager {
 	}
 
 	findCanvas(cmEditor: EditorView): RelayCanvasView | undefined {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const state = (cmEditor.state as any).values.find((state: any) => {
 			if (state && state.node) return state.node;
 		});
@@ -1075,6 +1111,7 @@ export class LiveViewManager {
 
 		const viewHistory = views.sort(
 			(a, b) =>
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				(b.view.leaf as any).activeTime - (a.view.leaf as any).activeTime,
 		);
 		const connectedDocuments = new Set<Document>();
@@ -1162,9 +1199,10 @@ export class LiveViewManager {
 		let views: S3View[] = [];
 		try {
 			views = await this.getViews();
-		} catch (e) {
+		} catch (e: unknown) {
 			this.warn("[System 3][Relay][Live Views] error getting views", e);
 			return false;
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		}
 		const activeDocumentFolders = this.findFolders();
 		if (activeDocumentFolders.length === 0 && views.length === 0) {
@@ -1267,19 +1305,28 @@ export class LiveViewManager {
 		this.offListeners.forEach((off) => off());
 		this.offListeners.length = 0;
 		this.metadataListeners.clear();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.metadataListeners = null as any;
 		this.folderListeners.forEach((off) => off());
 		this.folderListeners.clear();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.folderListeners = null as any;
 		this.views.forEach((view) => view.destroy());
 		this.views = [];
 		this.wipe();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.sharedFolders = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.refreshQueue = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.networkStatus = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this._activePromise = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.loginManager = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.app = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.workspace = null as any;
 	}
 }

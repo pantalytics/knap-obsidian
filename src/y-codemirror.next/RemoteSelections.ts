@@ -154,6 +154,7 @@ type AwarenessChangeEvent = {
 
 type AwarenessChangeHandler = (
 	event: AwarenessChangeEvent,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	origin: any, // The type of origin can be very broad, depending on what triggered the change.
 	awareness: Awareness,
 ) => void;
@@ -235,8 +236,11 @@ export class YRemoteSelectionsPluginValue implements PluginValue {
 			this._awareness?.off("change", this._listener);
 			this._listener = undefined;
 		}
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.connectionManager = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.view = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.editor = null as any;
 	}
 

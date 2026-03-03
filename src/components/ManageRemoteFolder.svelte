@@ -156,7 +156,7 @@
 			settingEntries = Object.entries(
 				syncSettings.getCategories(),
 			) as CategoryEntry[];
-		} catch (error) {
+		} catch (error: unknown) {
 			// pass
 		} finally {
 			isUpdating = false;
@@ -219,7 +219,7 @@
 				dispatch("manageSharedFolder", { folder: $folderStore });
 				return;
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			errorLog("Failed to delete remote folder:", error);
 		}
 		dispatch("goBack", {});
@@ -238,7 +238,7 @@
 	async function handleRemoveFolderUser(folderRole: FolderRole) {
 		try {
 			await plugin.relayManager.removeFolderRole(folderRole);
-		} catch (error) {
+		} catch (error: unknown) {
 			handleServerError(error, "Failed to remove user from folder.");
 		}
 	}
@@ -252,7 +252,7 @@
 			);
 			// Open the add users modal
 			handleAddUser();
-		} catch (error) {
+		} catch (error: unknown) {
 			handleServerError(
 				error,
 				"Failed to make folder private. Permission denied.",
@@ -271,7 +271,7 @@
 					for (const userId of userIds) {
 						await plugin.relayManager.addFolderRole(remoteFolder, userId, role);
 					}
-				} catch (error) {
+				} catch (error: unknown) {
 					handleServerError(error, "Failed to add users to folder.");
 				}
 			},
@@ -282,7 +282,7 @@
 	async function handleFolderRoleChange(folderRole: FolderRole, newRole: Role) {
 		try {
 			await plugin.relayManager.updateFolderRole(folderRole, newRole);
-		} catch (error) {
+		} catch (error: unknown) {
 			handleServerError(error, "Failed to change user role.");
 			throw error;
 		}
@@ -297,7 +297,7 @@
 			const originalRole = folderRole.role;
 			try {
 				await handleFolderRoleChange(folderRole, target.value as Role);
-			} catch (e) {
+			} catch (e: unknown) {
 				// Revert dropdown to the original role value
 				target.value = originalRole;
 			}
@@ -365,7 +365,7 @@
 			lastSavedName = updated.name;
 			displayName = updated.name;
 			updating.set(false);
-		} catch (error) {
+		} catch (error: unknown) {
 			errorLog("Failed to update folder name:", error);
 			// If it's a 400 error, mark the name as invalid
 			if (error?.status === 400) {

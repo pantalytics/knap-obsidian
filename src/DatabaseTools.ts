@@ -123,7 +123,7 @@ export async function analyzeIndexedDB(options: {
 			} finally {
 				db.close();
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			console.error(`Error processing database ${dbInfo.name}:`, error);
 			continue;
 		}
@@ -163,7 +163,7 @@ export async function deleteBySlug(slug: string): Promise<void> {
 			request.onsuccess = () => resolve();
 			request.onerror = () => reject(request.error);
 		});
-	} catch (error) {
+	} catch (error: unknown) {
 		console.error(`Error deleting store: ${slug}`, error);
 	} finally {
 		db.close();

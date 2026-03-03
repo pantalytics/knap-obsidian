@@ -70,6 +70,7 @@ interface NormalizedOAuthUser {
 /**
  * Normalizes OAuth2 user data from different providers into a consistent format
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function normalizeOAuthUser(rawUser: any): NormalizedOAuthUser | null {
 	// Handle Google user
 	if ("email" in rawUser && "name" in rawUser && "given_name" in rawUser && "family_name" in rawUser) {
@@ -134,7 +135,9 @@ function normalizeOAuthUser(rawUser: any): NormalizedOAuthUser | null {
 export function createUserFromOAuth(
 	id: string,
 	token: string,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	authStoreModel: any,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	rawUser?: GoogleUser | GitHubUser | MicrosoftUser | OIDCUser | any,
 ): User {
 	const normalizedOAuth = rawUser ? normalizeOAuthUser(rawUser) : null;
@@ -275,8 +278,8 @@ export class LoginManager extends Observable<LoginManager> {
 				.then(() => {
 					this.getFlags();
 				})
-				.catch((response) => {
-					if (response.status === 404) {
+				.catch((response: unknown) => {
+					if (response && typeof response === "object" && "status" in response && (response as { status: number }).status === 404) {
 						this.logout();
 					}
 				});
@@ -299,6 +302,8 @@ export class LoginManager extends Observable<LoginManager> {
 		if (this.isRelayOnPrem || !this.pb) {
 			return;
 		}
+
+// eslint-disable-next-line @typescript-eslint/no-floating-promises
 
 		if (this.pb && this.pb.authStore.isValid) {
 			this.user = this.makeUser(this.pb.authStore);
@@ -353,14 +358,16 @@ export class LoginManager extends Observable<LoginManager> {
 				.then(() => {
 					this.notifyListeners();
 				})
-				.catch((reason) => {
+				.catch((reason: unknown) => {
 					this.log(reason);
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				});
 		}
 		if (provider) {
 			this.loginSettings.set({ provider });
 		}
 		return true;
+	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	}
 
 	clearPreferredProvider() {
@@ -393,13 +400,14 @@ export class LoginManager extends Observable<LoginManager> {
 			method: "GET",
 			headers: headers,
 		})
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			.then((response) => {
 				if (response.status === 200) {
 					const serverFlags = response.json;
 					FeatureFlagManager.getInstance().applyServerFlags(serverFlags);
 				}
 			})
-			.catch((reason) => {
+			.catch((reason: unknown) => {
 				this.log(reason);
 			});
 	}
@@ -417,7 +425,7 @@ export class LoginManager extends Observable<LoginManager> {
 			.then((response) => {
 				this.log(response.json);
 			})
-			.catch((reason) => {
+			.catch((reason: unknown) => {
 				this.log(reason);
 			});
 	}
@@ -439,6 +447,7 @@ export class LoginManager extends Observable<LoginManager> {
 	async validateAndApplyEndpoints(timeoutMs?: number): Promise<{
 		success: boolean;
 		error?: string;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		licenseInfo?: any;
 	}> {
 		const result = await this.endpointManager.validateAndSetEndpoints(timeoutMs);
@@ -483,7 +492,7 @@ export class LoginManager extends Observable<LoginManager> {
 	logout() {
 		// Handle logout for relay-onprem mode
 		if (this.isRelayOnPrem && this.authProvider) {
-			logoutUser(this.authProvider).catch((error) => {
+			logoutUser(this.authProvider).catch((error: unknown) => {
 				this.error("Logout error:", error);
 			});
 			this.user = undefined;
@@ -577,8 +586,8 @@ export class LoginManager extends Observable<LoginManager> {
 		const authMethods = await this.pb!
 			.collection("users")
 			.listAuthMethods({ fetch: whichFetch })
-			.catch((e) => {
-				throw e.originalError;
+			.catch((e: unknown) => {
+				throw e instanceof Error ? e : (e && typeof e === "object" && "originalError" in e) ? (e as { originalError: unknown }).originalError : e;
 			});
 
 		const redirectUrl = this.pb!.buildUrl("/api/oauth2-redirect");
@@ -653,7 +662,7 @@ export class LoginManager extends Observable<LoginManager> {
 							return resolve(provider.login(response.code));
 						}
 					})
-					.catch((e) => {});
+					.catch((e: unknown) => {});
 			}, interval);
 		});
 	}
@@ -699,7 +708,7 @@ export class LoginManager extends Observable<LoginManager> {
 			this.notifyListeners();
 			this.log("Relay-onprem login successful");
 			return true;
-		} catch (error) {
+		} catch (error: unknown) {
 			this.log("Relay-onprem login failed:", error);
 			this.user = undefined;
 			this.notifyListeners();
@@ -776,7 +785,7 @@ export class LoginManager extends Observable<LoginManager> {
 			this.notifyListeners();
 			this.log(`Login to server ${serverId} successful`);
 			return true;
-		} catch (error) {
+		} catch (error: unknown) {
 			this.log(`Login to server ${serverId} failed:`, error);
 			this.notifyListeners();
 			throw error;
@@ -802,7 +811,7 @@ export class LoginManager extends Observable<LoginManager> {
 			}
 
 			this.notifyListeners();
-		} catch (error) {
+		} catch (error: unknown) {
 			this.log(`Logout from server ${serverId} failed:`, error);
 			throw error;
 		}
@@ -928,15 +937,19 @@ export class LoginManager extends Observable<LoginManager> {
 		await this.multiServerAuthManager.logoutAll();
 		this.user = undefined;
 		this.notifyListeners();
+	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	}
 
 	destroy() {
 		this.pb?.cancelAllRequests();
 		this.pb?.realtime.unsubscribe();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.pb = null as any;
 		this.authStore.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.authStore = null as any;
 		this.user = undefined;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.openSettings = null as any;
 		this.multiServerAuthManager = undefined;
 		super.destroy();

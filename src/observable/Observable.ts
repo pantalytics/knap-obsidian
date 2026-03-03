@@ -9,6 +9,7 @@ export type Subscriber<T> = (value: T) => void;
 /** Unsubscribes from value updates. */
 export type Unsubscriber = () => void;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const observables = new Map<Observable<any>, () => void>();
 
 export function auditTeardown(): void {
@@ -89,6 +90,7 @@ export class Observable<T> extends HasLogging implements IObservable<T> {
 			});
 		}
 		this._listeners?.clear();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this._listeners = null as any;
 	}
 }

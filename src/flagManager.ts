@@ -95,6 +95,7 @@ export class FeatureFlagManager extends Observable<FeatureFlagManager> {
 	public setFlag(flagName: keyof FeatureFlags, value: boolean): void {
 		if (!this.settings) return;
 
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.settings.update((current) => ({
 			...current,
 			[flagName]: value,

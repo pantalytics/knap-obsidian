@@ -70,7 +70,7 @@
 			if (cached) {
 				return JSON.parse(cached);
 			}
-		} catch (e) {
+		} catch (e: unknown) {
 			errorLog("Failed to load cached providers:", e);
 		}
 		// Return default providers if no cache exists
@@ -81,7 +81,7 @@
 		try {
 			const cacheKey = getCacheKey();
 			localStorage.setItem(cacheKey, JSON.stringify(providerList));
-		} catch (e) {
+		} catch (e: unknown) {
 			errorLog("Failed to save cached providers:", e);
 		}
 	}
@@ -216,7 +216,7 @@
 			if (loginSuccess) {
 				success.set(true);
 			}
-		} catch (e) {
+		} catch (e: unknown) {
 			automaticFlow.set(false);
 			success.set(false);
 			const provider = providers[providerName];
@@ -243,7 +243,7 @@
 					// Update webview intercepts with the loaded provider info
 					lm.updateWebviewIntercepts(providers_);
 				})
-				.catch((e) => {
+				.catch((e: unknown) => {
 					let message = e.message;
 					message = message;
 					error.set(message);
@@ -281,7 +281,7 @@
 				pending.set(false);
 				error.set("");
 			})
-			.catch((e) => {
+			.catch((e: unknown) => {
 				timedOut.set(true);
 				pending.set(false);
 				success.set(false);
@@ -296,7 +296,7 @@
 		navigator.clipboard
 			.writeText(inputEl.value)
 			.then(() => new Notice("Invite link copied"))
-			.catch((err) => {});
+			.catch((err: unknown) => {});
 		poll($selectedProvider);
 	}
 

@@ -168,7 +168,7 @@ export class MultiServerAuthManager {
 		for (const [serverId, provider] of this.providers) {
 			if (provider.isLoggedIn()) {
 				promises.push(
-					provider.logout().catch((error) => {
+					provider.logout().catch((error: unknown) => {
 						this.log(`Error logging out from ${serverId}:`, error);
 					})
 				);

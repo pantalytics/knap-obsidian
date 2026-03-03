@@ -129,7 +129,7 @@ export class RelayOnPremShareClientManager {
 					serverName: server.name,
 				}));
 				return { serverId, shares: sharesWithServer };
-			} catch (error) {
+			} catch (error: unknown) {
 				log(`Error listing shares from server ${serverId}:`, error);
 				return { serverId, shares: [] };
 			}

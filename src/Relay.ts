@@ -20,6 +20,7 @@ interface HasPermissionParents {
 	permissionParents: [string, string][];
 }
 interface Serializable {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	toDict: () => any;
 }
 

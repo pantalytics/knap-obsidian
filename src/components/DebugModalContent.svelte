@@ -23,7 +23,7 @@
 	function getResponse() {
 		try {
 			return Response.toString();
-		} catch (e) {
+		} catch (e: unknown) {
 			return "undefined";
 		}
 	}
@@ -31,7 +31,7 @@
 	function getFetch() {
 		try {
 			return fetch.toString();
-		} catch (e) {
+		} catch (e: unknown) {
 			return "undefined";
 		}
 	}
@@ -39,7 +39,7 @@
 	function getUsingBlink() {
 		try {
 			return (globalThis as any)?.blinkfetch !== undefined ? "Yes" : "No";
-		} catch (e) {
+		} catch (e: unknown) {
 			return "No";
 		}
 	}

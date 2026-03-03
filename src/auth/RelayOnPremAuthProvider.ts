@@ -123,7 +123,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 					await this.refreshToken();
 					this.log(`restoreAuth: token refresh successful for ${this.user?.email}`);
 					return;
-				} catch (e) {
+				} catch (e: unknown) {
 					this.log(`restoreAuth: token refresh failed: ${e}`);
 					// Keep user and refresh token — will retry on next getToken() call.
 					// Do NOT clear auth here. The user is still "logged in" with a
@@ -179,6 +179,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 		// Return the expired token for now — the caller should handle 401 gracefully.
 		if (this.token && !this.isTokenValid() && this.storedRefreshToken && !this.refreshInProgress) {
 			this.log("getToken: access token expired, triggering background refresh");
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			this.ensureTokenRefreshed();
 		}
 		return this.token;
@@ -228,7 +229,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 			try {
 				await this.refreshToken();
 				return;
-			} catch (error) {
+			} catch (error: unknown) {
 				const statusCode = (error as { statusCode?: number })?.statusCode;
 				// Don't retry auth errors (401/403) — token is truly invalid
 				if (statusCode === 401 || statusCode === 403) {
@@ -250,7 +251,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 			const [, payload] = token.split(".");
 			const decoded = JSON.parse(atob(payload));
 			return decoded;
-		} catch (error) {
+		} catch (error: unknown) {
 			this.log("Failed to decode token:", error);
 			return {};
 		}
@@ -326,7 +327,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 					expiresAt: this.tokenExpiresAt,
 				},
 			};
-		} catch (error) {
+		} catch (error: unknown) {
 			this.log("Login error:", error);
 			this.user = undefined;
 			this.token = undefined;
@@ -367,7 +368,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 			this.log(`OAuth2 login successful for ${this.user.email}`);
 
 			return authResponse;
-		} catch (error) {
+		} catch (error: unknown) {
 			this.log("OAuth2 login error:", error);
 			this.user = undefined;
 			this.token = undefined;
@@ -483,7 +484,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 					},
 				};
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			this.log("Token refresh error:", error);
 			// Only clear auth if the refresh token itself is invalid (401/403).
 			// For network errors or server issues, keep auth for retry.
@@ -515,7 +516,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 						Authorization: `Bearer ${this.token}`,
 					},
 				});
-			} catch (error) {
+			} catch (error: unknown) {
 				this.log("Logout error:", error);
 				// Continue with local logout even if remote logout fails
 			}

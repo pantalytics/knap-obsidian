@@ -125,7 +125,7 @@
 					folderName,
 					$folderLocation || "/",
 				).catch((e) => {
-					error = e.message;
+					error = e instanceof Error ? e.message : String(e);
 				});
 			})}>Confirm</button
 		>

@@ -131,7 +131,7 @@ export class TextFileViewPlugin extends HasLogging {
 			let stale: boolean;
 			try {
 				stale = await this.doc.checkStale();
-			} catch (e) {
+			} catch (e: unknown) {
 				// HTTP download failed (e.g., 401 with CWT tokens on relay-server).
 				// Skip syncViewToCRDT — rely on WS sync for CRDT state.
 				this.warn("[resync] checkStale failed, relying on WS sync:", (e as Error).message);
@@ -139,6 +139,7 @@ export class TextFileViewPlugin extends HasLogging {
 			}
 			if (stale && this.view) {
 				this.warn("Document is stale - showing merge banner");
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				this.view.checkStale().then(async (stale) => {
 					if (!stale) {
 						await this.syncViewToCRDT();
@@ -195,7 +196,9 @@ export class TextFileViewPlugin extends HasLogging {
 
 		this.unsubscribes.push(
 			getPatcher().patch(this.view.view, {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				setViewData(old: any) {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					return function (this: any, data: string, clear: boolean) {
 						that.warn("instance hook: setViewData", this.getViewType());
 
@@ -221,6 +224,7 @@ export class TextFileViewPlugin extends HasLogging {
 
 						const result = old.call(this, data, clear);
 
+						// eslint-disable-next-line @typescript-eslint/no-floating-promises
 						// Call resync AFTER original setViewData succeeds
 						if (clear) {
 							that.resync();
@@ -229,7 +233,9 @@ export class TextFileViewPlugin extends HasLogging {
 						return result;
 					};
 				},
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				requestSave(old: any) {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					return function (this: any) {
 						that.warn("instance hook: requestSave called", this.getViewType());
 						if (isLive(that.view) && !that.saving && that.doc) {
@@ -240,6 +246,7 @@ export class TextFileViewPlugin extends HasLogging {
 									that.view.view.getViewData(),
 									that.doc,
 								);
+								// eslint-disable-next-line @typescript-eslint/no-floating-promises
 								that.doc.save();
 								return;
 							} else {
@@ -270,6 +277,7 @@ export class TextFileViewPlugin extends HasLogging {
 				return;
 			}
 
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			// Called when a yjs event is received. Results in view update
 			if (tr.origin !== this.doc) {
 				if (!this.view.tracking) {
@@ -281,6 +289,7 @@ export class TextFileViewPlugin extends HasLogging {
 				this.view.view.setViewData(this.doc.text, false);
 				this.view.view.requestSave();
 				this.saving = false;
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				this.view.tracking = true;
 			}
 		};
@@ -296,7 +305,7 @@ export class TextFileViewPlugin extends HasLogging {
 
 		// Initialize ViewHookPlugin after sync state is established
 		if (this.viewHookPlugin) {
-			this.viewHookPlugin.initialize().catch((error) => {
+			this.viewHookPlugin.initialize().catch((error: unknown) => {
 				this.error("Error initializing ViewHookPlugin:", error);
 			});
 		}
@@ -314,9 +323,13 @@ export class TextFileViewPlugin extends HasLogging {
 		// Clean up ViewHookPlugin
 		this.viewHookPlugin?.destroy();
 
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.observer = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this._ytext = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.view = null as any;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.doc = null as any;
 	}
 }

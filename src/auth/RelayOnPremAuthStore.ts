@@ -37,6 +37,7 @@ export function getAuthStore(vaultName: string): RelayOnPremAuthStore {
 
 export class RelayOnPremAuthStore {
 	private log = curryLog("[RelayOnPremAuthStore]");
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private storageFallback: { [key: string]: any } = {};
 	private vaultName: string;
 	private static readonly MAX_RETRY_ATTEMPTS = 3;
@@ -174,6 +175,7 @@ export class RelayOnPremAuthStore {
 	 * Includes retry logic to handle cases where localStorage might be
 	 * temporarily unavailable during Obsidian startup.
 	 */
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private _storageGet(key: string): any {
 		const hasLocalStorage = typeof window !== "undefined" && window?.localStorage;
 		this.log(`_storageGet: key=${key}, hasLocalStorage=${hasLocalStorage}`);
@@ -198,11 +200,11 @@ export class RelayOnPremAuthStore {
 					try {
 						const parsed = JSON.parse(rawValue);
 						return parsed;
-					} catch (e) {
+					} catch (e: unknown) {
 						// not a json, return as-is
 						return rawValue;
 					}
-				} catch (e) {
+				} catch (e: unknown) {
 					this.log(`_storageGet: localStorage access failed, attempt ${attempt + 1}/${RelayOnPremAuthStore.MAX_RETRY_ATTEMPTS}: ${e}`);
 					if (attempt < RelayOnPremAuthStore.MAX_RETRY_ATTEMPTS - 1) {
 						// Small sync delay - we can't await in a sync function,
@@ -222,6 +224,7 @@ export class RelayOnPremAuthStore {
 	 * Stores a new data in the browser's local storage
 	 * (or runtime/memory if local storage is undefined).
 	 */
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private _storageSet(key: string, value: any) {
 		const hasLocalStorage = typeof window !== "undefined" && window?.localStorage;
 		this.log(`_storageSet: key=${key}, hasLocalStorage=${hasLocalStorage}`);
@@ -238,7 +241,7 @@ export class RelayOnPremAuthStore {
 
 				// Also keep in fallback as backup
 				this.storageFallback[key] = value;
-			} catch (e) {
+			} catch (e: unknown) {
 				this.log(`_storageSet: localStorage.setItem failed: ${e}`);
 				// Store in fallback if localStorage fails
 				this.storageFallback[key] = value;

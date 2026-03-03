@@ -14,14 +14,17 @@ if (globalThis.Response === undefined || globalThis.Headers === undefined) {
 		console.warn(
 			"[Relay] Polyfilling Fetch API (Electron Bug: https://github.com/electron/electron/pull/42419)",
 		);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		if ((globalThis as any).blinkfetch) {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			globalThis.fetch = (globalThis as any).blinkfetch;
 			const keys = ["fetch", "Response", "FormData", "Request", "Headers"];
 			for (const key of keys) {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				(globalThis as any)[key] = (globalThis as any)[`blink${key}`];
 			}
 		}
-	} catch (e) {
+	} catch (e: unknown) {
 		console.error(e);
 	}
 }
@@ -63,6 +66,7 @@ export const customFetch = async (
 	// Retry logic for transient network errors (stale keep-alive connections, HTTP/2 RST_STREAM)
 	const MAX_RETRIES = 2;
 	let response: RequestUrlResponse | undefined = undefined;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let lastError: any = undefined;
 
 	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -70,6 +74,7 @@ export const customFetch = async (
 			response = await requestUrl(requestParams);
 			lastError = undefined;
 			break;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		} catch (error: any) {
 			lastError = error;
 			const msg = error?.message || "";
@@ -137,7 +142,7 @@ export const customFetch = async (
 		if (contentType.includes("application/json")) {
 			try {
 				response_json = JSON.parse(response_text);
-			} catch (e) {
+			} catch (e: unknown) {
 				// pass
 			}
 		}

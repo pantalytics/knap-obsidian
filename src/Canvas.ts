@@ -42,7 +42,9 @@ export class Canvas extends HasProvider implements IFile, HasMimeType {
 		size: number;
 	};
 	unsubscribes: Unsubscriber[] = [];
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private _awaitingUpdates: any;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private _canvas: any;
 
 	constructor(
@@ -79,27 +81,34 @@ export class Canvas extends HasProvider implements IFile, HasMimeType {
 		try {
 			const key = `${this.sharedFolder.appId}-relay-canvas-${this.guid}`;
 			this._persistence = new IndexeddbPersistence(key, this.ydoc);
-		} catch (e) {
+		} catch (e: unknown) {
 			this.warn("Unable to open persistence.", this.guid);
 			console.error(e);
 			throw e;
+		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		}
 
 		this.whenSynced().then(() => {
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			this.updateStats();
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			try {
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				this._persistence.set("path", this.path);
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				this._persistence.set("relay", this.sharedFolder.relayId || "");
 				this._persistence.set("appId", this.sharedFolder.appId);
 				this._persistence.set("s3rn", S3RN.encode(this.s3rn));
-			} catch (e) {
+			} catch (e: unknown) {
 				// pass
+			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			}
 
 			(async () => {
 				const serverSynced = await this.getServerSynced();
 				if (!serverSynced) {
 					await this.onceProviderSynced();
+					// eslint-disable-next-line @typescript-eslint/no-floating-promises
 					await this.markSynced();
 				}
 				this.sharedFolder.markUploaded(this);
@@ -197,6 +206,7 @@ export class Canvas extends HasProvider implements IFile, HasMimeType {
 		const promiseFn = async (): Promise<Canvas> => {
 			const awaitingUpdates = await this.awaitingUpdates();
 			if (awaitingUpdates) {
+				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				// If this is a brand new shared folder, we want to wait for a connection before we start reserving new guids for local files.
 				this.log("awaiting updates");
 				this.connect();
@@ -393,8 +403,10 @@ export class Canvas extends HasProvider implements IFile, HasMimeType {
 		super.destroy();
 		this.ydoc.destroy();
 		this.whenSyncedPromise?.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.whenSyncedPromise = null as any;
 		this.readyPromise?.destroy();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		this.readyPromise = null as any;
 	}
 }
