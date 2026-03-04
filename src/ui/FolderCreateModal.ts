@@ -24,7 +24,7 @@ export class FolderCreateModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		contentEl.createEl("h2", { text: "Create Shared Folder" });
+		contentEl.createEl("h2", { text: "Create shared folder" });
 
 		// Folder path input
 		new Setting(contentEl)
@@ -40,7 +40,7 @@ export class FolderCreateModal extends Modal {
 					});
 				text.inputEl.addEventListener("keypress", (e) => {
 					if (e.key === "Enter") {
-						this.handleCreate();
+						void this.handleCreate();
 					}
 				});
 				// Focus the input
@@ -63,9 +63,7 @@ export class FolderCreateModal extends Modal {
 
 		// Buttons
 		const buttonContainer = contentEl.createDiv("modal-button-container");
-		buttonContainer.addClass("evc-flex", "evc-justify-end");
-		buttonContainer.style.gap = "8px";
-		buttonContainer.style.marginTop = "20px";
+		buttonContainer.addClass("evc-flex", "evc-justify-end", "evc-gap-2", "evc-mt-4");
 
 		const cancelButton = buttonContainer.createEl("button", {
 			text: "Cancel",
@@ -77,8 +75,8 @@ export class FolderCreateModal extends Modal {
 			text: "Create",
 			cls: "mod-cta"
 		});
-		this.createButton.onclick = () => this.handleCreate();
-		
+		this.createButton.onclick = () => void this.handleCreate();
+
 		this.updateCreateButton();
 	}
 
@@ -92,7 +90,7 @@ export class FolderCreateModal extends Modal {
 
 	private isValidPath(path: string): boolean {
 		if (!path || path.trim() === "") return false;
-		
+
 		// Obsidian restricted characters
 		const restrictedCharacters = /[\\:*?"<>|]/;
 		if (restrictedCharacters.test(path)) return false;
@@ -104,7 +102,7 @@ export class FolderCreateModal extends Modal {
 				return false;
 			}
 		}
-		
+
 		return true;
 	}
 
@@ -123,7 +121,7 @@ export class FolderCreateModal extends Modal {
 					this.isPrivate
 				);
 				folder.remote = remote;
-				folder.connect();
+				void folder.connect();
 				this.sharedFolders.notifyListeners();
 			} else {
 				// Ensure folder exists in vault

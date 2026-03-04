@@ -43,13 +43,13 @@ export class Banner {
 			span.setText(this.text);
 			banner.appendChild(span);
 			bannerBox.appendChild(banner);
-			const onClick = async () => {
-				const destroy = await this.onClick();
-				if (destroy) {
-					this.destroy();
-				}
-			};
-			banner.addEventListener("click", onClick);
+			banner.addEventListener("click", () => {
+				void this.onClick().then((destroy) => {
+					if (destroy) {
+						this.destroy();
+					}
+				});
+			});
 		}
 		return true;
 	}
@@ -63,7 +63,7 @@ export class Banner {
 		if (bannerBox) {
 			bannerBox.replaceChildren();
 		}
-		this.onClick = async () => true;
+		this.onClick = () => Promise.resolve(true);
 		return true;
 	}
 }

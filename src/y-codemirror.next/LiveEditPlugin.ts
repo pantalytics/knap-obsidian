@@ -23,8 +23,6 @@ import { Document } from "src/Document";
 import { EmbedBanner } from "src/ui/EmbedBanner";
 import { ViewHookPlugin } from "src/plugins/ViewHookPlugin";
 
-const TWEENS = 25;
-
 export const connectionManagerFacet: Facet<LiveViewManager, LiveViewManager> =
 	Facet.define({
 		combine(inputs) {
@@ -83,7 +81,7 @@ export class LiveCMPluginValue implements PluginValue {
 		if (this.destroyed || !this.editor) {
 			return () => {};
 		}
-		
+
 		this.banner = new EmbedBanner(
 			this.sourceView,
 			this.editor.dom,
@@ -105,12 +103,13 @@ export class LiveCMPluginValue implements PluginValue {
 					file1: this.document,
 					file2: diskBuffer,
 					showMergeOption: true,
-					onResolve: async () => {
+					onResolve: () => {
 						if (this.destroyed || !this.editor || !this.document) {
-							return;
+							return Promise.resolve();
 						}
-						this.document.clearDiskBuffer();
-						this.resync();
+						void this.document.clearDiskBuffer();
+						void this.resync();
+						return Promise.resolve();
 					},
 				});
 				return true;
@@ -181,8 +180,7 @@ export class LiveCMPluginValue implements PluginValue {
 		if (this.view?.view) {
 			this.unsubscribes.push(
 				getPatcher().patch(this.view.view, {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					setViewData(old: any) {
+					setViewData(old: unknown) {
 						return function (data: string, clear: boolean) {
 							if (clear) {
 								if (isLiveMd(liveEditPlugin.view)) {
@@ -190,7 +188,7 @@ export class LiveCMPluginValue implements PluginValue {
 										liveEditPlugin.view.tracking = true;
 									}
 								}
-								liveEditPlugin.resync();
+								void liveEditPlugin.resync();
 							} else if (fmSave) {
 								const changes = liveEditPlugin.incrementalBufferChange(data);
 								editor.dispatch({
@@ -203,10 +201,8 @@ export class LiveCMPluginValue implements PluginValue {
 						};
 					},
 					// @ts-ignore
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					saveFrontmatter(old: any) {
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any
-						return function (data: any) {
+					saveFrontmatter(old: unknown) {
+						return function (data: unknown) {
 							fmSave = true;
 							// @ts-ignore
 							const result = old.call(this, data);
@@ -214,8 +210,7 @@ export class LiveCMPluginValue implements PluginValue {
 							return result;
 						};
 					},
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					requestSave(old: any) {
+					requestSave(old: unknown) {
 						return function () {
 							// @ts-ignore
 							const result = old.call(this);
@@ -223,7 +218,7 @@ export class LiveCMPluginValue implements PluginValue {
 								try {
 									// @ts-ignore
 									this.app.metadataCache.trigger("resolve", this.file);
-								} catch (e: unknown) {
+								} catch {
 									// pass
 								}
 							}
@@ -233,14 +228,14 @@ export class LiveCMPluginValue implements PluginValue {
 				}),
 			);
 		} else {
-			this.document.connect();
+			void this.document.connect();
 		}
 
 		if (this.document.connected) {
-			this.resync();
+			void this.resync();
 		} else {
-			this.document.onceConnected().then(() => {
-				this.resync();
+			void this.document.onceConnected().then(() => {
+				void this.resync();
 			});
 		}
 
@@ -335,7 +330,7 @@ export class LiveCMPluginValue implements PluginValue {
 						this.view.tracking = false;
 					}
 					this.warn("[observer] RangeError, scheduling resync");
-					this.resync();
+					void this.resync();
 				}
 			}
 		};
@@ -471,7 +466,7 @@ export class LiveCMPluginValue implements PluginValue {
 
 		// disk and ytext differ
 		if (isLiveMd(this.view) && !this.view.tracking) {
-			this.view.checkStale();
+			void this.view.checkStale();
 		} else if (this.document) {
 			try {
 				const stale = await this.document.checkStale();
@@ -546,12 +541,10 @@ export class LiveCMPluginValue implements PluginValue {
 		if (this.embed && this.sourceView) {
 			this.sourceView.classList.remove("relay-live-editor");
 		}
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.connectionManager = null as any;
+		this.connectionManager = null as unknown as LiveViewManager | undefined;
 		this.view = undefined;
 		this._ytext = undefined;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.editor = null as any;
+		this.editor = null as unknown as EditorView;
 	}
 }
 

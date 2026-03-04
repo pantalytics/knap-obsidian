@@ -4,7 +4,7 @@
  * https://raw.githubusercontent.com/yjs/y-websocket/master/src/y-websocket.js
  */
 
-import * as Y from "yjs"; // eslint-disable-line
+import * as Y from "yjs";  
 import * as bc from "lib0/broadcastchannel";
 import * as time from "lib0/time";
 import * as encoding from "lib0/encoding";
@@ -112,7 +112,7 @@ const readMessage = (
 	const encoder = encoding.createEncoder();
 	const messageType = decoding.readVarUint(decoder);
 	const messageHandler = provider.messageHandlers[messageType];
-	if (/** @type {any} */ messageHandler) {
+	if (/** @type {unknown} */ messageHandler) {
 		messageHandler(encoder, decoder, provider, emitSynced, messageType);
 	} else {
 		console.error("Unable to compute message");
@@ -242,7 +242,7 @@ const broadcastMessage = (provider: YSweetProvider, buf: ArrayBuffer) => {
 };
 
 type WebSocketPolyfillType = {
-	new (url: string | URL, protocols?: string | string[] | undefined): WebSocket;
+	new (url: string | URL, protocols?: string | string[]): WebSocket;
 	prototype: WebSocket;
 	readonly CLOSED: number;
 	readonly CLOSING: number;
@@ -306,16 +306,18 @@ export class YSweetProvider extends Observable<string> {
 	wsLastMessageReceived: number;
 	shouldConnect: boolean;
 	_resyncInterval: ReturnType<typeof setInterval> | number; // TODO: is setting this to 0 used as null?
-	_bcSubscriber: Function;
+	_bcSubscriber: (data: ArrayBuffer, origin: unknown) => void;
 	_updateHandler: (
 		arg0: Uint8Array,
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		arg1: any,
+		arg1: unknown,
 		arg2: Y.Doc,
 		arg3: Y.Transaction,
 	) => void;
-	_awarenessUpdateHandler: Function;
-	_unloadHandler: Function;
+	_awarenessUpdateHandler: (
+		changes: { added: Array<number>; updated: Array<number>; removed: Array<number> },
+		origin: unknown,
+	) => void;
+	_unloadHandler: () => void;
 	_checkInterval: ReturnType<typeof setInterval> | number;
 	maxConnectionErrors: number;
 
@@ -389,8 +391,7 @@ export class YSweetProvider extends Observable<string> {
 			}, resyncInterval);
 		}
 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this._bcSubscriber = (data: ArrayBuffer, origin: any) => {
+		this._bcSubscriber = (data: ArrayBuffer, origin: unknown) => {
 			if (origin !== this) {
 				const encoder = readMessage(this, new Uint8Array(data), false);
 				if (encoding.length(encoder) > 1) {
@@ -402,8 +403,7 @@ export class YSweetProvider extends Observable<string> {
 		/**
 		 * Listens to Yjs updates and sends them to remote peers (ws and broadcastchannel)
 		 */
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this._updateHandler = (update: Uint8Array, origin: any) => {
+		this._updateHandler = (update: Uint8Array, origin: unknown) => {
 			if (origin !== this) {
 				const encoder = encoding.createEncoder();
 				encoding.writeVarUint(encoder, messageSync);
@@ -412,8 +412,7 @@ export class YSweetProvider extends Observable<string> {
 			}
 		};
 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.doc.on("update", this._updateHandler as any);
+		this.doc.on("update", this._updateHandler as (arg0: Uint8Array, arg1: unknown, arg2: Y.Doc, arg3: Y.Transaction) => void);
 
 		// TODO: I think we can get more specific with the array types.
 		// They are not documented here so we need to do some digging.
@@ -423,10 +422,8 @@ export class YSweetProvider extends Observable<string> {
 				added,
 				updated,
 				removed,
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			}: { added: Array<any>; updated: Array<any>; removed: Array<any> },
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			_origin: any,
+			}: { added: Array<number>; updated: Array<number>; removed: Array<number> },
+			_origin: unknown,
 		) => {
 			const changedClients = added.concat(updated).concat(removed);
 			const encoder = encoding.createEncoder();
@@ -447,11 +444,9 @@ export class YSweetProvider extends Observable<string> {
 		};
 
 		if (typeof window !== "undefined") {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			window.addEventListener("unload", this._unloadHandler as any);
+			window.addEventListener("unload", this._unloadHandler);
 		} else if (typeof process !== "undefined") {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			process.on("exit", this._unloadHandler as any);
+			process.on("exit", this._unloadHandler);
 		}
 
 		awareness.on("update", this._awarenessUpdateHandler);
@@ -543,15 +538,13 @@ export class YSweetProvider extends Observable<string> {
 		this._observers.clear();
 
 		if (typeof window !== "undefined") {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			window.removeEventListener("unload", this._unloadHandler as any);
+			window.removeEventListener("unload", this._unloadHandler);
 			window.clearInterval(this.awareness._checkInterval);
 		} else if (typeof process !== "undefined") {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			process.off("exit", this._unloadHandler as any);
+			process.off("exit", this._unloadHandler);
 		}
 		this.awareness.off("update", this._awarenessUpdateHandler);
-		this.doc.off("update", this._updateHandler);
+		this.doc.off("update", this._updateHandler as (arg0: Uint8Array, arg1: unknown, arg2: Y.Doc, arg3: Y.Transaction) => void);
 		super.destroy();
 	}
 
@@ -560,8 +553,7 @@ export class YSweetProvider extends Observable<string> {
 			return;
 		}
 		if (!this.bcconnected) {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			bc.subscribe(this.bcChannel, this._bcSubscriber as any);
+			bc.subscribe(this.bcChannel, this._bcSubscriber);
 			this.bcconnected = true;
 		}
 		// send sync step1 to bc
@@ -613,8 +605,7 @@ export class YSweetProvider extends Observable<string> {
 		);
 		broadcastMessage(this, encoding.toUint8Array(encoder));
 		if (this.bcconnected) {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			bc.unsubscribe(this.bcChannel, this._bcSubscriber as any);
+			bc.unsubscribe(this.bcChannel, this._bcSubscriber);
 			this.bcconnected = false;
 		}
 	}

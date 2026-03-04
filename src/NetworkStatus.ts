@@ -61,7 +61,7 @@ class NetworkStatus {
 
 	private checkStatusRepeatedly(): number {
 		return this.timeProvider.setInterval(
-			this._checkStatus.bind(this),
+			() => { void this._checkStatus(); },
 			this.interval,
 		);
 	}
@@ -71,8 +71,7 @@ class NetworkStatus {
 			return Promise.resolve(true);
 		}
 		return new Promise((resolve) => {
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
-			this._checkStatus().then(() => {
+			void this._checkStatus().then(() => {
 				resolve(this.online);
 			});
 		});
@@ -110,8 +109,7 @@ class NetworkStatus {
 				if (error instanceof Error && error.message.includes("ERR_NETWORK_CHANGED")) {
 					// This doesn't necessarily imply a disconnect,
 					// We should immediately try again to get a name resolution error.
-					// eslint-disable-next-line @typescript-eslint/no-floating-promises
-					this._checkStatus();
+					void this._checkStatus();
 					return;
 				}
 				this.online = false;
@@ -136,14 +134,10 @@ class NetworkStatus {
 
 	destroy() {
 		this._onceOnline.clear();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this._onceOnline = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.onOnline = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.onOffline = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.timeProvider = null as any;
+		this._onceOnline = null as unknown as Set<Callback>;
+		this.onOnline = null as unknown as Callback[];
+		this.onOffline = null as unknown as Callback[];
+		this.timeProvider = null as unknown as TimeProvider;
 	}
 }
 

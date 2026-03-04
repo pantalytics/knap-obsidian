@@ -154,8 +154,7 @@ type AwarenessChangeEvent = {
 
 type AwarenessChangeHandler = (
 	event: AwarenessChangeEvent,
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	origin: any, // The type of origin can be very broad, depending on what triggered the change.
+	origin: unknown, // The type of origin can be very broad, depending on what triggered the change.
 	awareness: Awareness,
 ) => void;
 
@@ -236,19 +235,15 @@ export class YRemoteSelectionsPluginValue implements PluginValue {
 			this._awareness?.off("change", this._listener);
 			this._listener = undefined;
 		}
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.connectionManager = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.view = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.editor = null as any;
+		this.connectionManager = null as unknown as LiveViewManager | undefined;
+		this.view = null as unknown as LiveView<TextFileView> | undefined;
+		this.editor = null as unknown as EditorView;
 	}
 
 	update(update: ViewUpdate) {
 		if (this.destroyed) {
 			return;
 		}
-		const editor: EditorView = update.view;
 		this.document = this.getDocument();
 		const ytext = this.document?.ytext;
 		if (!(this.document && ytext && ytext.doc)) {
@@ -275,14 +270,14 @@ export class YRemoteSelectionsPluginValue implements PluginValue {
 					? null
 					: Y.createRelativePositionFromJSON(
 							localAwarenessState.cursor.anchor,
-							// eslint-disable-next-line no-mixed-spaces-and-tabs
+							 
 						);
 			const currentHead =
 				localAwarenessState.cursor == null
 					? null
 					: Y.createRelativePositionFromJSON(
 							localAwarenessState.cursor.head,
-							// eslint-disable-next-line no-mixed-spaces-and-tabs
+							 
 						);
 
 			if (sel != null) {

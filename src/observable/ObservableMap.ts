@@ -218,7 +218,6 @@ class DerivedMap<K, V> extends ObservableMap<K, V> {
 			this.unsub = undefined;
 		}
 		this._listeners?.clear();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.parentCallback = null as any;
+		this.parentCallback = null as unknown as Subscriber<ObservableMap<K, V>>;
 	}
 }

@@ -8,11 +8,8 @@ import type { ClientToken, FileToken } from "./client/types";
 import { LocalStorage } from "./LocalStorage";
 import {
 	S3RN,
-	S3RemoteDocument,
 	type S3RNType,
-	S3RemoteFolder,
 	S3RemoteFile,
-	S3RemoteCanvas,
 } from "./S3RN";
 import { customFetch } from "./customFetch";
 import { refresh as universalRefresh } from "./LiveTokenStoreRefresh";
@@ -25,84 +22,6 @@ function getJwtExpiryFromClientToken(clientToken: ClientToken): number {
 	return clientToken.expiryTime || 0;
 }
 
-function withLoginManager(
-	loginManager: LoginManager,
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	fn: (...args: any[]) => void,
-) {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	return (...args: any[]) => fn(loginManager, ...args);
-}
-
-async function refresh(
-	loginManager: LoginManager,
-	documentId: string,
-	onSuccess: (clientToken: ClientToken) => void,
-	onError: (err: Error) => void,
-) {
-	const debug = curryLog("[TokenStore][Refresh]", "debug");
-	const error = curryLog("[TokenStore][Refresh]", "error");
-	debug(`${documentId}`);
-	const entity: S3RNType = S3RN.decode(documentId);
-	let payload: string;
-	if (entity instanceof S3RemoteDocument) {
-		payload = JSON.stringify({
-			docId: entity.documentId,
-			relay: entity.relayId,
-			folder: entity.folderId,
-		});
-	} else if (entity instanceof S3RemoteCanvas) {
-		payload = JSON.stringify({
-			docId: entity.canvasId,
-			relay: entity.relayId,
-			folder: entity.folderId,
-		});
-	} else if (entity instanceof S3RemoteFolder) {
-		payload = JSON.stringify({
-			docId: entity.folderId,
-			relay: entity.relayId,
-			folder: entity.folderId,
-		});
-	} else if (entity instanceof S3RemoteFile) {
-		payload = JSON.stringify({
-			docId: entity.fileId,
-			relay: entity.relayId,
-			folder: entity.folderId,
-		});
-	} else {
-		onError(new Error("No remote to connect to"));
-		return;
-	}
-	if (!loginManager.loggedIn) {
-		onError(Error("Not logged in"));
-		return;
-	}
-	const headers = {
-		Authorization: `Bearer ${loginManager.user?.token}`,
-		"Relay-Version": GIT_TAG,
-		"Content-Type": "application/json",
-	};
-	try {
-		const apiUrl = loginManager.getEndpointManager().getApiUrl();
-		const response = await customFetch(`${apiUrl}/token`, {
-			method: "POST",
-			headers: headers,
-			body: payload,
-		});
-
-		if (!response.ok) {
-			debug(response.status, await response.text());
-			onError(Error(`Received status code ${response.status} from an API.`));
-			return;
-		}
-
-		const clientToken = (await response.json()) as ClientToken;
-		onSuccess(clientToken);
-	} catch (reason: unknown) {
-		error(reason, payload);
-		onError(reason as Error);
-	}
-}
 
 export class LiveTokenStore extends TokenStore<ClientToken> {
 	private relayOnPremTokenProvider: RelayOnPremTokenProvider | null = null;
@@ -122,7 +41,7 @@ export class LiveTokenStore extends TokenStore<ClientToken> {
 				refresh: (documentId: string, onSuccess: (clientToken: ClientToken) => void, onError: (err: Error) => void) => {
 					// Get file path from map for relay-onprem mode
 					const filePath = this.filePathMap.get(documentId);
-					return universalRefresh(
+					void universalRefresh(
 						loginManager,
 						this.relayOnPremTokenProvider,
 						this.isRelayOnPremMode,
@@ -226,7 +145,7 @@ export class LiveTokenStore extends TokenStore<ClientToken> {
 		)
 			.then((newToken: FileToken) => {
 				const expiryTime = this.getJwtExpiry(newToken);
-				// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+				 
 				const existing = this.tokenMap.get(key)!;
 				this.tokenMap.set(fileHash, {
 					...existing,

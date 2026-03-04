@@ -69,8 +69,7 @@ export class SyncSettingsManager extends NamespacedSettings<
 	) as Record<keyof SyncFlags, boolean>;
 
 	constructor(
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		settings: Settings<any>,
+		settings: Settings<unknown>,
 		path: string,
 		public enabled = true,
 	) {

@@ -48,7 +48,7 @@ export class RelayOnPremTokenProvider {
 		mode: "read" | "write" = "read",
 		filePath?: string
 	): Promise<ClientToken> {
-		let token = await this.config.authProvider.getValidToken();
+		const token = await this.config.authProvider.getValidToken();
 
 		if (!token) {
 			throw new Error("Not authenticated");

@@ -1,15 +1,16 @@
 import { App, Modal } from "obsidian";
 
+interface SvelteComponentConstructor {
+	new (options: { target: Element; props: Record<string, unknown> }): { $destroy: () => void };
+}
+
 export class GenericSuggestModal<T> extends Modal {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private component?: any;
+	private component?: { $destroy: () => void };
 
 	constructor(
 		app: App,
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		private ComponentClass: any,
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		private componentProps: any,
+		private ComponentClass: SvelteComponentConstructor,
+		private componentProps: Record<string, unknown>,
 		private onSelect: (item: T) => void,
 	) {
 		super(app);
@@ -24,7 +25,7 @@ export class GenericSuggestModal<T> extends Modal {
 		const contentEl = modalContainer || modalEl;
 
 		this.component = new this.ComponentClass({
-			target: contentEl,
+			target: contentEl as Element,
 			props: {
 				...this.componentProps,
 				autofocus: true,
@@ -41,11 +42,8 @@ export class GenericSuggestModal<T> extends Modal {
 	}
 
 	destroy() {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.onSelect = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.componentProps = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.ComponentClass = null as any;
+		this.onSelect = null as unknown as (item: T) => void;
+		this.componentProps = null as unknown as Record<string, unknown>;
+		this.ComponentClass = null as unknown as SvelteComponentConstructor;
 	}
 }

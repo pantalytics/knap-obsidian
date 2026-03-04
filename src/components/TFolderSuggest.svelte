@@ -147,7 +147,7 @@
 
 			suggestEl.style.left = "10px";
 			suggestEl.style.right = "10px";
-			suggestEl.style.width = "auto";
+			suggestEl.addClass("evc-w-auto");
 
 			if (spaceBelow < actualHeight + 10 && spaceAbove > actualHeight + 10) {
 				// Show above input - use bottom positioning
@@ -168,7 +168,7 @@
 
 			suggestEl.style.left = `${rect.left}px`;
 			suggestEl.style.top = `${rect.bottom + 2}px`;
-			suggestEl.style.width = `${maxWidth}px`;
+			suggestEl.style.setProperty("width", `${maxWidth}px`);
 			suggestEl.style.maxHeight = `${actualHeight}px`;
 			suggestEl.style.height = ""; // Let content determine height
 		}

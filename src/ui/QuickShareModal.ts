@@ -22,10 +22,10 @@ export class QuickShareModal extends Modal {
 		private folderPath: string,
 	) {
 		super(app);
-		this.setTitle("Share Folder");
+		this.setTitle("Share folder");
 	}
 
-	async onOpen() {
+	onOpen() {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass("relay-quick-share-modal");
@@ -87,18 +87,16 @@ export class QuickShareModal extends Modal {
 
 		// Create button
 		const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
-		buttonContainer.style.marginTop = "20px";
-		buttonContainer.addClass("evc-flex", "evc-justify-end");
-		buttonContainer.style.gap = "10px";
+		buttonContainer.addClass("evc-flex", "evc-justify-end", "evc-mt-4", "evc-gap-2");
 
 		const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
 		cancelBtn.addEventListener("click", () => this.close());
 
 		const createBtn = buttonContainer.createEl("button", {
-			text: "Create Share",
+			text: "Create share",
 			cls: "mod-cta",
 		});
-		createBtn.addEventListener("click", () => this.createShare());
+		createBtn.addEventListener("click", () => { void this.createShare(); });
 	}
 
 	/**

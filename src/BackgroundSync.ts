@@ -98,10 +98,8 @@ export class BackgroundSync extends HasLogging {
 		super();
 		RelayInstances.set(this, "BackgroundSync");
 		this.timeProvider.setInterval(() => {
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
-			this.processSyncQueue();
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
-			this.processDownloadQueue();
+			void this.processSyncQueue();
+			void this.processDownloadQueue();
 		}, 1000);
 	}
 
@@ -187,7 +185,7 @@ export class BackgroundSync extends HasLogging {
 		return progress;
 	}
 
-	private async processSyncQueue() {
+	private processSyncQueue() {
 		if (this.isPaused || this.isProcessingSync) return;
 		this.isProcessingSync = true;
 
@@ -211,8 +209,7 @@ export class BackgroundSync extends HasLogging {
 
 			try {
 				const doc = item.doc;
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				let syncPromise: Promise<any>;
+				let syncPromise: Promise<unknown>;
 
 				if (doc instanceof SyncFile) {
 					syncPromise = this.syncFile(doc);
@@ -275,9 +272,8 @@ export class BackgroundSync extends HasLogging {
 						this.inProgressSyncs.delete(item.guid);
 
 						// Unwind the call stack before checking for more work
-						// eslint-disable-next-line @typescript-eslint/no-floating-promises
 						this.timeProvider.setTimeout(() => {
-							this.processSyncQueue();
+							void this.processSyncQueue();
 						}, 0);
 					});
 			} catch (error: unknown) {
@@ -306,7 +302,7 @@ export class BackgroundSync extends HasLogging {
 		this.isProcessingSync = false;
 	}
 
-	private async processDownloadQueue() {
+	private processDownloadQueue() {
 		if (this.isPaused || this.isProcessingDownloads) return;
 		this.isProcessingDownloads = true;
 
@@ -331,8 +327,7 @@ export class BackgroundSync extends HasLogging {
 			this.activeDownloads.add(item);
 
 			try {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				let downloadPromise: Promise<any>;
+				let downloadPromise: Promise<unknown>;
 
 				// Choose the appropriate download method based on the document type
 				if (item.doc instanceof Canvas) {
@@ -385,10 +380,9 @@ export class BackgroundSync extends HasLogging {
 						this.activeDownloads.delete(item);
 						this.inProgressDownloads.delete(item.guid);
 
-						// eslint-disable-next-line @typescript-eslint/no-floating-promises
 						// Unwind the call stack before checking for more work
 						this.timeProvider.setTimeout(() => {
-							this.processDownloadQueue();
+							void this.processDownloadQueue();
 						}, 0);
 					});
 			} catch (error: unknown) {
@@ -439,10 +433,9 @@ export class BackgroundSync extends HasLogging {
 				return new Promise<void>((resolve, reject) => {
 					existingCallback.resolve = resolve;
 					existingCallback.reject = reject;
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				});
 			}
-			this.processSyncQueue();
+			void this.processSyncQueue();
 			return Promise.resolve();
 		}
 
@@ -482,10 +475,9 @@ export class BackgroundSync extends HasLogging {
 			});
 		});
 
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.syncQueue.push(queueItem);
 		this.syncQueue.sort(compareFilePaths);
-		this.processSyncQueue();
+		void this.processSyncQueue();
 
 		return syncPromise;
 	}
@@ -507,17 +499,15 @@ export class BackgroundSync extends HasLogging {
 			);
 
 			// Return existing promise if already processing
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			const existingCallback = this.downloadCompletionCallbacks.get(item.guid);
 			if (existingCallback) {
-				this.processDownloadQueue();
+				void this.processDownloadQueue();
 				return new Promise<void>((resolve, reject) => {
 					existingCallback.resolve = resolve;
 					existingCallback.reject = reject;
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				});
 			}
-			this.processDownloadQueue();
+			void this.processDownloadQueue();
 			return Promise.resolve();
 		}
 
@@ -561,10 +551,9 @@ export class BackgroundSync extends HasLogging {
 		});
 
 		// Add to the queue and start processing
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.downloadQueue.push(queueItem);
 		this.downloadQueue.sort(compareFilePaths);
-		this.processDownloadQueue();
+		void this.processDownloadQueue();
 
 		return downloadPromise;
 	}
@@ -605,10 +594,9 @@ export class BackgroundSync extends HasLogging {
 			compareFilePaths,
 		);
 
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
 
 		for (const doc of sortedDocs) {
-			this.enqueueForGroupSync(doc);
+			void this.enqueueForGroupSync(doc);
 		}
 
 		// Update group status to running
@@ -637,10 +625,9 @@ export class BackgroundSync extends HasLogging {
 			);
 
 			// Return existing promise if already processing
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			const existingCallback = this.syncCompletionCallbacks.get(item.guid);
 			if (existingCallback) {
-				this.processSyncQueue();
+				void this.processSyncQueue();
 				return new Promise<void>((resolve, reject) => {
 					existingCallback.resolve = resolve;
 					existingCallback.reject = reject;
@@ -667,10 +654,9 @@ export class BackgroundSync extends HasLogging {
 			});
 		});
 
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.syncQueue.push(queueItem);
 		this.syncQueue.sort(compareFilePaths);
-		this.processSyncQueue();
+		void this.processSyncQueue();
 
 		return syncPromise;
 	}
@@ -764,7 +750,7 @@ export class BackgroundSync extends HasLogging {
 		}
 		try {
 			currentFileContents = await doc.sharedFolder.read(doc);
-		} catch (e: unknown) {
+		} catch {
 			// File does not exist
 		}
 
@@ -810,7 +796,7 @@ export class BackgroundSync extends HasLogging {
 			);
 			try {
 				await Promise.race([promise, timeout]);
-			} catch (e: unknown) {
+			} catch {
 				this.warn("[syncDocumentWebsocket] timed out for", doc.path);
 				if (!doc.userLock) {
 					doc.disconnect();
@@ -869,7 +855,7 @@ export class BackgroundSync extends HasLogging {
 			try {
 				const stringContents = await canvas.sharedFolder.read(canvas);
 				currentFileContents = JSON.parse(stringContents) as CanvasData;
-			} catch (e: unknown) {
+			} catch {
 				// File doesn't exist
 			}
 
@@ -889,10 +875,9 @@ export class BackgroundSync extends HasLogging {
 			if (hasContents && !contentsMatch) {
 				this.log("Skipping flush - file requires merge conflict resolution.");
 				return;
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			}
 			if (canvas.sharedFolder.syncStore.has(canvas.path)) {
-				canvas.sharedFolder.flush(canvas, canvas.json);
+				void canvas.sharedFolder.flush(canvas, canvas.json);
 				this.log("[getCanvas] flushed");
 			}
 		} catch (e: unknown) {
@@ -900,10 +885,9 @@ export class BackgroundSync extends HasLogging {
 			// Fall back to WebSocket sync for the canvas content.
 			this.warn("[getCanvas] HTTP download failed, falling back to WS sync:", (e as Error).message);
 			try {
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				const synced = await this.syncDocumentWebsocket(canvas);
 				if (synced && canvas.sharedFolder.syncStore.has(canvas.path)) {
-					canvas.sharedFolder.flush(canvas, canvas.json);
+					void canvas.sharedFolder.flush(canvas, canvas.json);
 					this.log("[getCanvas] WS sync fallback successful, flushed to disk");
 				}
 			} catch (wsError: unknown) {
@@ -920,7 +904,7 @@ export class BackgroundSync extends HasLogging {
 			let currentFileContents = "";
 			try {
 				currentFileContents = await doc.sharedFolder.read(doc);
-			} catch (e: unknown) {
+			} catch {
 				// File doesn't exist
 			}
 
@@ -947,20 +931,18 @@ export class BackgroundSync extends HasLogging {
 						retry,
 						wait,
 					);
-					// eslint-disable-next-line @typescript-eslint/no-floating-promises
 					if (retry > 0) {
 						this.timeProvider.setTimeout(() => {
-							this.getDocument(doc, retry - 1, wait * 2);
+							void this.getDocument(doc, retry - 1, wait * 2);
 						}, wait);
 					}
 					return;
 				}
 				if (doc.text) {
 					this.log(
-						// eslint-disable-next-line @typescript-eslint/no-floating-promises
 						"[getDocument] local crdt has contents, but remote is empty",
 					);
-					this.enqueueSync(doc);
+					void this.enqueueSync(doc);
 					return;
 				}
 			}
@@ -971,10 +953,9 @@ export class BackgroundSync extends HasLogging {
 			if (hasContents && !contentsMatch) {
 				this.log("Skipping flush - file requires merge conflict resolution.");
 				return;
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			}
 			if (doc.sharedFolder.syncStore.has(doc.path)) {
-				doc.sharedFolder.flush(doc, doc.text);
+				void doc.sharedFolder.flush(doc, doc.text);
 				this.log("[getDocument] flushed");
 			}
 		} catch (e: unknown) {
@@ -982,10 +963,9 @@ export class BackgroundSync extends HasLogging {
 			// Fall back to WebSocket sync for the document content.
 			this.warn("[getDocument] HTTP download failed, falling back to WS sync:", (e as Error).message);
 			try {
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				const synced = await this.syncDocumentWebsocket(doc);
 				if (synced && doc.sharedFolder.syncStore.has(doc.path)) {
-					doc.sharedFolder.flush(doc, doc.text);
+					void doc.sharedFolder.flush(doc, doc.text);
 					this.log("[getDocument] WS sync fallback successful, flushed to disk");
 				}
 			} catch (wsError: unknown) {
@@ -1083,14 +1063,12 @@ export class BackgroundSync extends HasLogging {
 	 * they have been paused.
 	 */
 	resume(): void {
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.debug("starting");
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.isPaused = false;
-		this.processSyncQueue();
-		this.processDownloadQueue();
+		void this.processSyncQueue();
+		void this.processDownloadQueue();
 	}
-	start = this.resume;
+	start = () => this.resume();
 
 	/**
 	 * Gets the current status of sync and download queues
@@ -1146,10 +1124,8 @@ export class BackgroundSync extends HasLogging {
 		this.loggedItems.clear();
 
 		// Clean up references
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.loginManager = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.timeProvider = null as any;
+		this.loginManager = null as unknown as LoginManager;
+		this.timeProvider = null as unknown as TimeProvider;
 
 		// Unsubscribe from all subscriptions
 		this.subscriptions.forEach((off) => off());

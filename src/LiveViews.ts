@@ -35,6 +35,7 @@ import { LiveNode } from "./y-codemirror.next/LiveNodePlugin";
 import { flags } from "./flagManager";
 import { AwarenessViewPlugin } from "./AwarenessViewPlugin";
 import { TextFileViewPlugin } from "./TextViewPlugin";
+import { SyncType } from "./SyncTypes";
 
 const BACKGROUND_CONNECTIONS = 3;
 
@@ -57,14 +58,12 @@ function iterateTextFileViews(
 	if (flags().enableKanbanView) {
 		ALLOWED_TEXT_FILE_VIEWS.push("kanban");
 	}
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const allLeaves: any[] = [];
+	const allLeaves: unknown[] = [];
 
 	workspace.iterateAllLeaves((leaf) => {
 		allLeaves.push({
 			viewType: leaf.view?.getViewType?.() || "unknown",
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			filePath: (leaf.view as any)?.file?.path || "no-file",
+			filePath: (leaf.view as unknown as Record<string, unknown>)?.["file"] != null ? ((leaf.view as unknown as Record<string, unknown>)["file"] as Record<string, unknown>)["path"] as string : "no-file",
 			isTextFileView: leaf.view instanceof TextFileView,
 			leafType: leaf.view.constructor.name,
 		});
@@ -138,14 +137,12 @@ export class LoggedOutView implements S3View {
 			// Create login button element
 			const loginButton = document.createElement("button");
 			loginButton.className = "view-header-left system3-login-button";
-			loginButton.textContent = "Login to enable Live edits";
-			loginButton.setAttribute("aria-label", "Login to enable Live edits");
+			loginButton.textContent = "Login to enable live edits";
+			loginButton.setAttribute("aria-label", "Login to enable live edits");
 			loginButton.setAttribute("tabindex", "0");
 			
 			// Add click handler
-			loginButton.addEventListener("click", async () => {
-				await this.login();
-			});
+			loginButton.addEventListener("click", () => { void this.login(); });
 			
 			// Insert after view-header-left
 			viewHeaderLeftElement.insertAdjacentElement("afterend", loginButton);
@@ -174,8 +171,7 @@ export class LoggedOutView implements S3View {
 		this.banner?.destroy();
 		this.banner = undefined;
 		this.clearLoginButton();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.view = null as any;
+		this.view = null as unknown as TextFileView | CanvasView;
 	}
 }
 
@@ -234,11 +230,10 @@ export class RelayCanvasView implements S3View {
 		}
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	toggleConnection() {
 		this.shouldConnect = !this.shouldConnect;
 		if (this.shouldConnect) {
-			this.canvas.connect().then((connected) => {
+			void this.canvas.connect().then((connected) => {
 				if (!connected) {
 					// If we couldn't connect, ensure their next press tries again.
 					this.shouldConnect = false;
@@ -252,13 +247,12 @@ export class RelayCanvasView implements S3View {
 	offlineBanner(): () => void {
 		if (this.shouldConnect) {
 			const banner = new Banner(
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				this.view,
 				"You're offline -- click to reconnect",
-				async () => {
-					this._parent.networkStatus.checkStatus();
+				() => {
+					void this._parent.networkStatus.checkStatus();
 					this.connect();
-					return this._parent.networkStatus.online;
+					return Promise.resolve(this._parent.networkStatus.online);
 				},
 			);
 			this._parent.networkStatus.onceOnline(() => {
@@ -335,7 +329,7 @@ export class RelayCanvasView implements S3View {
 		}
 
 		return new Promise((resolve) => {
-			return this.canvas
+			this.canvas
 				.whenReady()
 				.then((doc) => {
 					if (
@@ -354,11 +348,10 @@ export class RelayCanvasView implements S3View {
 					this.offlineBanner();
 				});
 		});
-	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	}
 
 	connect() {
-		this.canvas.connect();
+		void this.canvas.connect();
 	}
 
 	release() {
@@ -384,18 +377,13 @@ export class RelayCanvasView implements S3View {
 
 	destroy() {
 		this.plugin?.destroy();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.plugin = null as any;
+		this.plugin = null as unknown as CanvasPlugin | undefined;
 		this.release();
 		this.clearViewActions();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		(this.view.leaf as any).rebuildView?.();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this._parent = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.view = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.canvas = null as any;
+		((this.view.leaf as unknown as Record<string, () => void>)["rebuildView"])?.();
+		this._parent = null as unknown as LiveViewManager;
+		this.view = null as unknown as CanvasView;
+		this.canvas = null as unknown as Canvas;
 	}
 }
 
@@ -431,7 +419,6 @@ export class LiveView<ViewType extends TextFileView>
 
 		this.shouldConnect = shouldConnect;
 		this.canConnect = canConnect;
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		if (!connectionManager.networkStatus.online) {
 			this.offlineBanner();
 		}
@@ -440,7 +427,7 @@ export class LiveView<ViewType extends TextFileView>
 	toggleConnection() {
 		this.shouldConnect = !this.shouldConnect;
 		if (this.shouldConnect) {
-			this.document.connect().then((connected) => {
+			void this.document.connect().then((connected) => {
 				if (!connected) {
 					// If we couldn't connect, ensure their next press tries again.
 					this.shouldConnect = false;
@@ -451,7 +438,6 @@ export class LiveView<ViewType extends TextFileView>
 		}
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	public get tracking() {
 		return this._tracking;
 	}
@@ -460,7 +446,7 @@ export class LiveView<ViewType extends TextFileView>
 		const old = this._tracking;
 		this._tracking = value;
 		if (this._tracking !== old) {
-			this.attach();
+			void this.attach();
 		}
 	}
 
@@ -489,7 +475,7 @@ export class LiveView<ViewType extends TextFileView>
 			mergeButton.setAttribute("tabindex", "0");
 			
 			// Add click handler
-			mergeButton.addEventListener("click", async () => {
+			mergeButton.addEventListener("click", () => { void (async () => {
 				const diskBuffer = await this.document.diskBuffer();
 				let stale: boolean;
 				try {
@@ -500,7 +486,6 @@ export class LiveView<ViewType extends TextFileView>
 					return;
 				}
 				if (!stale) {
-					// eslint-disable-next-line @typescript-eslint/no-floating-promises
 					this.clearMergeButton();
 					return;
 				}
@@ -509,7 +494,7 @@ export class LiveView<ViewType extends TextFileView>
 					file2: diskBuffer,
 					showMergeOption: true,
 					onResolve: async () => {
-						this.document.clearDiskBuffer();
+						void this.document.clearDiskBuffer();
 						this.clearMergeButton();
 						// Force view to sync to CRDT state after differ resolution
 						if (
@@ -520,8 +505,8 @@ export class LiveView<ViewType extends TextFileView>
 						}
 					},
 				});
-			});
-			
+			})(); });
+
 			// Insert after view-header-left
 			viewHeaderLeftElement.insertAdjacentElement("afterend", mergeButton);
 		}
@@ -551,7 +536,6 @@ export class LiveView<ViewType extends TextFileView>
 						console.warn("[Relay] mergeBanner checkStale failed:", (e as Error).message);
 						return true;
 					}
-					// eslint-disable-next-line @typescript-eslint/no-floating-promises
 					if (!stale) {
 						return true;
 					}
@@ -560,7 +544,7 @@ export class LiveView<ViewType extends TextFileView>
 						file2: diskBuffer,
 						showMergeOption: true,
 						onResolve: async () => {
-							this.document.clearDiskBuffer();
+							void this.document.clearDiskBuffer();
 							// Force view to sync to CRDT state after differ resolution
 							if (
 								this._plugin &&
@@ -575,7 +559,6 @@ export class LiveView<ViewType extends TextFileView>
 			);
 		}
 		return () => {};
-	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	}
 
 	offlineBanner(): () => void {
@@ -583,10 +566,10 @@ export class LiveView<ViewType extends TextFileView>
 			const banner = new Banner(
 				this.view,
 				"You're offline -- click to reconnect",
-				async () => {
-					this._parent.networkStatus.checkStatus();
+				() => {
+					void this._parent.networkStatus.checkStatus();
 					this.connect();
-					return this._parent.networkStatus.online;
+					return Promise.resolve(this._parent.networkStatus.online);
 				},
 			);
 			this._parent.networkStatus.onceOnline(() => {
@@ -709,7 +692,7 @@ export class LiveView<ViewType extends TextFileView>
 		}
 
 		return new Promise((resolve) => {
-			return this.document
+			this.document
 				.whenReady()
 				.then((doc) => {
 					if (
@@ -723,7 +706,6 @@ export class LiveView<ViewType extends TextFileView>
 						this.document.disconnect();
 					}
 					resolve(this);
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				})
 				.catch(() => {
 					this.offlineBanner();
@@ -732,7 +714,7 @@ export class LiveView<ViewType extends TextFileView>
 	}
 
 	connect() {
-		this.document.connect();
+		void this.document.connect();
 	}
 
 	release() {
@@ -769,16 +751,11 @@ export class LiveView<ViewType extends TextFileView>
 		this.release();
 		this.clearViewActions();
 		this.clearMergeButton();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		(this.view.leaf as any).rebuildView?.();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this._parent = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.view = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.document = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this._plugin = null as any;
+		((this.view.leaf as unknown as Record<string, () => void>)["rebuildView"])?.();
+		this._parent = null as unknown as LiveViewManager;
+		this.view = null as unknown as ViewType;
+		this.document = null as unknown as Document;
+		this._plugin = null as unknown as TextFileViewPlugin | undefined;
 	}
 }
 
@@ -821,55 +798,48 @@ export class LiveViewManager {
 		this.log = curryLog("[LiveViews]", "log");
 		this.warn = curryLog("[LiveViews]", "warn");
 
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.metadataListeners = new Map();
 		const cb = (tfile: TFile, data: string, cache: CachedMetadata) => {
 			const sub = this.metadataListeners.get(tfile);
 			sub?.(data, cache);
 		};
 
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		const offRef = this.app.metadataCache.on("changed", cb);
 		this.offListeners.push(() => {
 			this.app.metadataCache.offref(offRef);
 		});
 
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
 
 		this.offListeners.push(
 			this.loginManager.on(() => {
-				this.refresh("[LoginManager]");
+				void this.refresh("[LoginManager]");
 			}),
 		);
 
 		const folderSub = (folder: SharedFolder) => {
 			if (!folder.ready) {
-				(async () => {
-					folder
-						.whenReady()
-						.then(() => {
-							// eslint-disable-next-line @typescript-eslint/no-floating-promises
-							this.refresh("[Shared Folder Ready]");
-						})
-						.catch((_: unknown) => {
-							this.views.forEach((view) => {
-								if (view.document?.sharedFolder === folder) {
-									view.offlineBanner?.();
-								// eslint-disable-next-line @typescript-eslint/no-floating-promises
-								}
-							});
+				folder
+					.whenReady()
+					.then(() => {
+						void this.refresh("[Shared Folder Ready]");
+					})
+					.catch((_: unknown) => {
+						this.views.forEach((view) => {
+							if (view.document?.sharedFolder === folder) {
+								view.offlineBanner?.();
+							}
 						});
-				})();
+					});
 			}
 
 			return folder.fset.on(() => {
-				this.refresh("[Docset]");
+				void this.refresh("[Docset]");
 			});
 		};
 
 		this.offListeners.push(
 			this.sharedFolders.subscribe(() => {
-				this.refresh("[Shared Folders]");
+				void this.refresh("[Shared Folders]");
 				this.folderListeners.forEach((off, folder) => {
 					if (!this.sharedFolders.has(folder)) {
 						off();
@@ -892,42 +862,37 @@ export class LiveViewManager {
 				ConnectionManagerStateField.init(() => {
 					return this;
 				}),
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			]),
 		});
 	}
 
 	onMeta(tfile: TFile, cb: (data: string, cache: CachedMetadata) => void) {
 		this.metadataListeners.set(tfile, cb);
-	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	}
 
 	offMeta(tfile: TFile) {
 		this.metadataListeners.delete(tfile);
 	}
 
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
 
 	openDiffView(state: Differ.ViewState) {
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		Differ.openDiffView(this.workspace, state);
 	}
 
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
 
 	goOffline() {
 		this.log("[System 3][Relay][Live Views] going offline");
 		this.views.forEach((view) => view.document?.disconnect());
-		this.refresh("[NetworkStatus]");
+		void this.refresh("[NetworkStatus]");
 	}
 
 	goOnline() {
 		this.log("[System 3][Relay][Live Views] going online");
-		this.refresh("[NetworkStatus]");
+		void this.refresh("[NetworkStatus]");
 		this.sharedFolders.items().forEach((folder: SharedFolder) => {
-			folder.connect();
+			void folder.connect();
 		});
-		this.viewsAttachedWithConnectionPool(this.views);
+		void this.viewsAttachedWithConnectionPool(this.views);
 	}
 
 	docIsOpen(doc: Document): boolean {
@@ -1001,9 +966,9 @@ export class LiveViewManager {
 		return Promise.all(readyFolders);
 	}
 
-	private async getViews(): Promise<S3View[]> {
+	private getViews(): S3View[] {
 		const views: S3View[] = [];
-		iterateTextFileViews(this.workspace, async (textFileView) => {
+		iterateTextFileViews(this.workspace, (textFileView) => {
 			const viewFilePath = textFileView.file?.path;
 			if (!viewFilePath) {
 				return;
@@ -1045,7 +1010,7 @@ export class LiveViewManager {
 				const meta = folder.syncStore.getMeta(vpath);
 				
 				// Only connect if it's actually a Canvas type in the sync store
-				if (meta?.type === "canvas") {
+				if (meta?.type === SyncType.Canvas) {
 					if (!this.loginManager.loggedIn) {
 						const view = new LoggedOutView(this, canvasView, () => {
 							return this.loginManager.openLoginPage();
@@ -1074,21 +1039,20 @@ export class LiveViewManager {
 
 	findView(cmEditor: EditorView): LiveView<MarkdownView> | undefined {
 		return this.views.filter(isLiveMd).find((view) => {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const editor = view.view.editor as any;
-			const cm = editor.cm as EditorView;
+			const editor = view.view.editor as unknown as Record<string, unknown>; // editor is unknown at runtime (Obsidian internal)
+			const cm = editor["cm"] as EditorView;
 			return cm === cmEditor;
 		});
 	}
 
 	findCanvas(cmEditor: EditorView): RelayCanvasView | undefined {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const state = (cmEditor.state as any).values.find((state: any) => {
-			if (state && state.node) return state.node;
-		});
+		const editorStateValues = (cmEditor.state as unknown as { values: unknown[] }).values;
+		const state = editorStateValues.find((s: unknown) => {
+			return s != null && (s as Record<string, unknown>).node != null;
+		}) as { node: Record<string, unknown> } | undefined;
 		if (!state) return;
 		return this.views.filter(isRelayCanvasView).find((view) => {
-			return view.view.canvas === state.node.canvas;
+			return view.view.canvas === state.node["canvas"];
 		});
 	}
 
@@ -1111,8 +1075,8 @@ export class LiveViewManager {
 
 		const viewHistory = views.sort(
 			(a, b) =>
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				(b.view.leaf as any).activeTime - (a.view.leaf as any).activeTime,
+				((b.view.leaf as unknown as Record<string, unknown>)["activeTime"] as number) -
+				((a.view.leaf as unknown as Record<string, unknown>)["activeTime"] as number),
 		);
 		const connectedDocuments = new Set<Document>();
 		for (const view of viewHistory) {
@@ -1202,7 +1166,6 @@ export class LiveViewManager {
 		} catch (e: unknown) {
 			this.warn("[System 3][Relay][Live Views] error getting views", e);
 			return false;
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		}
 		const activeDocumentFolders = this.findFolders();
 		if (activeDocumentFolders.length === 0 && views.length === 0) {
@@ -1218,7 +1181,7 @@ export class LiveViewManager {
 
 		if (this.loginManager.loggedIn && this.networkStatus.online) {
 			activeDocumentFolders.forEach((folder) => {
-				folder.connect();
+				void folder.connect();
 			});
 		} else {
 			this.sharedFolders.forEach((folder) => {
@@ -1305,29 +1268,20 @@ export class LiveViewManager {
 		this.offListeners.forEach((off) => off());
 		this.offListeners.length = 0;
 		this.metadataListeners.clear();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.metadataListeners = null as any;
+		this.metadataListeners = null as unknown as Map<TFile, (data: string, cache: CachedMetadata) => void>;
 		this.folderListeners.forEach((off) => off());
 		this.folderListeners.clear();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.folderListeners = null as any;
+		this.folderListeners = null as unknown as Map<SharedFolder, () => void>;
 		this.views.forEach((view) => view.destroy());
 		this.views = [];
 		this.wipe();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.sharedFolders = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.refreshQueue = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.networkStatus = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this._activePromise = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.loginManager = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.app = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.workspace = null as any;
+		this.sharedFolders = null as unknown as SharedFolders;
+		this.refreshQueue = null as unknown as (() => Promise<boolean>)[];
+		this.networkStatus = null as unknown as NetworkStatus;
+		this._activePromise = null as unknown as Promise<boolean> | null | undefined;
+		this.loginManager = null as unknown as LoginManager;
+		this.app = null as unknown as App;
+		this.workspace = null as unknown as Workspace;
 	}
 }
 

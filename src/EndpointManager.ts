@@ -91,8 +91,7 @@ function isLicense(obj: unknown): obj is License {
 	return typeof obj === 'object' && 
 		obj !== null && 
 		'license' in obj && 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		typeof (obj as any).license === 'string';
+		typeof (obj as { license: unknown }).license === 'string';
 }
 
 function isLicenseArray(data: unknown): data is License[] {
@@ -425,7 +424,7 @@ export class EndpointManager {
 					this.log(`Found matching license for ${endpointType}: ${this.sanitizeUrlForLog(endpointUrl)}`);
 					return lic;
 				}
-			} catch (error: unknown) {
+			} catch {
 				// Skip invalid tokens
 				continue;
 			}
@@ -520,7 +519,7 @@ export class EndpointManager {
 		// Check endpoint type
 		if (payload.endpointType !== endpointType) {
 			throw new ValidationError(
-				`License endpoint type mismatch: expected ${endpointType}, got ${payload.endpointType}`,
+				`License endpoint type mismatch: expected ${endpointType}, got ${String(payload.endpointType)}`,
 				ValidationErrorType.LICENSE_INVALID
 			);
 		}
@@ -528,7 +527,7 @@ export class EndpointManager {
 		// Check endpoint URL
 		if (payload.url !== endpointUrl) {
 			throw new ValidationError(
-				`License URL mismatch: expected ${endpointUrl}, got ${payload.url}`,
+				`License URL mismatch: expected ${endpointUrl}, got ${String(payload.url)}`,
 				ValidationErrorType.LICENSE_INVALID
 			);
 		}

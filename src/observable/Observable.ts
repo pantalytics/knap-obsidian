@@ -9,8 +9,8 @@ export type Subscriber<T> = (value: T) => void;
 /** Unsubscribes from value updates. */
 export type Unsubscriber = () => void;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const observables = new Map<Observable<any>, () => void>();
+// Use object as the key type to avoid variance issues with generic parameter
+const observables = new Map<object, () => void>();
 
 export function auditTeardown(): void {
 	for (const [, auditTeardown] of observables) {
@@ -90,7 +90,6 @@ export class Observable<T> extends HasLogging implements IObservable<T> {
 			});
 		}
 		this._listeners?.clear();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this._listeners = null as any;
+		this._listeners = null as unknown as Set<Subscriber<T>>;
 	}
 }

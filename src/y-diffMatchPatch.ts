@@ -6,8 +6,7 @@ import { flags } from "./flagManager";
 export function diffMatchPatch(
 	ydoc: Y.Doc,
 	diskBuffer: string,
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	origin?: any,
+	origin?: unknown,
 ): void {
 	// Get the YText from the YDoc
 	const ytext = ydoc.getText("contents");
@@ -29,8 +28,7 @@ export function diffMatchPatch(
 
 	const log = flags().enableDeltaLogging
 		? curryLog("[diffMatchPatch]", "debug")
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		: (...args: any) => {};
+		: (...args: unknown[]) => {};
 
 	// Log the overall change
 	log("Updating YDoc:");

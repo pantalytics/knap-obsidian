@@ -337,3 +337,124 @@
 .evc-justify-between {
 	justify-content: space-between;
 }
+
+.evc-w-full {
+	width: 100%;
+}
+
+.evc-w-auto {
+	width: auto;
+}
+
+.evc-flex-col {
+	flex-direction: column;
+}
+
+.evc-gap-2 {
+	gap: 8px;
+}
+
+.evc-text-error {
+	color: var(--text-error);
+}
+
+.evc-mt-2 {
+	margin-top: 10px;
+}
+
+.evc-mt-4 {
+	margin-top: 20px;
+}
+
+.evc-mb-3 {
+	margin-bottom: 1em;
+}
+
+.evc-cursor-pointer {
+	cursor: pointer;
+}
+
+.evc-opacity-60 {
+	opacity: 0.6;
+}
+
+.evc-text-muted {
+	color: var(--text-muted);
+}
+
+.evc-text-faint {
+	color: var(--text-faint);
+}
+
+.evc-text-accent {
+	color: var(--text-accent);
+}
+
+.evc-text-sm {
+	font-size: 0.9em;
+}
+
+.evc-text-xs {
+	font-size: 0.8em;
+}
+
+.evc-share-name {
+	font-weight: bold;
+}
+
+/* Share list container */
+.evc-share-list {
+	max-height: 400px;
+	overflow-y: auto;
+}
+
+/* Individual share item card */
+.evc-share-item {
+	padding: 0.5em;
+	margin-bottom: 0.5em;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	cursor: pointer;
+}
+
+.evc-share-item:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+/* Share detail info row */
+.evc-share-info-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	margin-bottom: 1em;
+	font-size: 0.85em;
+	color: var(--text-muted);
+}
+
+/* Badge for type/server labels */
+.evc-badge {
+	background: var(--background-modifier-border);
+	padding: 2px 8px;
+	border-radius: 4px;
+}
+
+/* Small inline button */
+.evc-btn-sm {
+	font-size: 0.85em;
+	padding: 2px 8px;
+}
+
+/* OAuth section divider */
+.evc-oauth-section {
+	margin-top: 20px;
+	padding-top: 20px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+/* OAuth label above buttons */
+.evc-oauth-label {
+	margin-bottom: 10px;
+	text-align: center;
+	color: var(--text-muted);
+}

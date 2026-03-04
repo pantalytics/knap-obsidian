@@ -41,10 +41,10 @@ export class LiveNodePluginValue implements PluginValue {
 	node?: CanvasNodeData;
 
 	private getNode() {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const state = (this.editor.state as any).values.find((state: any) => {
-			if (state && state.node) return state.node;
-		});
+		const editorStateValues = (this.editor.state as unknown as { values: unknown[] }).values;
+		const state = editorStateValues.find((s: unknown) => {
+			return s != null && (s as Record<string, unknown>).node != null;
+		}) as { node: CanvasNodeData } | undefined;
 		if (!state) return;
 		this.node = state.node;
 		return this.node;
@@ -53,10 +53,10 @@ export class LiveNodePluginValue implements PluginValue {
 	private getYText(): YText | undefined {
 		this.view = this.connectionManager?.findCanvas(this.editor);
 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const state = (this.editor.state as any).values.find((state: any) => {
-			if (state && state.node) return state.node;
-		});
+		const editorStateValues = (this.editor.state as unknown as { values: unknown[] }).values;
+		const state = editorStateValues.find((s: unknown) => {
+			return s != null && (s as Record<string, unknown>).node != null;
+		}) as { node: CanvasNodeData } | undefined;
 		if (!state) {
 			if (this.observer) this._ytext?.unobserve(this.observer);
 			return;
@@ -96,7 +96,7 @@ export class LiveNodePluginValue implements PluginValue {
 		);
 		this.debug("created");
 
-		this._observer = async (event, tr) => {
+		this._observer = (event, tr) => {
 			this._ytext = this.getYText();
 
 			if (this.destroyed) {
@@ -185,12 +185,10 @@ export class LiveNodePluginValue implements PluginValue {
 		if (this.observer) {
 			this._ytext?.unobserve(this.observer);
 		}
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.connectionManager = null as any;
+		this.connectionManager = null as unknown as LiveViewManager | undefined;
 		this.view = undefined;
 		this._ytext = undefined;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.editor = null as any;
+		this.editor = null as unknown as EditorView;
 	}
 }
 

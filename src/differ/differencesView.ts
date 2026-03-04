@@ -29,7 +29,6 @@ import {
 	TFile,
 	type ViewStateResult,
 	WorkspaceLeaf,
-	TextFileView,
 } from "obsidian";
 import { diffMatchPatch } from "src/y-diffMatchPatch";
 import { Difference } from "./difference";
@@ -54,10 +53,10 @@ export interface ViewState {
 	[key: string]: unknown;
 }
 
-export async function openDiffView(
+export function openDiffView(
 	workspace: Workspace,
 	state: ViewState,
-): Promise<void> {
+): void {
 	// Capture the currently active leaf to return to it later
 	if (!state.originalLeaf) {
 		state.originalLeaf = workspace.activeLeaf || undefined;
@@ -68,14 +67,12 @@ export async function openDiffView(
 
 	// Opens a new leaf (view) of the type VIEW_TYPE_DIFFERENCES
 	const leaf = workspace.getLeaf(true);
-	// eslint-disable-next-line @typescript-eslint/no-floating-promises
-	leaf.setViewState({
+	void leaf.setViewState({
 		type: VIEW_TYPE_DIFFERENCES,
 		active: true,
 		state,
 	});
-	// eslint-disable-next-line @typescript-eslint/no-floating-promises
-	workspace.revealLeaf(leaf);
+	void workspace.revealLeaf(leaf);
 }
 
 export class DifferencesView extends ItemView {
@@ -112,24 +109,24 @@ export class DifferencesView extends ItemView {
 				`File Diff: ${this.state.file1.name} ` + `and ${this.state.file2.name}`
 			);
 		}
-		return `File Diff`;
+		return `File diff`;
 	}
 
 	override async setState(
 		state: ViewState,
 		result: ViewStateResult,
 	): Promise<void> {
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
-		super.setState(state, result);
+		void super.setState(state, result);
 		this.state = state;
 
 		await this.updateState();
 		this.build();
 	}
 
-	async onunload(): Promise<void> {
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
-		this.state?.onResolve?.();
+	onunload(): void {
+		if (this.state?.onResolve) {
+			void this.state.onResolve();
+		}
 	}
 
 	private closeAndReturnToOriginal(): void {
@@ -246,9 +243,9 @@ export class DifferencesView extends ItemView {
 		// Left file (top)
 		new ActionLineButton({
 			text: `Keep Editor Contents`,
-			onClick: async (e) => {
+			onClick: (e) => {
 				e.preventDefault();
-				await this.acceptAllFromLeft();
+				void this.acceptAllFromLeft();
 			},
 		}).build(actionLine);
 
@@ -257,9 +254,9 @@ export class DifferencesView extends ItemView {
 		// Right file (bottom)
 		new ActionLineButton({
 			text: `Accept All from Local Disk`,
-			onClick: async (e) => {
+			onClick: (e) => {
 				e.preventDefault();
-				await this.acceptAllFromRight();
+				void this.acceptAllFromRight();
 			},
 		}).build(actionLine);
 	}
@@ -298,7 +295,7 @@ export class DifferencesView extends ItemView {
 		);
 		while (lineCount1 <= maxLineCount || lineCount2 <= maxLineCount) {
 			const difference = this.fileDifferences?.differences.find(
-				// eslint-disable-next-line no-loop-func
+				 
 				(d) => d.file1Start === lineCount1 && d.file2Start === lineCount2,
 			);
 
@@ -336,9 +333,8 @@ export class DifferencesView extends ItemView {
 				file2: this.state.file2,
 				file1Content: this.file1Content || "",
 				file2Content: this.file2Content || "",
-				triggerRebuild: async (): Promise<void> => {
-					await this.updateState();
-					this.update();
+				triggerRebuild: () => {
+					void this.updateState().then(() => { this.update(); });
 				},
 			}).build(container);
 		}

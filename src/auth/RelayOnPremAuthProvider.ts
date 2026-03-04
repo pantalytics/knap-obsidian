@@ -9,7 +9,7 @@
 import { customFetch } from "../customFetch";
 import { curryLog } from "../debug";
 import type { IAuthProvider, AuthUser, AuthResponse } from "./IAuthProvider";
-import { getAuthStore, type RelayOnPremAuthData, type RelayOnPremAuthStore } from "./RelayOnPremAuthStore";
+import { getAuthStore, type RelayOnPremAuthStore } from "./RelayOnPremAuthStore";
 
 interface LoginRequest {
 	email: string;
@@ -124,7 +124,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 					this.log(`restoreAuth: token refresh successful for ${this.user?.email}`);
 					return;
 				} catch (e: unknown) {
-					this.log(`restoreAuth: token refresh failed: ${e}`);
+					this.log(`restoreAuth: token refresh failed: ${e instanceof Error ? e.message : String(e)}`);
 					// Keep user and refresh token — will retry on next getToken() call.
 					// Do NOT clear auth here. The user is still "logged in" with a
 					// valid refresh token, just the access token needs refreshing.
@@ -179,8 +179,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 		// Return the expired token for now — the caller should handle 401 gracefully.
 		if (this.token && !this.isTokenValid() && this.storedRefreshToken && !this.refreshInProgress) {
 			this.log("getToken: access token expired, triggering background refresh");
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
-			this.ensureTokenRefreshed();
+			void this.ensureTokenRefreshed();
 		}
 		return this.token;
 	}

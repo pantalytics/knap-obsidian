@@ -16,9 +16,28 @@ export interface OAuthCallbackResult {
 	state: string;
 }
 
+/** Minimal shape of Node.js http.IncomingMessage we rely on */
+interface HttpRequest {
+	url?: string;
+}
+
+/** Minimal shape of Node.js http.ServerResponse we rely on */
+interface HttpResponse {
+	writeHead(statusCode: number, headers?: Record<string, string>): void;
+	end(body: string): void;
+}
+
+/** Minimal shape of Node.js http.Server we rely on */
+interface HttpServer {
+	listen(port: number, host: string, callback: () => void): void;
+	address(): { port: number } | string | null;
+	on(event: string, listener: (...args: unknown[]) => void): void;
+	removeAllListeners(event: string): void;
+	close(): void;
+}
+
 export class OAuthCallbackServer {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private server: any = null;
+	private server: HttpServer | null = null;
 	private port: number = 0;
 
 	/**
@@ -32,9 +51,10 @@ export class OAuthCallbackServer {
 		// Dynamic import — only available in Node.js (Electron desktop)
 		const http = await import("http");
 		return new Promise((resolve, reject) => {
-			// Create a simple HTTP server
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			this.server = http.createServer((req: any, res: any) => {
+			// Create a simple HTTP server — cast to our minimal interface
+			const httpServer = http.createServer((req, res) => {
+				// req is used in waitForCallback's overridden handler
+				void req;
 				// We'll handle the request in waitForCallback
 				res.writeHead(200, { "Content-Type": "text/html" });
 				res.end(`
@@ -91,11 +111,12 @@ export class OAuthCallbackServer {
 					</body>
 					</html>
 				`);
-			});
+			}) as unknown as HttpServer;
+			this.server = httpServer;
 
 			// Listen on random port (0 = let OS choose)
 			this.server.listen(0, "127.0.0.1", () => {
-				const address = this.server!.address();
+				const address = this.server?.address();
 				if (address && typeof address !== "string") {
 					this.port = address.port;
 					log(`OAuth callback server started on port ${this.port}`);
@@ -105,7 +126,8 @@ export class OAuthCallbackServer {
 				}
 			});
 
-			this.server.on("error", (error: Error) => {
+			this.server.on("error", (...args: unknown[]) => {
+				const error = args[0] instanceof Error ? args[0] : new Error(String(args[0]));
 				log("Server error:", error);
 				reject(error);
 			});
@@ -131,8 +153,9 @@ export class OAuthCallbackServer {
 
 			// Override the request handler to capture callback
 			this.server.removeAllListeners("request");
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			this.server.on("request", (req: any, res: any) => {
+			this.server.on("request", (...args: unknown[]) => {
+				const req = args[0] as HttpRequest;
+				const res = args[1] as HttpResponse;
 				log(`Received request: ${req.url}`);
 
 				// Parse URL to extract code and state

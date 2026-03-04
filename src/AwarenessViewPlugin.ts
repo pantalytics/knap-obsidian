@@ -3,7 +3,7 @@ import { MarkdownView } from "obsidian";
 import { Document } from "./Document";
 import { type LiveView } from "./LiveViews";
 import UserAwareness from "./components/UserAwareness.svelte";
-import type { RelayUser } from "./Relay";
+
 export class AwarenessViewPlugin extends HasLogging {
 	view: LiveView<MarkdownView>;
 	doc: Document;
@@ -11,18 +11,15 @@ export class AwarenessViewPlugin extends HasLogging {
 	private awarenessComponent?: UserAwareness;
 	private targetElement?: HTMLElement;
 	private awarenessElement?: HTMLElement;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private relayUsersStore: any;
+	private relayUsersStore: unknown;
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	constructor(view: LiveView<MarkdownView>, relayUsersStore: any) {
+	constructor(view: LiveView<MarkdownView>, relayUsersStore: unknown) {
 		super();
 		this.view = view;
 		this.doc = view.document;
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		this.relayUsersStore = relayUsersStore;
 		this.setLoggers(`[AwarenessView](${this.doc.path})`);
-		this.install();
+		void this.install();
 	}
 
 	private async install() {
@@ -57,7 +54,7 @@ export class AwarenessViewPlugin extends HasLogging {
 		const titleWrapper = document.createElement("div");
 		titleWrapper.className = "title-with-awareness";
 		titleWrapper.addClass("evc-flex", "evc-align-center", "evc-justify-between");
-		titleWrapper.style.width = "100%";
+		titleWrapper.addClass("evc-w-full");
 
 		// Create container for the awareness component
 		this.awarenessElement = document.createElement("div");
@@ -121,9 +118,7 @@ export class AwarenessViewPlugin extends HasLogging {
 			this.awarenessElement = undefined;
 		}
 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.view = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.doc = null as any;
+		this.view = null as unknown as LiveView<MarkdownView>;
+		this.doc = null as unknown as Document;
 	}
 }

@@ -37,8 +37,7 @@ export function getAuthStore(vaultName: string): RelayOnPremAuthStore {
 
 export class RelayOnPremAuthStore {
 	private log = curryLog("[RelayOnPremAuthStore]");
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private storageFallback: { [key: string]: any } = {};
+	private storageFallback: { [key: string]: unknown } = {};
 	private vaultName: string;
 	private static readonly MAX_RETRY_ATTEMPTS = 3;
 	private static readonly RETRY_DELAY_MS = 50;
@@ -76,7 +75,7 @@ export class RelayOnPremAuthStore {
 		const key = this.getStorageKey(serverId);
 		this.log(`load: serverId=${serverId}, key=${key}`);
 
-		const data = this._storageGet(key);
+		const data = this._storageGet(key) as RelayOnPremAuthData | null | undefined;
 
 		if (!data) {
 			this.log(`load: no data found for key=${key}`);
@@ -175,10 +174,9 @@ export class RelayOnPremAuthStore {
 	 * Includes retry logic to handle cases where localStorage might be
 	 * temporarily unavailable during Obsidian startup.
 	 */
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private _storageGet(key: string): any {
+	private _storageGet(key: string): unknown {
 		const hasLocalStorage = typeof window !== "undefined" && window?.localStorage;
-		this.log(`_storageGet: key=${key}, hasLocalStorage=${hasLocalStorage}`);
+		this.log(`_storageGet: key=${key}, hasLocalStorage=${String(hasLocalStorage)}`);
 
 		if (hasLocalStorage) {
 			// Try with retries in case localStorage is temporarily unavailable
@@ -200,12 +198,12 @@ export class RelayOnPremAuthStore {
 					try {
 						const parsed = JSON.parse(rawValue);
 						return parsed;
-					} catch (e: unknown) {
+					} catch {
 						// not a json, return as-is
 						return rawValue;
 					}
 				} catch (e: unknown) {
-					this.log(`_storageGet: localStorage access failed, attempt ${attempt + 1}/${RelayOnPremAuthStore.MAX_RETRY_ATTEMPTS}: ${e}`);
+					this.log(`_storageGet: localStorage access failed, attempt ${attempt + 1}/${RelayOnPremAuthStore.MAX_RETRY_ATTEMPTS}: ${e instanceof Error ? e.message : String(e)}`);
 					if (attempt < RelayOnPremAuthStore.MAX_RETRY_ATTEMPTS - 1) {
 						// Small sync delay - we can't await in a sync function,
 						// but for early startup issues this may help
@@ -224,25 +222,22 @@ export class RelayOnPremAuthStore {
 	 * Stores a new data in the browser's local storage
 	 * (or runtime/memory if local storage is undefined).
 	 */
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private _storageSet(key: string, value: any) {
+	private _storageSet(key: string, value: unknown) {
 		const hasLocalStorage = typeof window !== "undefined" && window?.localStorage;
-		this.log(`_storageSet: key=${key}, hasLocalStorage=${hasLocalStorage}`);
+		this.log(`_storageSet: key=${key}, hasLocalStorage=${String(hasLocalStorage)}`);
 
 		if (hasLocalStorage) {
 			try {
 				// store in local storage
-				let normalizedVal = value;
-				if (typeof value !== "string") {
-					normalizedVal = JSON.stringify(value);
-				}
+				const normalizedVal: string =
+					typeof value === "string" ? value : JSON.stringify(value);
 				window.localStorage.setItem(key, normalizedVal);
 				this.log(`_storageSet: successfully saved to localStorage`);
 
 				// Also keep in fallback as backup
 				this.storageFallback[key] = value;
 			} catch (e: unknown) {
-				this.log(`_storageSet: localStorage.setItem failed: ${e}`);
+				this.log(`_storageSet: localStorage.setItem failed: ${e instanceof Error ? e.message : String(e)}`);
 				// Store in fallback if localStorage fails
 				this.storageFallback[key] = value;
 			}

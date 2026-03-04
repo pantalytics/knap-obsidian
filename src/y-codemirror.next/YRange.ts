@@ -18,19 +18,18 @@ export class YRange {
 		this.yhead = yhead;
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	toJSON(): any {
+	toJSON(): unknown {
 		return {
 			yanchor: Y.relativePositionToJSON(this.yanchor),
 			yhead: Y.relativePositionToJSON(this.yhead),
 		};
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	static fromJSON(json: any): YRange {
+	static fromJSON(json: unknown): YRange {
+		const j = json as { yanchor: unknown; yhead: unknown };
 		return new YRange(
-			Y.createRelativePositionFromJSON(json.yanchor),
-			Y.createRelativePositionFromJSON(json.yhead),
+			Y.createRelativePositionFromJSON(j.yanchor),
+			Y.createRelativePositionFromJSON(j.yhead),
 		);
 	}
 }

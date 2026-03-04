@@ -87,7 +87,7 @@ export class InvalidLinkPluginValue {
 		this.log("created");
 
 		if (this.view.document) {
-			this.view.document.whenSynced().then(() => {
+			void this.view.document.whenSynced().then(() => {
 				const tfile = this.view?.document?.getTFile();
 				if (this.connectionManager && this.app && tfile) {
 					this.connectionManager.onMeta(tfile, this.cb);
@@ -198,7 +198,7 @@ export class InvalidLinkPluginValue {
 					link: cacheLink.link,
 					original: cacheLink.original,
 				});
-			} catch (e: unknown) {
+			} catch {
 				this.metadata.delete(cacheFrom);
 			}
 		}
@@ -289,14 +289,11 @@ export class InvalidLinkPluginValue {
 		if (this.connectionManager && this.view?.document?.tfile) {
 			this.connectionManager.offMeta(this.view.document.tfile);
 		}
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.connectionManager = null as any;
+		this.connectionManager = null as unknown as LiveViewManager | undefined;
 		this.view = undefined;
 		this.metadata.clear();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.metadata = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.editor = null as any;
+		this.metadata = null as unknown as Map<number, CacheLink>;
+		this.editor = null as unknown as EditorView;
 	}
 }
 

@@ -208,9 +208,9 @@ export class TokenStore<TokenType extends HasToken> {
 	private onTokenRefreshed(documentId: string, token: TokenType) {
 		const expiryTime = this.getJwtExpiry(token);
 		if (this.tokenMap.has(documentId)) {
-			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+			 
 			const existing = this.tokenMap.get(documentId)!;
-			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+			 
 			const callback = this.callbacks.get(documentId)!;
 			this.log(`new expiry time is ${expiryTime}`);
 			this.tokenMap.set(documentId, {
@@ -224,7 +224,7 @@ export class TokenStore<TokenType extends HasToken> {
 	}
 
 	private onRefreshFailure(documentId: string) {
-		// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+		 
 		const existing = this.tokenMap.get(documentId)!;
 		const attempts = (existing?.attempts ?? 0) + 1;
 		if (attempts <= 3) {
@@ -290,15 +290,14 @@ export class TokenStore<TokenType extends HasToken> {
 	): Promise<TokenType> {
 		this.log(`getting token ${friendlyName}`);
 		if (!this.tokenMap) {
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
-			Promise.reject(
+			void Promise.reject(
 				new Error(
 					"attempted to get token after TokenStore was destroyed.",
 				),
 			);
 		}
 		if (this.tokenMap.has(documentId)) {
-			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+			 
 			const tokenInfo = this.tokenMap.get(documentId)!;
 			if (tokenInfo.token && this.isTokenValid(tokenInfo)) {
 				this.callbacks.set(documentId, callback);
@@ -396,17 +395,12 @@ export class TokenStore<TokenType extends HasToken> {
 	destroy() {
 		this.clear();
 		this.timeProvider.destroy();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.timeProvider = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.refresh = null as any;
+		this.timeProvider = null as unknown as TimeProvider;
+		this.refresh = null as unknown as (documentId: string, onSuccess: (token: TokenType) => void, onError: (err: Error) => void) => void;
 		this.callbacks.clear();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.callbacks = null as any;
+		this.callbacks = null as unknown as Map<string, (token: TokenType) => void>;
 		this._activePromises.clear();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this._activePromises = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.tokenMap = null as any;
+		this._activePromises = null as unknown as Map<string, Promise<TokenType>>;
+		this.tokenMap = null as unknown as Map<string, TokenInfo<TokenType>>;
 	}
 }

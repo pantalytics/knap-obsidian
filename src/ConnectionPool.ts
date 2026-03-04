@@ -289,9 +289,7 @@ export class ConnectionPool extends HasLogging {
 		});
 
 		this.connections.clear();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.timeProvider = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		ConnectionPool.instance = null as any;
+		this.timeProvider = null as unknown as TimeProvider;
+		ConnectionPool.instance = null as unknown as ConnectionPool;
 	}
 }

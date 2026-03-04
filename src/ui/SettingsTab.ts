@@ -16,14 +16,13 @@ export class LiveSettingsTab extends PluginSettingTab {
 		const { containerEl } = this;
 		this.targetEl = containerEl.parentElement as HTMLElement;
 		this.targetEl.empty();
-		this.plugin.relayManager.update();
+		void this.plugin.relayManager.update();
 		this.component = new PluginSettings({
 			target: this.targetEl,
 			props: {
 				plugin: this.plugin,
 				close: () => {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					(this as any).setting.close();
+					(this as unknown as { setting: { close: () => void } }).setting.close();
 				},
 			},
 		});
@@ -38,8 +37,7 @@ export class LiveSettingsTab extends PluginSettingTab {
 	hide(): void {
 		try {
 			this.component?.$destroy();
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			//(this as any).setting.close();
+			//(this as unknown).setting.close();
 		} catch (e: unknown) {
 			console.warn(e);
 		}
@@ -47,7 +45,6 @@ export class LiveSettingsTab extends PluginSettingTab {
 
 	destroy() {
 		this.hide();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.plugin = null as any;
+		this.plugin = null as unknown as Live;
 	}
 }

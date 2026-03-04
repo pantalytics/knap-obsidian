@@ -62,13 +62,9 @@ export class ShareFolderModal extends Modal {
 	}
 
 	destroy() {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.relay = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.sharedFolders = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.relayManager = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.onConfirm = null as any;
+		this.relay = null as unknown as Relay;
+		this.sharedFolders = null as unknown as SharedFolders;
+		this.relayManager = null as unknown as RelayManager;
+		this.onConfirm = null as unknown as (folderPath: string, folderName: string, isPrivate: boolean, userIds: string[]) => Promise<SharedFolder>;
 	}
 }

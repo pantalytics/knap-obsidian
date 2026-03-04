@@ -55,10 +55,8 @@ export class ViewHookPlugin extends HasLogging {
 			this.unsubscribes.push(
 				getPatcher().patch(view, {
 					// @ts-ignore
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					saveFrontmatter(old: any) {
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any
-						return function (data: any) {
+					saveFrontmatter(old: unknown) {
+						return function (data: unknown) {
 							that.debug("saveFrontmatter hook triggered");
 							that.saving = true;
 							// @ts-ignore
@@ -75,10 +73,8 @@ export class ViewHookPlugin extends HasLogging {
 		this.unsubscribes.push(
 			getPatcher().patch(view, {
 				// @ts-ignore
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				save(old: any) {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					return function (data: any) {
+				save(old: unknown) {
+					return function (data: unknown) {
 						// @ts-ignore
 						const result = old.call(this, data);
 						try {
@@ -104,10 +100,8 @@ export class ViewHookPlugin extends HasLogging {
 		// Hook 3: Preview mode direct edits (if enablePreviewViewHooks)
 		if (flags().enablePreviewViewHooks) {
 			this.unsubscribes.push(
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				getPatcher().patch(view.previewMode as any, {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					edit(old: any) {
+				getPatcher().patch(view.previewMode as unknown as object, {
+					edit(old: unknown) {
 						return function (data: string) {
 							that.debug("Preview edit hook triggered");
 							//@ts-ignore
@@ -142,7 +136,7 @@ export class ViewHookPlugin extends HasLogging {
 	 * Setup document observer to trigger UI updates
 	 */
 	private setupDocumentObserver(): void {
-		this.observer = async (event: YTextEvent, tr: Transaction) => {
+		this.observer = (event: YTextEvent, tr: Transaction) => {
 			if (!this.active()) {
 				this.debug("Received yjs event against a non-active view");
 				return;
@@ -231,7 +225,7 @@ export class ViewHookPlugin extends HasLogging {
 		this.view.previewMode.renderer.set(this.document.text);
 		this.renderAll();
 
-		this.document.connect();
+		void this.document.connect();
 		this.debug("ViewHookPlugin initialized");
 	}
 
@@ -256,11 +250,8 @@ export class ViewHookPlugin extends HasLogging {
 		this.renderers.length = 0;
 
 		// Clear references
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this._ytext = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.view = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.document = null as any;
+		this._ytext = null as unknown as YText;
+		this.view = null as unknown as MarkdownView;
+		this.document = null as unknown as Document;
 	}
 }

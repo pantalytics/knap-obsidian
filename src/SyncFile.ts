@@ -53,7 +53,7 @@ export class ContentAddressedFileStore extends HasLogging {
 					"Error opening ContentAddressedFile database:",
 					request.error,
 				);
-				reject(request.error);
+				reject(request.error ?? new Error("Failed to open ContentAddressedFile database"));
 			};
 		});
 	}
@@ -76,7 +76,7 @@ export class ContentAddressedFileStore extends HasLogging {
 			request.onsuccess = () => resolve();
 			request.onerror = () => {
 				this.error("Error saving hash:", request.error);
-				reject(request.error);
+				reject(request.error ?? new Error("Failed to save hash"));
 			};
 		});
 	}
@@ -100,7 +100,7 @@ export class ContentAddressedFileStore extends HasLogging {
 
 			request.onerror = () => {
 				this.error("Error retrieving hash:", request.error);
-				reject(request.error);
+				reject(request.error ?? new Error("Failed to retrieve hash"));
 			};
 		});
 	}
@@ -119,7 +119,7 @@ export class ContentAddressedFileStore extends HasLogging {
 			request.onsuccess = () => resolve();
 			request.onerror = () => {
 				this.error("Error removing hash:", request.error);
-				reject(request.error);
+				reject(request.error ?? new Error("Failed to remove hash"));
 			};
 		});
 	}
@@ -232,7 +232,7 @@ export class ContentAddressedFile extends HasLogging {
 		return false;
 	}
 
-	async clear() {
+	clear() {
 		this._tfile = null;
 		// Also remove from store when clearing
 		this.store.removeHash(this.path).catch((error: unknown) => {
@@ -250,10 +250,8 @@ export class ContentAddressedFile extends HasLogging {
 	}
 
 	destroy() {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.vault = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this._tfile = null as any;
+		this.vault = null as unknown as Vault;
+		this._tfile = null as unknown as TFile | null;
 		// Don't destroy store as it might be shared
 	}
 }
@@ -392,7 +390,7 @@ export class SyncFile
 				let errorMessage = "Failed to push file";
 				try {
 					errorMessage = (error as string).toString();
-				} catch (e: unknown) {
+				} catch {
 					//pass
 				}
 				this.uploadError = errorMessage.replace(/^Error:/, "").trim();
@@ -422,11 +420,11 @@ export class SyncFile
 			if (flags().enableVerifyUploads) {
 				// Not remote
 				try {
-					if (!this.verifyUpload()) {
+					if (!await this.verifyUpload()) {
 						this.warn("file in metadata, but not on the server!");
 						await this.push();
 					}
-				} catch (err: unknown) {
+				} catch {
 					// pass
 				}
 			}
@@ -545,17 +543,15 @@ export class SyncFile
 		return this.vault.delete(this.tfile);
 	}
 
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
 
 	public async write(content: string): Promise<void> {
-		this.vault.adapter.write(this.tfile.path, content);
+		void this.vault.adapter.write(this.tfile.path, content);
 		await this.caf.hash();
 	}
 
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
 
 	public async append(content: string): Promise<void> {
-		this.vault.append(this.tfile, content);
+		void this.vault.append(this.tfile, content);
 		await this.caf.hash();
 	}
 
@@ -563,11 +559,9 @@ export class SyncFile
 
 	destroy() {
 		this.offFileInfo?.();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.offFileInfo = null as any;
+		this.offFileInfo = null as unknown as Unsubscriber;
 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this._parent = null as any;
+		this._parent = null as unknown as SharedFolder;
 		this.caf.destroy();
 	}
 }

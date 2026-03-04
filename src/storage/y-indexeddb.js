@@ -44,7 +44,7 @@ export const storeState = (idbPersistence, forceStore = true) =>
   fetchUpdates(idbPersistence)
     .then(updatesStore => {
       if (forceStore || idbPersistence._dbsize >= RUNTIME_TRIM_SIZE) {
-        idb.addAutoKey(updatesStore, Y.encodeStateAsUpdate(idbPersistence.doc))
+        void idb.addAutoKey(updatesStore, Y.encodeStateAsUpdate(idbPersistence.doc))
           .then(() => idb.del(updatesStore, idb.createIDBKeyRangeUpperBound(idbPersistence._dbref, true)))
           .then(() => idb.count(updatesStore).then(cnt => { idbPersistence._dbsize = cnt }))
       }
@@ -88,18 +88,18 @@ export class IndexeddbPersistence extends Observable {
      */
     this.whenSynced = promise.create(resolve => this.on('synced', () => resolve(this)))
 
-    this._db.then(db => {
+    void this._db.then(db => {
       this.db = db
       /**
        * @param {IDBObjectStore} updatesStore
        */
-      const beforeApplyUpdatesCallback = (updatesStore) => idb.addAutoKey(updatesStore, Y.encodeStateAsUpdate(doc))
+      const beforeApplyUpdatesCallback = (updatesStore) => { void idb.addAutoKey(updatesStore, Y.encodeStateAsUpdate(doc)); }
       const afterApplyUpdatesCallback = () => {
         if (this._destroyed) return this
         this.synced = true
         this.emit('synced', [this])
       }
-      fetchUpdates(this, beforeApplyUpdatesCallback, afterApplyUpdatesCallback)
+      void fetchUpdates(this, beforeApplyUpdatesCallback, afterApplyUpdatesCallback)
     })
     /**
      * Timeout in ms untill data is merged and persisted in idb.
@@ -116,7 +116,7 @@ export class IndexeddbPersistence extends Observable {
     this._storeUpdate = (update, origin) => {
       if (this.db && origin !== this) {
         const [updatesStore] = idb.transact(/** @type {IDBDatabase} */ (this.db), [updatesStoreName])
-        idb.addAutoKey(updatesStore, update)
+        void idb.addAutoKey(updatesStore, update)
         const trimSize = this.synced ? RUNTIME_TRIM_SIZE : STARTUP_TRIM_SIZE
         if (++this._dbsize >= trimSize) {
           // debounce store call
@@ -124,7 +124,7 @@ export class IndexeddbPersistence extends Observable {
             clearTimeout(this._storeTimeoutId)
           }
           this._storeTimeoutId = setTimeout(() => {
-            storeState(this, false)
+            void storeState(this, false)
             this._storeTimeoutId = null
           }, this._storeTimeout)
         }
@@ -132,6 +132,7 @@ export class IndexeddbPersistence extends Observable {
     }
     doc.on('update', this._storeUpdate)
     this.destroy = this.destroy.bind(this)
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     doc.on('destroy', this.destroy)
   }
 
@@ -154,9 +155,10 @@ export class IndexeddbPersistence extends Observable {
       clearTimeout(this._storeTimeoutId)
     }
     this.doc.off('update', this._storeUpdate)
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     this.doc.off('destroy', this.destroy)
     this._destroyed = true
-    return this._db.then(db => {
+    void this._db.then(db => {
       db.close()
     })
   }
@@ -168,7 +170,7 @@ export class IndexeddbPersistence extends Observable {
    */
   clearData () {
     return this.destroy().then(() => {
-      idb.deleteDB(this.name)
+      void idb.deleteDB(this.name)
     })
   }
 

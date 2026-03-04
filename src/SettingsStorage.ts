@@ -157,8 +157,7 @@ export interface ISettingsStorage {
 }
 
 export class ObsidianSettingsStorage implements ISettingsStorage {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	constructor(private plugin: StorageAdapter<any>) {}
+	constructor(private plugin: StorageAdapter<unknown>) {}
 
 	getData<T>(): T {
 		return this.plugin.loadData() as T;
@@ -176,15 +175,15 @@ export class ObsidianSettingsStorage implements ISettingsStorage {
 }
 
 export class MemorySettingsStorage implements ISettingsStorage {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private data: any = null;
+	private data: unknown = null;
 
 	getData<T>(): T {
 		return this.data as T;
 	}
 
-	async setData<T>(data: T): Promise<void> {
+	setData<T>(data: T): Promise<void> {
 		this.data = data;
+		return Promise.resolve();
 	}
 
 	async updateData<T>(updater: (data: T) => T): Promise<void> {
@@ -253,10 +252,8 @@ export class Settings<T> extends Observable<T> {
 }
 
 export class NamespacedSettings<
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	T extends Record<string, any>,
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	Parent extends Record<string, any> = Record<string, any>,
+	T extends object,
+	Parent extends object = Record<string, unknown>,
 > extends Observable<T> {
 	private readonly path: string[];
 	private readonly basePath: string[];
@@ -265,14 +262,13 @@ export class NamespacedSettings<
 	private lastKnown?: T;
 
 	constructor(
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		public readonly settings: Settings<any>,
+		public readonly settings: Settings<unknown>,
 		namespace: string,
 	) {
 		super(`NamespacedSettings[${namespace}]`);
 		this.validatePath(namespace);
 		[this.path, this.basePath, this.patterns] = this.processPath(namespace);
-		this.lastKnown = this.getNestedValue(this.settings.get());
+		this.lastKnown = this.getNestedValue(this.settings.get() as Record<string, unknown>);
 		this.setupSubscription();
 	}
 
@@ -295,7 +291,7 @@ export class NamespacedSettings<
 
 	private setupSubscription(): void {
 		this.unsub = this.settings.subscribe(() => {
-			const newValue = this.getNestedValue(this.settings.get());
+			const newValue = this.getNestedValue(this.settings.get() as Record<string, unknown>);
 			if (this.lastKnown === undefined && newValue === undefined) return;
 			if (JSON.stringify(this.lastKnown) !== JSON.stringify(newValue)) {
 				this.lastKnown = newValue;
@@ -325,12 +321,12 @@ export class NamespacedSettings<
 			throw new SettingsError("Cannot use destroyed settings", this.getPath());
 		}
 
-		const data = this.settings.get();
+		const data = this.settings.get() as Record<string, unknown> | null | undefined;
 		if (!data) {
 			return {} as T;
 		}
 
-		const wildcardPattern = this.patterns.find(this.isWildcardPattern);
+		const wildcardPattern = this.patterns.find((p): p is WildcardPattern => this.isWildcardPattern(p));
 		if (wildcardPattern && this.path.length === 1) {
 			const regex = new RegExp(`^${wildcardPattern.wildcardPattern}$`);
 			const filtered = Object.entries(data)
@@ -340,8 +336,7 @@ export class NamespacedSettings<
 						obj[key] = value;
 						return obj;
 					},
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					{} as Record<string, any>,
+					{} as Record<string, unknown>,
 				);
 			return filtered as T;
 		}
@@ -364,8 +359,9 @@ export class NamespacedSettings<
 		}
 
 		try {
-			await this.settings.update((data) => {
-				const wildcardPattern = this.patterns.find(this.isWildcardPattern);
+			await this.settings.update((rawData) => {
+				const data = rawData as Record<string, unknown>;
+				const wildcardPattern = this.patterns.find((p): p is WildcardPattern => this.isWildcardPattern(p));
 				if (wildcardPattern) {
 					if (this.path.length === 1) {
 						const regex = new RegExp(`^${wildcardPattern.wildcardPattern}$`);
@@ -383,7 +379,7 @@ export class NamespacedSettings<
 
 					this.path.forEach((key) => {
 						current[key] = current[key] || {};
-						current = current[key];
+						current = current[key] as Record<string, unknown>;
 					});
 
 					const regex = new RegExp(`^${wildcardPattern.wildcardPattern}$`);
@@ -471,12 +467,11 @@ export class NamespacedSettings<
 		return [path, basePath, patterns];
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private getNestedValue(obj: Record<string, any>): T | undefined {
+	private getNestedValue(obj: Record<string, unknown>): T | undefined {
 		let current = obj;
 
 		// Special case: if we have a wildcard pattern at this level
-		const wildcardPattern = this.patterns.find(this.isWildcardPattern);
+		const wildcardPattern = this.patterns.find((p): p is WildcardPattern => this.isWildcardPattern(p));
 		if (wildcardPattern && this.path.length === 1) {
 			const regex = new RegExp(`^${wildcardPattern.wildcardPattern}$`);
 			// Filter the object entries based on the wildcard pattern
@@ -487,8 +482,7 @@ export class NamespacedSettings<
 						obj[key] = value;
 						return obj;
 					},
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					{} as Record<string, any>,
+					{} as Record<string, unknown>,
 				);
 			return filtered as T;
 		}
@@ -499,9 +493,8 @@ export class NamespacedSettings<
 			const baseKey = this.basePath[0];
 			if (!Array.isArray(current[baseKey])) return undefined;
 
-			const matchedItem = current[baseKey].find(
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				(item: Record<string, any>) =>
+			const matchedItem = (current[baseKey] as Record<string, unknown>[]).find(
+				(item: Record<string, unknown>) =>
 					item[firstPattern.key] === firstPattern.value,
 			);
 
@@ -510,10 +503,10 @@ export class NamespacedSettings<
 			// Handle remaining path after array pattern
 			const remainingPath = this.basePath.slice(firstPattern.level + 1);
 			if (remainingPath.length > 0) {
-				let result = matchedItem;
+				let result: Record<string, unknown> = matchedItem;
 				for (const key of remainingPath) {
 					if (!result || typeof result !== "object") return undefined;
-					result = result[key];
+					result = result[key] as Record<string, unknown>;
 				}
 				return result as T;
 			}
@@ -524,18 +517,16 @@ export class NamespacedSettings<
 		// Handle regular nested paths
 		for (let i = 0; i < this.basePath.length; i++) {
 			if (!current) return undefined;
-			current = current[this.basePath[i]];
+			current = current[this.basePath[i]] as Record<string, unknown>;
 		}
 
 		return current as T;
 	}
 
 	private setNestedValue(
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		obj: Record<string, any>,
+		obj: Record<string, unknown>,
 		value: T,
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	): Record<string, any> {
+	): Record<string, unknown> {
 		const result = { ...obj };
 
 		// Handle array pattern matching
@@ -548,9 +539,9 @@ export class NamespacedSettings<
 				result[baseKey] = [];
 			}
 
-			const index = result[baseKey].findIndex(
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				(item: Record<string, any>) =>
+			const baseArray = result[baseKey] as Record<string, unknown>[];
+			const index = baseArray.findIndex(
+				(item: Record<string, unknown>) =>
 					item[arrayPattern.key] === arrayPattern.value,
 			);
 
@@ -561,19 +552,19 @@ export class NamespacedSettings<
 				// Update existing item
 				if (remainingPath.length > 0) {
 					// Handle nested properties in array item
-					let current = result[baseKey][index];
+					let current = baseArray[index];
 					for (let i = 0; i < remainingPath.length - 1; i++) {
 						const key = remainingPath[i];
 						current[key] = current[key] || {};
-						current = current[key];
+						current = current[key] as Record<string, unknown>;
 					}
 					const lastKey = remainingPath[remainingPath.length - 1];
 					current[lastKey] = value;
 				} else {
 					// Update root level of array item
-					result[baseKey][index] = {
-						...result[baseKey][index],
-						...value,
+					baseArray[index] = {
+						...(baseArray[index] as Record<string, unknown>),
+						...(value as Record<string, unknown>),
 						[arrayPattern.key]: arrayPattern.value,
 					};
 				}
@@ -581,24 +572,22 @@ export class NamespacedSettings<
 				// Add new item
 				if (remainingPath.length > 0) {
 					// Handle nested properties in new array item
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					const newItem: Record<string, any> = {
+					const newItem: Record<string, unknown> = {
 						[arrayPattern.key]: arrayPattern.value,
 					};
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					let current: Record<string, any> = newItem;
+					let current: Record<string, unknown> = newItem;
 					for (let i = 0; i < remainingPath.length - 1; i++) {
 						const key = remainingPath[i];
 						current[key] = {};
-						current = current[key];
+						current = current[key] as Record<string, unknown>;
 					}
 					const lastKey = remainingPath[remainingPath.length - 1];
 					current[lastKey] = value;
-					result[baseKey].push(newItem);
+					baseArray.push(newItem);
 				} else {
 					// Add new item at root level
-					result[baseKey].push({
-						...value,
+					baseArray.push({
+						...(value as Record<string, unknown>),
 						[arrayPattern.key]: arrayPattern.value,
 					});
 				}
@@ -611,7 +600,7 @@ export class NamespacedSettings<
 		for (let i = 0; i < this.basePath.length - 1; i++) {
 			const baseKey = this.basePath[i];
 			current[baseKey] = current[baseKey] || {};
-			current = current[baseKey];
+			current = current[baseKey] as Record<string, unknown>;
 		}
 
 		const lastKey = this.basePath[this.basePath.length - 1];
@@ -630,13 +619,11 @@ export class NamespacedSettings<
 	}
 
 	getChild<
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		C extends Record<string, any>,
+		C extends Record<string, unknown>,
 		R extends NamespacedSettings<C> = NamespacedSettings<C>,
 	>(
 		childPath: string,
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		factory?: (settings: Settings<any>, path: string) => R,
+		factory?: (settings: Settings<unknown>, path: string) => R,
 	): R {
 		const fullPath = [...this.path, childPath].join("/");
 		if (factory) {
@@ -655,7 +642,7 @@ export class NamespacedSettings<
 			throw new SettingsError("Cannot use destroyed settings", this.getPath());
 		}
 
-		const data = this.settings.get();
+		const data = this.settings.get() as Record<string, unknown>;
 		return this.getNestedValue(data) !== undefined;
 	}
 
@@ -664,8 +651,8 @@ export class NamespacedSettings<
 			throw new SettingsError("Cannot use destroyed settings", this.getPath());
 		}
 
-		await this.settings.update((data) => {
-			const result = { ...data };
+		await this.settings.update((rawData) => {
+			const result = { ...(rawData as Record<string, unknown>) };
 
 			// Handle array pattern matching
 			const arrayPattern = this.patterns.find(
@@ -675,13 +662,13 @@ export class NamespacedSettings<
 			if (arrayPattern) {
 				const baseKey = this.basePath[0];
 				if (Array.isArray(result[baseKey])) {
-					result[baseKey] = result[baseKey].filter(
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any
-						(item: Record<string, any>) =>
+					const arr = result[baseKey] as Record<string, unknown>[];
+					result[baseKey] = arr.filter(
+						(item: Record<string, unknown>) =>
 							item[arrayPattern.key] !== arrayPattern.value,
 					);
 
-					if (result[baseKey].length === 0) {
+					if ((result[baseKey] as unknown[]).length === 0) {
 						delete result[baseKey];
 					}
 				}
@@ -694,7 +681,7 @@ export class NamespacedSettings<
 
 			for (const key of keys) {
 				if (!current[key]) return result;
-				current = current[key];
+				current = current[key] as Record<string, unknown>;
 			}
 
 			const lastKey = this.basePath[this.basePath.length - 1];

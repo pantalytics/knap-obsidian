@@ -22,8 +22,7 @@ export class CanvasPlugin extends HasLogging {
 	unsubscribes: Array<() => void>;
 	relayCanvasView: RelayCanvasView;
 	observedTextNodes: Set<string>;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	trackedEmbedViews: Set<any>;
+	trackedEmbedViews: Set<unknown>;
 
 	constructor(
 		private connectionManager: LiveViewManager,
@@ -56,12 +55,9 @@ export class CanvasPlugin extends HasLogging {
 			this.unsubscribes = [];
 		}
 		this.relayCanvasView.tracking = false;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.canvas = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.relayCanvas = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.relayCanvasView = null as any;
+		this.canvas = null as unknown as ObsidianCanvas;
+		this.relayCanvas = null as unknown as Canvas;
+		this.relayCanvasView = null as unknown as RelayCanvasView;
 		this.unsubscribes.length = 0;
 	}
 
@@ -101,14 +97,13 @@ export class CanvasPlugin extends HasLogging {
 		}
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private isEmbedAlreadyTracked(embedView: any): boolean {
+	private isEmbedAlreadyTracked(embedView: unknown): boolean {
 		return this.trackedEmbedViews.has(embedView);
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private connectEmbedView(embedView: any): void {
-		if (!embedView.file) {
+	private connectEmbedView(embedView: unknown): void {
+		const embedViewTyped = embedView as { file?: { path: string } } & import("obsidian").MarkdownView;
+		if (!embedViewTyped.file) {
 			return;
 		}
 
@@ -116,8 +111,8 @@ export class CanvasPlugin extends HasLogging {
 		this.unsubscribes.push(
 			(() => {
 				const plugin = new ViewHookPlugin(
-					embedView,
-					this.relayCanvas.sharedFolder.proxy.getDoc(embedView.file.path),
+					embedViewTyped,
+					this.relayCanvas.sharedFolder.proxy.getDoc(embedViewTyped.file!.path),
 				);
 				plugin.initialize().catch((error: unknown) => {
 					this.error(
@@ -154,10 +149,8 @@ export class CanvasPlugin extends HasLogging {
 		}
 
 		this.unsubscribes.push(
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
-			getPatcher().patch(this.canvas, {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				requestSave(old: any) {
+			getPatcher().patch(this.canvas as unknown as Record<string, (...args: unknown[]) => unknown>, {
+				requestSave(old: unknown) {
 					return function () {
 						// @ts-ignore
 						const res = old.call(this);
@@ -167,13 +160,10 @@ export class CanvasPlugin extends HasLogging {
 							that.log(e);
 						}
 						return res;
-					// eslint-disable-next-line @typescript-eslint/no-floating-promises
 					};
 				},
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				applyHistory(old: any) {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					return function (data: any) {
+				applyHistory(old: unknown) {
+					return function (data: unknown) {
 						// @ts-ignore
 						const res = old.call(this, data);
 						try {

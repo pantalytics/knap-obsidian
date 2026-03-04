@@ -139,8 +139,7 @@ export class TextFileViewPlugin extends HasLogging {
 			}
 			if (stale && this.view) {
 				this.warn("Document is stale - showing merge banner");
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				this.view.checkStale().then(async (stale) => {
+				void this.view.checkStale().then(async (stale) => {
 					if (!stale) {
 						await this.syncViewToCRDT();
 					}
@@ -153,7 +152,7 @@ export class TextFileViewPlugin extends HasLogging {
 		}
 	}
 
-	async syncViewToCRDT() {
+	syncViewToCRDT() {
 		// Force view to match CRDT state (equivalent to getKeyFrame in LiveEditPlugin)
 		if (
 			isLive(this.view) &&
@@ -195,12 +194,12 @@ export class TextFileViewPlugin extends HasLogging {
 		const that = this;
 
 		this.unsubscribes.push(
-			getPatcher().patch(this.view.view, {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				setViewData(old: any) {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					return function (this: any, data: string, clear: boolean) {
-						that.warn("instance hook: setViewData", this.getViewType());
+			getPatcher().patch(this.view.view as unknown as Record<string, (...args: unknown[]) => unknown>, {
+				setViewData(old: (...args: unknown[]) => unknown) {
+					return function (this: Record<string, (...args: unknown[]) => unknown>, ...args: unknown[]) {
+						const data = args[0] as string;
+						const clear = args[1] as boolean;
+						that.warn("instance hook: setViewData", (this as unknown as TextFileView).getViewType());
 
 						// Don't process if file isn't loaded yet
 						if (!that.view.view.file) {
@@ -224,20 +223,17 @@ export class TextFileViewPlugin extends HasLogging {
 
 						const result = old.call(this, data, clear);
 
-						// eslint-disable-next-line @typescript-eslint/no-floating-promises
 						// Call resync AFTER original setViewData succeeds
 						if (clear) {
-							that.resync();
+							void that.resync();
 						}
 
 						return result;
 					};
 				},
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				requestSave(old: any) {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					return function (this: any) {
-						that.warn("instance hook: requestSave called", this.getViewType());
+				requestSave(old: (...args: unknown[]) => unknown) {
+					return function (this: Record<string, (...args: unknown[]) => unknown>, ...args: unknown[]) {
+						that.warn("instance hook: requestSave called", (this as unknown as TextFileView).getViewType());
 						if (isLive(that.view) && !that.saving && that.doc) {
 							if (that.view.tracking && !that.saving) {
 								that.warn("tracking - applying diff");
@@ -246,15 +242,14 @@ export class TextFileViewPlugin extends HasLogging {
 									that.view.view.getViewData(),
 									that.doc,
 								);
-								// eslint-disable-next-line @typescript-eslint/no-floating-promises
 								that.doc.save();
 								return;
 							} else {
 								that.warn("not tracking - resync");
-								that.resync();
+								void that.resync();
 							}
 						}
-						return old.call(this);
+						return old.call(this, ...args);
 					};
 				},
 			}),
@@ -277,24 +272,22 @@ export class TextFileViewPlugin extends HasLogging {
 				return;
 			}
 
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			// Called when a yjs event is received. Results in view update
 			if (tr.origin !== this.doc) {
 				if (!this.view.tracking) {
 					this.warn("resync from update, not tracking");
-					this.resync();
+					void this.resync();
 				}
 				this.warn("setting view data");
 				this.saving = true;
 				this.view.view.setViewData(this.doc.text, false);
 				this.view.view.requestSave();
 				this.saving = false;
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				this.view.tracking = true;
 			}
 		};
 
-		this.resync();
+		void this.resync();
 
 		// Use the dynamically retrieved document for ytext
 		this.doc = this.getDocument();
@@ -323,13 +316,9 @@ export class TextFileViewPlugin extends HasLogging {
 		// Clean up ViewHookPlugin
 		this.viewHookPlugin?.destroy();
 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.observer = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this._ytext = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.view = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.doc = null as any;
+		this.observer = null as unknown as ((event: YTextEvent, tr: Transaction) => void) | undefined;
+		this._ytext = null as unknown as YText | undefined;
+		this.view = null as unknown as LiveView<TextFileView>;
+		this.doc = null as unknown as Document | undefined;
 	}
 }

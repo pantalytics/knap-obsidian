@@ -94,11 +94,8 @@ export class ContentAddressedStore extends HasLogging {
 
 	public destroy() {
 		this.pb.cancelAllRequests();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.pb = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.tokenStore = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.sharedFolder = null as any;
+		this.pb = null as unknown as PocketBase;
+		this.tokenStore = null as unknown as LiveTokenStore;
+		this.sharedFolder = null as unknown as SharedFolder;
 	}
 }

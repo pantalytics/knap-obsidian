@@ -7,7 +7,6 @@ import * as Y from "yjs";
 import type { SharedFolder } from "./SharedFolder";
 import { getMimeType } from "./mimetypes";
 import { IndexeddbPersistence } from "./storage/y-indexeddb";
-import * as idb from "lib0/indexeddb";
 import { Dependency } from "./promiseUtils";
 import type { Unsubscriber } from "./observable/Observable";
 import type {
@@ -17,7 +16,6 @@ import type {
 	CanvasView,
 } from "./CanvasView";
 import { areObjectsEqual } from "./areObjectsEqual";
-import { flags } from "./flagManager";
 
 export function isCanvas(file?: IFile): file is Canvas {
 	return file instanceof Canvas;
@@ -42,10 +40,8 @@ export class Canvas extends HasProvider implements IFile, HasMimeType {
 		size: number;
 	};
 	unsubscribes: Unsubscriber[] = [];
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private _awaitingUpdates: any;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private _canvas: any;
+	private _awaitingUpdates: boolean = false;
+	private _canvas: unknown;
 
 	constructor(
 		path: string,
@@ -85,33 +81,26 @@ export class Canvas extends HasProvider implements IFile, HasMimeType {
 			this.warn("Unable to open persistence.", this.guid);
 			console.error(e);
 			throw e;
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		}
 
-		this.whenSynced().then(() => {
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
+		void this.whenSynced().then(() => {
 			this.updateStats();
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			try {
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				this._persistence.set("path", this.path);
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				this._persistence.set("relay", this.sharedFolder.relayId || "");
-				this._persistence.set("appId", this.sharedFolder.appId);
-				this._persistence.set("s3rn", S3RN.encode(this.s3rn));
-			} catch (e: unknown) {
+				void this._persistence.set("path", this.path);
+				void this._persistence.set("relay", this.sharedFolder.relayId || "");
+				void this._persistence.set("appId", this.sharedFolder.appId);
+				void this._persistence.set("s3rn", S3RN.encode(this.s3rn));
+			} catch {
 				// pass
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			}
 
-			(async () => {
+			void (async () => {
 				const serverSynced = await this.getServerSynced();
 				if (!serverSynced) {
 					await this.onceProviderSynced();
-					// eslint-disable-next-line @typescript-eslint/no-floating-promises
 					await this.markSynced();
 				}
-				this.sharedFolder.markUploaded(this);
+				void this.sharedFolder.markUploaded(this);
 			})();
 		});
 
@@ -206,10 +195,9 @@ export class Canvas extends HasProvider implements IFile, HasMimeType {
 		const promiseFn = async (): Promise<Canvas> => {
 			const awaitingUpdates = await this.awaitingUpdates();
 			if (awaitingUpdates) {
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				// If this is a brand new shared folder, we want to wait for a connection before we start reserving new guids for local files.
 				this.log("awaiting updates");
-				this.connect();
+				void this.connect();
 				await this.onceConnected();
 				this.log("connected");
 				await this.onceProviderSynced();
@@ -289,19 +277,19 @@ export class Canvas extends HasProvider implements IFile, HasMimeType {
 		return this._persistence.getOrigin();
 	}
 
-	async applyJSON(json: string) {
+	applyJSON(json: string) {
 		if (json === "") return;
 		const data = JSON.parse(json);
-		return await this.applyData(data);
+		this.applyData(data);
 	}
 
-	async importFromView(view: CanvasView) {
+	importFromView(view: CanvasView) {
 		if (view.file && view.file === this.tfile) {
-			return await this.applyData(view.canvas.getData());
+			this.applyData(view.canvas.getData());
 		}
 	}
 
-	async applyData(data: CanvasData) {
+	applyData(data: CanvasData) {
 		const yedges = this.yedges;
 		const ynodes = this.ynodes;
 		const seen = new Set<string>();
@@ -388,7 +376,7 @@ export class Canvas extends HasProvider implements IFile, HasMimeType {
 		return JSON.stringify(data);
 	}
 
-	public async cleanup(): Promise<void> {}
+	public cleanup(): void {}
 
 	// Helper method to update file stats
 	private updateStats(): void {
@@ -403,10 +391,8 @@ export class Canvas extends HasProvider implements IFile, HasMimeType {
 		super.destroy();
 		this.ydoc.destroy();
 		this.whenSyncedPromise?.destroy();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.whenSyncedPromise = null as any;
+		this.whenSyncedPromise = null as unknown as Dependency<void> | null;
 		this.readyPromise?.destroy();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.readyPromise = null as any;
+		this.readyPromise = null as unknown as Dependency<Canvas> | undefined;
 	}
 }

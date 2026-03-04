@@ -25,10 +25,14 @@ export class RelayOnPremLoginModal extends Modal {
 		private shareClient?: RelayOnPremShareClient,
 	) {
 		super(app);
-		this.setTitle("Relay On-Premise Login");
+		this.setTitle("Relay on-premise login");
 	}
 
-	async onOpen() {
+	onOpen() {
+		void this._init();
+	}
+
+	private async _init() {
 		const { contentEl } = this;
 		contentEl.empty();
 
@@ -55,7 +59,7 @@ export class RelayOnPremLoginModal extends Modal {
 			placeholder: "user@example.com",
 			cls: "relay-onprem-input",
 		});
-		this.emailInput.style.width = "100%";
+		this.emailInput.addClass("evc-w-full");
 
 		// Password field
 		const passwordGroup = form.createDiv({ cls: "setting-item" });
@@ -67,19 +71,17 @@ export class RelayOnPremLoginModal extends Modal {
 			placeholder: "Enter your password",
 			cls: "relay-onprem-input",
 		});
-		this.passwordInput.style.width = "100%";
+		this.passwordInput.addClass("evc-w-full");
 
 		// Error display
 		this.errorDiv = form.createDiv({ cls: "relay-onprem-error" });
-		this.errorDiv.style.color = "var(--text-error)";
-		this.errorDiv.style.marginTop = "10px";
+		this.errorDiv.addClass("evc-text-error");
+		this.errorDiv.addClass("evc-mt-2");
 		this.errorDiv.addClass("evc-hidden");
 
 		// Buttons
 		const buttonGroup = form.createDiv({ cls: "modal-button-container" });
-		buttonGroup.style.marginTop = "20px";
-		buttonGroup.addClass("evc-flex", "evc-justify-end");
-		buttonGroup.style.gap = "10px";
+		buttonGroup.addClass("evc-flex", "evc-justify-end", "evc-mt-4", "evc-gap-2");
 
 		// Cancel button
 		const cancelButton = buttonGroup.createEl("button", {
@@ -98,14 +100,14 @@ export class RelayOnPremLoginModal extends Modal {
 		});
 		this.loginButton.addEventListener("click", (e) => {
 			e.preventDefault();
-			this.handleLogin();
+			void this.handleLogin();
 		});
 
 		// Handle Enter key in inputs
 		const handleEnter = (e: KeyboardEvent) => {
 			if (e.key === "Enter" && !this.isLoggingIn) {
 				e.preventDefault();
-				this.handleLogin();
+				void this.handleLogin();
 			}
 		};
 		this.emailInput.addEventListener("keydown", handleEnter);
@@ -113,33 +115,27 @@ export class RelayOnPremLoginModal extends Modal {
 
 		// Add OAuth buttons if providers are available
 		if (this.oauthProviders.length > 0) {
-			const oauthSection = form.createDiv({ cls: "relay-onprem-oauth-section" });
-			oauthSection.style.marginTop = "20px";
-			oauthSection.style.paddingTop = "20px";
-			oauthSection.style.borderTop = "1px solid var(--background-modifier-border)";
+			const oauthSection = form.createDiv({ cls: "relay-onprem-oauth-section evc-oauth-section" });
 
-			const oauthLabel = oauthSection.createDiv({
+			oauthSection.createDiv({
 				text: "Or sign in with:",
-				cls: "setting-item-name",
+				cls: "setting-item-name evc-oauth-label",
 			});
-			oauthLabel.style.marginBottom = "10px";
-			oauthLabel.style.textAlign = "center";
-			oauthLabel.style.color = "var(--text-muted)";
 
 			const oauthButtons = oauthSection.createDiv({ cls: "relay-onprem-oauth-buttons" });
 			oauthButtons.addClass("evc-flex");
-			oauthButtons.style.flexDirection = "column";
-			oauthButtons.style.gap = "8px";
+			oauthButtons.addClass("evc-flex-col");
+			oauthButtons.addClass("evc-gap-2");
 
 			for (const provider of this.oauthProviders) {
 				const oauthButton = oauthButtons.createEl("button", {
 					text: provider.display_name,
 					cls: "mod-cta",
 				});
-				oauthButton.style.width = "100%";
+				oauthButton.addClass("evc-w-full");
 				oauthButton.addEventListener("click", (e) => {
 					e.preventDefault();
-					this.handleOAuthLogin(provider.name);
+					void this.handleOAuthLogin(provider.name);
 				});
 			}
 		}

@@ -15,13 +15,10 @@ export interface Mail<T> {
 export class PostOffice {
 	private static _destroyed: boolean = false;
 	private static instance: PostOffice;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private mailboxes: Map<(value: any) => void, Set<IObservable<any>>> =
+	private mailboxes: Map<(value: unknown) => void, Set<IObservable<unknown>>> =
 		new Map();
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private allMailLog: Mail<any>[] = [];
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private deliveredMailLog: Mail<any>[] = [];
+	private allMailLog: Mail<unknown>[] = [];
+	private deliveredMailLog: Mail<unknown>[] = [];
 	private isDelivering: boolean = false;
 	private deliveryInterval: number | null = null;
 	private currentTransactionId: number = 0;
@@ -60,19 +57,20 @@ export class PostOffice {
 		recipient: (value: T) => void,
 		immediate: boolean = false,
 	): void {
+		const recipientUnknown = recipient as (value: unknown) => void;
 		const mail: Mail<T> = {
 			sender,
 			recipient,
 			transactionId: this.currentTransactionId,
 			timestamp: Date.now(),
-			recipientOrigin: this.getFunctionOrigin(recipient),
+			recipientOrigin: this.getFunctionOrigin(recipientUnknown),
 		};
-		this.allMailLog.push(mail);
+		this.allMailLog.push(mail as unknown as Mail<unknown>);
 
-		if (!this.mailboxes.has(recipient)) {
-			this.mailboxes.set(recipient, new Set());
+		if (!this.mailboxes.has(recipientUnknown)) {
+			this.mailboxes.set(recipientUnknown, new Set());
 		}
-		this.mailboxes.get(recipient)!.add(sender);
+		this.mailboxes.get(recipientUnknown)!.add(sender as unknown as IObservable<unknown>);
 
 		if (immediate) {
 			this.deliverImmediate(sender, recipient);
@@ -91,8 +89,8 @@ export class PostOffice {
 			recipient,
 			transactionId: this.currentTransactionId,
 			timestamp: Date.now(),
-			recipientOrigin: this.getFunctionOrigin(recipient),
-		});
+			recipientOrigin: this.getFunctionOrigin(recipient as (value: unknown) => void),
+		} as unknown as Mail<unknown>);
 	}
 
 	private scheduleDelivery(): void {
@@ -125,13 +123,11 @@ export class PostOffice {
 		}
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	getAllMailLog(): Mail<any>[] {
+	getAllMailLog(): Mail<unknown>[] {
 		return [...this.allMailLog];
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	getDeliveredMailLog(): Mail<any>[] {
+	getDeliveredMailLog(): Mail<unknown>[] {
 		return [...this.deliveredMailLog];
 	}
 
@@ -147,8 +143,7 @@ export class PostOffice {
 		);
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private prettyPrintMailLog(log: Mail<any>[]): string {
+	private prettyPrintMailLog(log: Mail<unknown>[]): string {
 		let text = "";
 		const _log = (msg: string) => {
 			text += `${msg}\n`;
@@ -159,7 +154,7 @@ export class PostOffice {
 			_log(`  Transaction ID: ${mail.transactionId}`);
 			_log(
 				`  Sender: ${
-					mail.sender.observableName || mail.sender.constructor.name
+					(mail.sender as { observableName?: string }).observableName || (mail.sender as { constructor?: { name?: string } }).constructor?.name
 				}`,
 			);
 			_log(`  Recipient: ${mail.recipient.name || "Anonymous function"}`);
@@ -169,8 +164,7 @@ export class PostOffice {
 		return text;
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	getFunctionOrigin(func: (...args: any[]) => any): string {
+	getFunctionOrigin(func: (...args: unknown[]) => unknown): string {
 		// If the function has a name, return it
 		if (func.name) {
 			return func.name;
@@ -201,8 +195,7 @@ export class PostOffice {
 	static destroy(): void {
 		if (PostOffice.instance) {
 			// Clear all mailboxes
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			PostOffice.instance.mailboxes = null as any;
+			PostOffice.instance.mailboxes = null as unknown as Map<(value: unknown) => void, Set<IObservable<unknown>>>;
 
 			// Clear mail logs
 			PostOffice.instance.allMailLog = [];
@@ -210,8 +203,7 @@ export class PostOffice {
 
 			// Cancel any pending delivery
 			PostOffice.instance.timeProvider.destroy();
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			PostOffice.instance.timeProvider = null as any;
+			PostOffice.instance.timeProvider = null as unknown as TimeProvider;
 
 			// Reset flags
 			PostOffice.instance.isDelivering = false;
@@ -223,8 +215,7 @@ export class PostOffice {
 			PostOffice._destroyed = true;
 
 			// Remove the singleton instance
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			PostOffice.instance = undefined as any;
+			PostOffice.instance = undefined as unknown as PostOffice;
 		}
 	}
 
@@ -237,8 +228,7 @@ export class PostOffice {
 			PostOffice.instance.timeProvider?.destroy();
 		}
 		PostOffice._destroyed = false;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		PostOffice.instance = undefined as any;
+		PostOffice.instance = undefined as unknown as PostOffice;
 		if (timeProvider) {
 			PostOffice.instance = new PostOffice(timeProvider);
 			RelayInstances.set(PostOffice.instance, "postie");

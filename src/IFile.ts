@@ -4,9 +4,9 @@ export interface IFile {
 	guid: string;
 	path: string;
 	move: (newPath: string, sharedFolder: SharedFolder) => void;
-	connect: () => void;
+	connect: () => Promise<boolean> | void;
 	disconnect: () => void;
-	cleanup: () => void;
+	cleanup: () => Promise<void> | void;
 	destroy: () => void;
 }
 

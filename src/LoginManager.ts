@@ -10,10 +10,10 @@ import PocketBase, {
 } from "pocketbase";
 import { RelayInstances, curryLog } from "./debug";
 import type { IAuthProvider } from "./auth/IAuthProvider";
-import { createAuthProvider, isRelayOnPremMode } from "./auth/AuthProviderFactory";
-import { loginWithEmailPassword, refreshAuthToken, logoutUser, getCurrentUserFromProvider } from "./LoginManagerExtensions";
+import { isRelayOnPremMode } from "./auth/AuthProviderFactory";
+import { loginWithEmailPassword, logoutUser, getCurrentUserFromProvider } from "./LoginManagerExtensions";
 import type { RelayOnPremSettings, RelayOnPremServer } from "./RelayOnPremConfig";
-import { getDefaultServer, getServerById } from "./RelayOnPremConfig";
+import { getServerById } from "./RelayOnPremConfig";
 import { Observable } from "./observable/Observable";
 import { MultiServerAuthManager, type ServerAuthStatus } from "./auth/MultiServerAuthManager";
 
@@ -24,7 +24,7 @@ import { LocalAuthStore } from "./pocketbase/LocalAuthStore";
 import type { TimeProvider } from "./TimeProvider";
 import { FeatureFlagManager } from "./flagManager";
 import type { NamespacedSettings } from "./SettingsStorage";
-import { type EndpointManager, type EndpointSettings } from "./EndpointManager";
+import type { EndpointManager } from "./EndpointManager";
 
 interface GoogleUser {
 	email: string;
@@ -70,11 +70,15 @@ interface NormalizedOAuthUser {
 /**
  * Normalizes OAuth2 user data from different providers into a consistent format
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function normalizeOAuthUser(rawUser: any): NormalizedOAuthUser | null {
+function normalizeOAuthUser(rawUser: unknown): NormalizedOAuthUser | null {
+	if (typeof rawUser !== "object" || rawUser === null) {
+		return null;
+	}
+	const userObj = rawUser as Record<string, unknown>;
+
 	// Handle Google user
-	if ("email" in rawUser && "name" in rawUser && "given_name" in rawUser && "family_name" in rawUser) {
-		const googleUser = rawUser as GoogleUser;
+	if ("email" in userObj && "name" in userObj && "given_name" in userObj && "family_name" in userObj) {
+		const googleUser = userObj as unknown as GoogleUser;
 		return {
 			name: googleUser.name,
 			given_name: googleUser.given_name,
@@ -85,8 +89,8 @@ function normalizeOAuthUser(rawUser: any): NormalizedOAuthUser | null {
 	}
 
 	// Handle GitHub user
-	if ("email" in rawUser && "login" in rawUser && "avatar_url" in rawUser) {
-		const githubUser = rawUser as GitHubUser;
+	if ("email" in userObj && "login" in userObj && "avatar_url" in userObj) {
+		const githubUser = userObj as unknown as GitHubUser;
 		const nameParts = (githubUser.name || githubUser.login).split(' ');
 		return {
 			name: githubUser.name || githubUser.login,
@@ -98,8 +102,8 @@ function normalizeOAuthUser(rawUser: any): NormalizedOAuthUser | null {
 	}
 
 	// Handle Microsoft user
-	if ("mail" in rawUser && "displayName" in rawUser) {
-		const microsoftUser = rawUser as MicrosoftUser;
+	if ("mail" in userObj && "displayName" in userObj) {
+		const microsoftUser = userObj as unknown as MicrosoftUser;
 		return {
 			name: microsoftUser.displayName,
 			given_name: microsoftUser.givenName,
@@ -110,8 +114,8 @@ function normalizeOAuthUser(rawUser: any): NormalizedOAuthUser | null {
 	}
 
 	// Handle OIDC user (standard OpenID Connect claims)
-	if ("email" in rawUser && "given_name" in rawUser && "family_name" in rawUser) {
-		const oidcUser = rawUser as OIDCUser;
+	if ("email" in userObj && "given_name" in userObj && "family_name" in userObj) {
+		const oidcUser = userObj as unknown as OIDCUser;
 		return {
 			name: oidcUser.name || `${oidcUser.given_name} ${oidcUser.family_name}`,
 			given_name: oidcUser.given_name,
@@ -135,18 +139,17 @@ function normalizeOAuthUser(rawUser: any): NormalizedOAuthUser | null {
 export function createUserFromOAuth(
 	id: string,
 	token: string,
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	authStoreModel: any,
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	rawUser?: GoogleUser | GitHubUser | MicrosoftUser | OIDCUser | any,
+	authStoreModel: unknown,
+	rawUser?: GoogleUser | GitHubUser | MicrosoftUser | OIDCUser | unknown,
 ): User {
 	const normalizedOAuth = rawUser ? normalizeOAuthUser(rawUser) : null;
 
+	const model = authStoreModel as { name?: string; email?: string; picture?: string } | null | undefined;
 	return new User(
 		id,
-		authStoreModel?.name || normalizedOAuth?.name || "",
-		authStoreModel?.email || normalizedOAuth?.email || "",
-		authStoreModel?.picture || normalizedOAuth?.picture || "",
+		model?.name || normalizedOAuth?.name || "",
+		model?.email || normalizedOAuth?.email || "",
+		model?.picture || normalizedOAuth?.picture || "",
 		token,
 	);
 }
@@ -303,11 +306,10 @@ export class LoginManager extends Observable<LoginManager> {
 			return;
 		}
 
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
 
 		if (this.pb && this.pb.authStore.isValid) {
 			this.user = this.makeUser(this.pb.authStore);
-			this.pb
+			void this.pb
 				.collection("users")
 				.authRefresh()
 				.then((authData) => {
@@ -333,7 +335,7 @@ export class LoginManager extends Observable<LoginManager> {
 	}
 
 	setup(
-		authData?: RecordAuthResponse<RecordModel> | undefined,
+		authData?: RecordAuthResponse<RecordModel>,
 		provider?: string,
 	): boolean {
 		// Relay-onprem mode doesn't use this method
@@ -360,18 +362,16 @@ export class LoginManager extends Observable<LoginManager> {
 				})
 				.catch((reason: unknown) => {
 					this.log(reason);
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				});
 		}
 		if (provider) {
-			this.loginSettings.set({ provider });
+			void this.loginSettings.set({ provider });
 		}
 		return true;
-	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	}
 
 	clearPreferredProvider() {
-		this.loginSettings.set({ provider: undefined });
+		void this.loginSettings.set({ provider: undefined });
 	}
 
 	async checkRelayHost(relay_guid: string): Promise<RequestUrlResponsePromise> {
@@ -400,11 +400,10 @@ export class LoginManager extends Observable<LoginManager> {
 			method: "GET",
 			headers: headers,
 		})
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			.then((response) => {
 				if (response.status === 200) {
 					const serverFlags = response.json;
-					FeatureFlagManager.getInstance().applyServerFlags(serverFlags);
+					void FeatureFlagManager.getInstance().applyServerFlags(serverFlags);
 				}
 			})
 			.catch((reason: unknown) => {
@@ -447,8 +446,7 @@ export class LoginManager extends Observable<LoginManager> {
 	async validateAndApplyEndpoints(timeoutMs?: number): Promise<{
 		success: boolean;
 		error?: string;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		licenseInfo?: any;
+		licenseInfo?: unknown;
 	}> {
 		const result = await this.endpointManager.validateAndSetEndpoints(timeoutMs);
 
@@ -937,20 +935,16 @@ export class LoginManager extends Observable<LoginManager> {
 		await this.multiServerAuthManager.logoutAll();
 		this.user = undefined;
 		this.notifyListeners();
-	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	}
 
 	destroy() {
 		this.pb?.cancelAllRequests();
-		this.pb?.realtime.unsubscribe();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.pb = null as any;
+		void this.pb?.realtime.unsubscribe();
+		this.pb = null as unknown as PocketBase | undefined;
 		this.authStore.destroy();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.authStore = null as any;
+		this.authStore = null as unknown as LocalAuthStore;
 		this.user = undefined;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.openSettings = null as any;
+		this.openSettings = null as unknown as () => Promise<void>;
 		this.multiServerAuthManager = undefined;
 		super.destroy();
 	}

@@ -7,7 +7,7 @@
 
 import { curryLog } from "../debug";
 import type { RelayOnPremServer } from "../RelayOnPremConfig";
-import type { IAuthProvider, AuthUser } from "./IAuthProvider";
+import type { AuthUser } from "./IAuthProvider";
 import { RelayOnPremAuthProvider } from "./RelayOnPremAuthProvider";
 import { RelayOnPremAuthStore } from "./RelayOnPremAuthStore";
 

@@ -63,7 +63,7 @@ export class DiskBufferStore {
 	private async openDB(): Promise<IDBDatabase> {
 		return new Promise((resolve, reject) => {
 			const request = indexedDB.open(this.dbName, 1);
-			request.onerror = () => reject(request.error);
+			request.onerror = () => reject(request.error ?? new Error("Failed to open database"));
 			request.onsuccess = () => resolve(request.result);
 			request.onupgradeneeded = (event) => {
 				const db = (event.target as IDBOpenDBRequest).result;
@@ -79,10 +79,10 @@ export class DiskBufferStore {
 				const transaction = db.transaction(this.storeName, "readwrite");
 				const store = transaction.objectStore(this.storeName);
 				const request = store.put({ guid, contents });
-				request.onerror = () => reject(request.error);
+				request.onerror = () => reject(request.error ?? new Error("Failed to save disk buffer"));
 				request.onsuccess = () => resolve();
 			} catch (e: unknown) {
-				reject(e);
+				reject(e instanceof Error ? e : new Error(String(e)));
 			}
 		});
 	}
@@ -94,11 +94,11 @@ export class DiskBufferStore {
 				const transaction = db.transaction(this.storeName, "readonly");
 				const store = transaction.objectStore(this.storeName);
 				const request = store.get(guid);
-				request.onerror = () => reject(request.error);
+				request.onerror = () => reject(request.error ?? new Error("Failed to load disk buffer"));
 				request.onsuccess = () =>
 					resolve(request.result ? request.result.contents : null);
 			} catch (e: unknown) {
-				reject(e);
+				reject(e instanceof Error ? e : new Error(String(e)));
 			}
 		});
 	}
@@ -110,10 +110,10 @@ export class DiskBufferStore {
 				const transaction = db.transaction(this.storeName, "readwrite");
 				const store = transaction.objectStore(this.storeName);
 				const request = store.delete(guid);
-				request.onerror = () => reject(request.error);
+				request.onerror = () => reject(request.error ?? new Error("Failed to remove disk buffer"));
 				request.onsuccess = () => resolve();
 			} catch (e: unknown) {
-				reject(e);
+				reject(e instanceof Error ? e : new Error(String(e)));
 			}
 		});
 	}

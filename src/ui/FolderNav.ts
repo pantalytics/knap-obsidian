@@ -362,8 +362,7 @@ class FilePillDecoration {
 			el.remove();
 		});
 		this.pill?.$destroy();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.file = null as any;
+		this.file = null as unknown as SyncFile;
 	}
 }
 
@@ -504,7 +503,7 @@ class FileStatusVisitor extends BaseVisitor<DocumentStatus> {
 				if (!(document instanceof Document)) return null;
 				if (!document) return null;
 				return storage || new DocumentStatus(item.el, document, file);
-			} catch (e: unknown) {
+			} catch {
 				// document doesn't exist yet...
 				return null;
 			}
@@ -545,7 +544,7 @@ class FileExplorerWalker {
 		try {
 			//@ts-expect-error this is a private API
 			return this.fileExplorer.view.fileItems[path];
-		} catch (e: unknown) {
+		} catch {
 			return null;
 		}
 	}
@@ -686,7 +685,7 @@ export class FolderNavigationDecorations {
 						);
 					}
 				});
-				folder.whenReady().then(() => {
+				void folder.whenReady().then(() => {
 					this.refresh();
 				});
 				this.unsubscribes.push(
@@ -801,15 +800,10 @@ export class FolderNavigationDecorations {
 		this.treeState.clear();
 		this.offLayoutChange();
 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.vault = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.workspace = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.sharedFolders = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.backgroundSync = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.offFolderListener = null as any;
+		this.vault = null as unknown as Vault;
+		this.workspace = null as unknown as Workspace;
+		this.sharedFolders = null as unknown as SharedFolders;
+		this.backgroundSync = null as unknown as BackgroundSync;
+		this.offFolderListener = null as unknown as () => void;
 	}
 }

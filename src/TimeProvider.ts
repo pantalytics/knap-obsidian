@@ -46,8 +46,7 @@ export class DefaultTimeProvider implements TimeProvider {
 		this.intervals = [];
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	debounce<T extends (...args: any[]) => void>(
+	debounce<T extends (...args: unknown[]) => void>(
 		func: T,
 		delay: number = 500,
 	): (...args: Parameters<T>) => void {
@@ -70,8 +69,7 @@ export interface TimeProvider {
 	setTimeout: (callback: () => void, ms: number) => number;
 	clearTimeout: (timerId: number) => void;
 	destroy: () => void;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	debounce: <T extends (...args: any[]) => void>(
+	debounce: <T extends (...args: unknown[]) => void>(
 		func: T,
 		delay: number,
 	) => (...args: Parameters<T>) => void;

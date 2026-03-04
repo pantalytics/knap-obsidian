@@ -42,37 +42,35 @@ export class Patcher extends HasLogging {
 	 * Create a monkeypatch and register its cleanup function
 	 * Prevents duplicate patches of the same method on the same instance
 	 */
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	patch<T extends Record<string, any>>(target: T, patches: any): () => void {
+	patch<T extends object>(target: T, patches: Record<string, object>): () => void {
 		const existingMethods = this.patchedMethods.get(target) || new Set();
 		const requestedMethods = Object.keys(patches);
-		
+
 		// Check for method conflicts
 		const conflicts = requestedMethods.filter(method => existingMethods.has(method));
-		
+
 		if (conflicts.length > 0) {
-			this.warn(`Methods [${conflicts.join(', ')}] already patched on ${target.constructor?.name}, skipping duplicates`);
-			
+			this.warn(`Methods [${conflicts.join(', ')}] already patched on ${(target as { constructor?: { name?: string } }).constructor?.name}, skipping duplicates`);
+
 			// Only patch non-conflicting methods
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const safePatch: any = {};
+			const safePatch: Record<string, object> = {};
 			requestedMethods
 				.filter(method => !conflicts.includes(method))
-				.forEach(method => safePatch[method] = patches[method]);
-			
+				.forEach(method => { safePatch[method] = patches[method]; });
+
 			if (Object.keys(safePatch).length === 0) {
 				this.debug("All methods conflicted, returning no-op unsubscriber");
 				return () => {}; // No-op if all methods conflict
 			}
 			patches = safePatch;
 		}
-		
+
 		// Update method tracking
 		const newMethodSet = new Set([...existingMethods, ...Object.keys(patches)]);
 		this.patchedMethods.set(target, newMethodSet);
-		
-		// Apply patch
-		const unsubscribe = around(target, patches);
+
+		// Apply patch using type assertion required for monkey-around's generic constraint
+		const unsubscribe = around(target as unknown as Record<string, object>, patches as Parameters<typeof around>[1]);
 		this.unsubscribes.push(unsubscribe);
 
 		// Also store on window for debugging
@@ -80,8 +78,8 @@ export class Patcher extends HasLogging {
 			window.evcTeamRelayPatches.push(unsubscribe);
 		}
 		
-		this.debug("Applied monkeypatch", { 
-			target: target.constructor?.name, 
+		this.debug("Applied monkeypatch", {
+			target: (target as { constructor?: { name?: string } }).constructor?.name,
 			methods: Object.keys(patches),
 			patchCount: this.unsubscribes.length 
 		});

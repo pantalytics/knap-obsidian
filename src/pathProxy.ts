@@ -1,20 +1,18 @@
-export function createPathProxy<T>(
+export function createPathProxy<T extends object>(
 	target: T,
 	rootPath: string,
 	pathConverter: (globalPath: string, rootPath: string) => string = (p, r) =>
 		p.substring(r.length).replace(/^\/+/, ""),
 ): T {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	return new Proxy(target as any, {
+	return new Proxy(target, {
 		get(target, prop) {
-			const originalMethod = target[prop];
+			const originalMethod = (target as Record<string | symbol, unknown>)[prop];
 			if (typeof originalMethod === "function") {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				return function (...args: any[]) {
+				return function (...args: unknown[]) {
 					if (args.length > 0 && typeof args[0] === "string") {
 						args[0] = pathConverter(args[0], rootPath);
 					}
-					return originalMethod.apply(target, args);
+					return (originalMethod as (...a: unknown[]) => unknown).apply(target, args);
 				};
 			}
 			return originalMethod;

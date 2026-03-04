@@ -10,7 +10,7 @@ import type Live from "../main";
 import { RelayOnPremShareClient, type RelayOnPremShare, type ShareMember, type Invite, type FolderItem } from "../RelayOnPremShareClient";
 import { RelayOnPremShareClientManager, type ShareWithServer } from "../RelayOnPremShareClientManager";
 import { FolderSuggestModal } from "./FolderSuggestModal";
-import { getDefaultServer, getServerById, type RelayOnPremServer } from "../RelayOnPremConfig";
+import { getDefaultServer, type RelayOnPremServer } from "../RelayOnPremConfig";
 import { S3RN } from "../S3RN";
 
 export class ShareManagementModal extends Modal {
@@ -38,11 +38,15 @@ export class ShareManagementModal extends Modal {
 		if (serverName) {
 			this.setTitle(`Shares — ${serverName}`);
 		} else {
-			this.setTitle("Relay On-Premise Shares");
+			this.setTitle("Relay on-premise shares");
 		}
 	}
 
-	async onOpen() {
+	onOpen() {
+		void this._initOpen();
+	}
+
+	private async _initOpen() {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass("relay-onprem-share-management");
@@ -253,14 +257,13 @@ export class ShareManagementModal extends Modal {
 
 		// Create button row (no duplicate header - modal title is enough)
 		const headerDiv = contentEl.createDiv({ cls: "relay-onprem-share-header" });
-		headerDiv.addClass("evc-flex", "evc-justify-end");
-		headerDiv.style.marginBottom = "1em";
+		headerDiv.addClass("evc-flex", "evc-justify-end", "evc-mb-3");
 
 		const createButton = headerDiv.createEl("button", {
-			text: "Create Share",
+			text: "Create share",
 			cls: "mod-cta",
 		});
-		createButton.addEventListener("click", () => this.showCreateShareForm());
+		createButton.addEventListener("click", () => { void this.showCreateShareForm(); });
 
 		// Shares list
 		if (this.shares.length === 0) {
@@ -271,40 +274,26 @@ export class ShareManagementModal extends Modal {
 			return;
 		}
 
-		const listDiv = contentEl.createDiv({ cls: "relay-onprem-share-list" });
-		listDiv.style.maxHeight = "400px";
-		listDiv.style.overflowY = "auto";
+		const listDiv = contentEl.createDiv({ cls: "relay-onprem-share-list evc-share-list" });
 
 		this.shares.forEach((share) => {
-			const shareItem = listDiv.createDiv({ cls: "relay-onprem-share-item" });
-			shareItem.style.padding = "0.5em";
-			shareItem.style.marginBottom = "0.5em";
-			shareItem.style.border = "1px solid var(--background-modifier-border)";
-			shareItem.style.borderRadius = "4px";
-			shareItem.style.cursor = "pointer";
+			const shareItem = listDiv.createDiv({ cls: "relay-onprem-share-item evc-share-item" });
 
-			shareItem.addEventListener("click", () => this.loadShareDetails(share));
+			shareItem.addEventListener("click", () => { void this.loadShareDetails(share); });
 
-			const nameDiv = shareItem.createDiv({ cls: "share-name" });
-			nameDiv.style.fontWeight = "bold";
+			const nameDiv = shareItem.createDiv({ cls: "share-name evc-share-name" });
 			nameDiv.textContent = share.path;
 
-			const kindDiv = shareItem.createDiv({ cls: "share-kind" });
-			kindDiv.style.fontSize = "0.9em";
-			kindDiv.style.color = "var(--text-muted)";
+			const kindDiv = shareItem.createDiv({ cls: "share-kind evc-text-muted evc-text-sm" });
 			kindDiv.textContent = `${share.kind} • ${share.visibility}`;
 
 			// Show server name if multi-server mode
 			if (this.plugin.shareClientManager && this.plugin.shareClientManager.getServerCount() > 1) {
-				const serverDiv = shareItem.createDiv({ cls: "share-server" });
-				serverDiv.style.fontSize = "0.8em";
-				serverDiv.style.color = "var(--text-accent)";
+				const serverDiv = shareItem.createDiv({ cls: "share-server evc-text-xs evc-text-accent" });
 				serverDiv.textContent = `Server: ${share.serverName}`;
 			}
 
-			const dateDiv = shareItem.createDiv({ cls: "share-date" });
-			dateDiv.style.fontSize = "0.8em";
-			dateDiv.style.color = "var(--text-faint)";
+			const dateDiv = shareItem.createDiv({ cls: "share-date evc-text-xs evc-text-faint" });
 			dateDiv.textContent = `Created: ${new Date(share.created_at).toLocaleDateString()}`;
 		});
 	}
@@ -316,10 +305,9 @@ export class ShareManagementModal extends Modal {
 
 		// Back button
 		const backButton = contentEl.createEl("button", {
-			text: "← Back to List",
-			cls: "mod-muted",
+			text: "Back to list",
+			cls: "mod-muted evc-mb-3",
 		});
-		backButton.style.marginBottom = "1em";
 		backButton.addEventListener("click", () => {
 			this.selectedShare = null;
 			this.members = [];
@@ -331,18 +319,15 @@ export class ShareManagementModal extends Modal {
 		contentEl.createEl("h3", { text: this.selectedShare.path });
 
 		// Compact info row
-		const infoRow = contentEl.createDiv({ cls: "relay-onprem-share-info" });
-		infoRow.style.cssText = "display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 1em; font-size: 0.85em; color: var(--text-muted);";
+		const infoRow = contentEl.createDiv({ cls: "relay-onprem-share-info evc-share-info-row" });
 
 		// Type badge
-		const typeBadge = infoRow.createSpan({ cls: "relay-onprem-badge" });
-		typeBadge.style.cssText = "background: var(--background-modifier-border); padding: 2px 8px; border-radius: 4px;";
+		const typeBadge = infoRow.createSpan({ cls: "relay-onprem-badge evc-badge" });
 		typeBadge.textContent = `${this.selectedShare.kind} • ${this.selectedShare.visibility}`;
 
 		// Server badge (multi-server mode only)
 		if (this.plugin.shareClientManager && this.plugin.shareClientManager.getServerCount() > 1) {
-			const serverBadge = infoRow.createSpan({ cls: "relay-onprem-badge" });
-			serverBadge.style.cssText = "background: var(--background-modifier-border); padding: 2px 8px; border-radius: 4px;";
+			const serverBadge = infoRow.createSpan({ cls: "relay-onprem-badge evc-badge" });
 			serverBadge.textContent = `🖥 ${this.selectedShare.serverName}`;
 		}
 
@@ -351,11 +336,10 @@ export class ShareManagementModal extends Modal {
 		createdSpan.textContent = `Created: ${new Date(this.selectedShare.created_at).toLocaleDateString()}`;
 
 		// Copy ID button
-		const copyBtn = infoRow.createEl("button", { cls: "mod-muted" });
-		copyBtn.style.cssText = "font-size: 0.85em; padding: 2px 8px;";
+		const copyBtn = infoRow.createEl("button", { cls: "mod-muted evc-btn-sm" });
 		copyBtn.textContent = "Copy ID";
 		copyBtn.addEventListener("click", () => {
-			navigator.clipboard.writeText(this.selectedShare!.id);
+			void navigator.clipboard.writeText(this.selectedShare!.id);
 			new Notice("Share ID copied to clipboard");
 		});
 
@@ -407,17 +391,17 @@ export class ShareManagementModal extends Modal {
 
 		// Add member section - only for owners
 		if (this.isOwner) {
-			contentEl.createEl("h4", { text: "Add Member" });
+			contentEl.createEl("h4", { text: "Add member" });
 
 			let userIdInput: HTMLInputElement;
 			let roleSelect: HTMLSelectElement;
 
 			new Setting(contentEl)
-				.setName("User Email")
+				.setName("User email")
 				.setDesc("Enter email address of user to add as member")
 				.addText((text) => {
 					userIdInput = text.inputEl;
-					text.setPlaceholder("e.g., user@example.com");
+					text.setPlaceholder("E.g., user@example.com");
 				});
 
 			new Setting(contentEl).setName("Role").addDropdown((dropdown) => {
@@ -429,7 +413,7 @@ export class ShareManagementModal extends Modal {
 
 			new Setting(contentEl).addButton((button) => {
 				button
-					.setButtonText("Add Member")
+					.setButtonText("Add member")
 					.setCta()
 					.onClick(async () => {
 						const userEmail = userIdInput.value.trim();
@@ -472,7 +456,7 @@ export class ShareManagementModal extends Modal {
 			(sf) => sf.guid === this.selectedShare!.id
 		);
 
-		contentEl.createEl("h4", { text: "Local Folder" });
+		contentEl.createEl("h4", { text: "Local folder" });
 
 		if (localFolder) {
 			new Setting(contentEl)
@@ -541,13 +525,13 @@ export class ShareManagementModal extends Modal {
 
 		// Visibility change dropdown (v1.8.3)
 		new Setting(contentEl)
-			.setName("Change Visibility")
+			.setName("Change visibility")
 			.setDesc("Control who can access this share")
 			.addDropdown((dropdown) => {
 				dropdown
-					.addOption("private", "Private - Only members")
-					.addOption("public", "Public - Anyone with link")
-					.addOption("protected", "Protected - Password required")
+					.addOption("private", "Private - only members")
+					.addOption("public", "Public - anyone with link")
+					.addOption("protected", "Protected - password required")
 					.setValue(this.selectedShare!.visibility)
 					.onChange(async (value) => {
 						await this.updateVisibility(value as "private" | "public" | "protected");
@@ -556,7 +540,7 @@ export class ShareManagementModal extends Modal {
 
 		// Delete share
 		new Setting(contentEl)
-			.setName("Delete Share")
+			.setName("Delete share")
 			.setDesc("Permanently delete this share and remove all members")
 			.addButton((button) => {
 				button
@@ -635,13 +619,13 @@ export class ShareManagementModal extends Modal {
 
 		const { contentEl } = this;
 
-		contentEl.createEl("h4", { text: "Web Publishing" });
+		contentEl.createEl("h4", { text: "Web publishing" });
 
-		// Web Publishing toggle
+		// Web publishing toggle
 		const isPublished = this.selectedShare.web_published ?? false;
 
 		new Setting(contentEl)
-			.setName("Publish to Web")
+			.setName("Publish to web")
 			.setDesc("Make this share accessible via a web URL")
 			.addToggle((toggle) => {
 				toggle
@@ -659,10 +643,10 @@ export class ShareManagementModal extends Modal {
 				.setDesc(this.selectedShare.web_url)
 				.addButton((button) => {
 					button
-						.setButtonText("Copy Link")
+						.setButtonText("Copy link")
 						.onClick(() => {
 							if (this.selectedShare?.web_url) {
-								navigator.clipboard.writeText(this.selectedShare.web_url);
+								void navigator.clipboard.writeText(this.selectedShare.web_url);
 								new Notice("Web URL copied to clipboard!");
 							}
 						});
@@ -680,11 +664,11 @@ export class ShareManagementModal extends Modal {
 			// Sync button (different for doc vs folder shares)
 			if (this.selectedShare.kind === "doc") {
 				new Setting(contentEl)
-					.setName("Sync Content")
+					.setName("Sync content")
 					.setDesc("Update the web page with the latest document content")
 					.addButton((button) => {
 						button
-							.setButtonText("Sync Now")
+							.setButtonText("Sync now")
 							.setCta()
 							.onClick(async () => {
 								await this.syncWebContent();
@@ -692,11 +676,11 @@ export class ShareManagementModal extends Modal {
 					});
 			} else if (this.selectedShare.kind === "folder") {
 				new Setting(contentEl)
-					.setName("Sync Folder")
+					.setName("Sync folder")
 					.setDesc("Update the web page with the latest folder listing")
 					.addButton((button) => {
 						button
-							.setButtonText("Sync Now")
+							.setButtonText("Sync now")
 							.setCta()
 							.onClick(async () => {
 								await this.syncFolderItems();
@@ -720,14 +704,14 @@ export class ShareManagementModal extends Modal {
 			// Sync mode dropdown (v1.8.1) - available for both doc and folder shares
 			const syncMode = this.selectedShare.web_sync_mode ?? "manual";
 			new Setting(contentEl)
-				.setName("Sync Mode")
+				.setName("Sync mode")
 				.setDesc(this.selectedShare.kind === "doc"
 					? "How content is synchronized to web"
 					: "How folder files are synchronized to web")
 				.addDropdown((dropdown) => {
 					dropdown
-						.addOption("manual", "Manual - Sync on demand")
-						.addOption("auto", "Auto - Sync on file save")
+						.addOption("manual", "Manual - sync on demand")
+						.addOption("auto", "Auto - sync on file save")
 						.setValue(syncMode)
 						.onChange(async (value: string) => {
 							await this.updateSyncMode(value as "manual" | "auto");
@@ -738,12 +722,12 @@ export class ShareManagementModal extends Modal {
 			if (this.selectedShare.web_slug) {
 				let slugInput: HTMLInputElement;
 				new Setting(contentEl)
-					.setName("Web Slug")
-					.setDesc("URL-friendly identifier (letters, numbers, hyphens)")
+					.setName("Web slug")
+					.setDesc("Custom URL path (letters, numbers, hyphens)")
 					.addText((text) => {
 						slugInput = text.inputEl;
 						text.setValue(this.selectedShare!.web_slug || "");
-						text.setPlaceholder("my-document");
+						text.setPlaceholder("My-document");
 					})
 					.addButton((button) => {
 						button
@@ -803,7 +787,7 @@ export class ShareManagementModal extends Modal {
 		if (!this.selectedShare || this.selectedShare.kind !== "folder") return;
 
 		try {
-			const items = await this.getFolderItems(this.selectedShare.path);
+			const items = this.getFolderItems(this.selectedShare.path);
 			console.log("[WebSync] Folder items:", items.length, "files from path:", this.selectedShare.path);
 			if (items.length === 0) {
 				new Notice("Folder is empty or could not be read");
@@ -1005,7 +989,7 @@ export class ShareManagementModal extends Modal {
 						updatePayload.web_content = content;
 					}
 				} else if (this.selectedShare.kind === "folder") {
-					const items = await this.getFolderItems(this.selectedShare.path);
+					const items = this.getFolderItems(this.selectedShare.path);
 					if (items.length > 0) {
 						updatePayload.web_folder_items = items;
 					}
@@ -1056,9 +1040,8 @@ export class ShareManagementModal extends Modal {
 	private async getDocumentContent(path: string): Promise<string | null> {
 		try {
 			const file = this.app.vault.getAbstractFileByPath(path);
-			if (file && "extension" in file) {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				const content = await this.app.vault.read(file as any);
+			if (file instanceof TFile) {
+				const content = await this.app.vault.read(file);
 				return content;
 			}
 			return null;
@@ -1071,7 +1054,7 @@ export class ShareManagementModal extends Modal {
 	/**
 	 * Get folder items for web publishing navigation
 	 */
-	private async getFolderItems(folderPath: string): Promise<FolderItem[]> {
+	private getFolderItems(folderPath: string): FolderItem[] {
 		try {
 			const folder = this.app.vault.getAbstractFileByPath(folderPath);
 			if (!folder || !(folder instanceof TFolder)) {
@@ -1197,7 +1180,7 @@ export class ShareManagementModal extends Modal {
 					new Notice("Auto-sync enabled - changes will sync on save");
 				} else {
 					this.plugin.webSyncManager.unregisterAutoSyncShare(this.selectedShare.path);
-					new Notice("Auto-sync disabled - use 'Sync Now' to update");
+					new Notice("Auto-sync disabled, use sync now to update");
 				}
 			} else {
 				new Notice(`Sync mode changed to ${mode}`);
@@ -1216,17 +1199,14 @@ export class ShareManagementModal extends Modal {
 
 		// Invites section header
 		const invitesHeaderDiv = contentEl.createDiv({ cls: "relay-onprem-invites-header" });
-		invitesHeaderDiv.addClass("evc-flex", "evc-justify-between", "evc-align-center");
-		invitesHeaderDiv.style.marginTop = "1.5em";
+		invitesHeaderDiv.addClass("evc-flex", "evc-justify-between", "evc-align-center", "evc-mt-4");
 
-		invitesHeaderDiv.createEl("h4", { text: "Invite Links" });
+		invitesHeaderDiv.createEl("h4", { text: "Invite links" });
 
 		const createInviteButton = invitesHeaderDiv.createEl("button", {
-			text: "Create Invite",
-			cls: "mod-cta",
+			text: "Create invite",
+			cls: "mod-cta evc-btn-sm",
 		});
-		createInviteButton.style.fontSize = "0.9em";
-		createInviteButton.style.padding = "4px 12px";
 		createInviteButton.addEventListener("click", () => this.showCreateInviteForm());
 
 		// Active invites list
@@ -1250,21 +1230,21 @@ export class ShareManagementModal extends Modal {
 					.setDesc(this.getInviteDescription(invite, isExpired, isMaxedOut))
 					.addButton((button) => {
 						button
-							.setButtonText("Copy Link")
-							.onClick(() => this.copyInviteLink(invite));
+							.setButtonText("Copy link")
+							.onClick(() => { void this.copyInviteLink(invite); });
 					})
 					.addButton((button) => {
 						button
 							.setButtonText("Revoke")
 							.setWarning()
-							.onClick(() => this.revokeInvite(invite.id));
+							.onClick(() => { void this.revokeInvite(invite.id); });
 					});
 
 				// Add visual indicator for expired/maxed invites
 				if (!isValid) {
 					const settingEl = invitesDiv.lastElementChild as HTMLElement;
 					if (settingEl) {
-						settingEl.style.opacity = "0.6";
+						settingEl.addClass("evc-opacity-60");
 					}
 				}
 			});
@@ -1299,7 +1279,7 @@ export class ShareManagementModal extends Modal {
 		return parts.join(" • ");
 	}
 
-	private async showCreateInviteForm() {
+	private showCreateInviteForm() {
 		if (!this.selectedShare) return;
 
 		const { contentEl } = this;
@@ -1307,15 +1287,12 @@ export class ShareManagementModal extends Modal {
 
 		// Back button
 		const backButton = contentEl.createEl("button", {
-			text: "← Back to Share",
-			cls: "mod-muted",
+			text: "Back to share",
+			cls: "mod-muted evc-mb-3",
 		});
-		backButton.style.marginBottom = "1em";
-		backButton.addEventListener("click", async () => {
-			await this.loadShareDetails(this.selectedShare!);
-		});
+		backButton.addEventListener("click", () => { void this.loadShareDetails(this.selectedShare!); });
 
-		contentEl.createEl("h3", { text: "Create Invite Link" });
+		contentEl.createEl("h3", { text: "Create invite link" });
 
 		let roleSelect: HTMLSelectElement;
 		let expirationSelect: HTMLSelectElement;
@@ -1344,7 +1321,7 @@ export class ShareManagementModal extends Modal {
 			});
 
 		new Setting(contentEl)
-			.setName("Max Uses (optional)")
+			.setName("Max uses (optional)")
 			.setDesc("Limit how many times this invite can be used")
 			.addText((text) => {
 				maxUsesInput = text.inputEl;
@@ -1355,7 +1332,7 @@ export class ShareManagementModal extends Modal {
 
 		new Setting(contentEl).addButton((button) => {
 			button
-				.setButtonText("Create Invite Link")
+				.setButtonText("Create invite link")
 				.setCta()
 				.onClick(async () => {
 					const role = roleSelect.value as "viewer" | "editor";
@@ -1385,10 +1362,8 @@ export class ShareManagementModal extends Modal {
 		if (!this.selectedShare) return;
 
 		try {
-			let invite: Invite;
-
 			if (this.plugin.shareClientManager) {
-				invite = await this.plugin.shareClientManager.createInvite(
+				await this.plugin.shareClientManager.createInvite(
 					this.selectedShare.serverId,
 					this.selectedShare.id,
 					{
@@ -1398,7 +1373,7 @@ export class ShareManagementModal extends Modal {
 					}
 				);
 			} else if (this.plugin.shareClient) {
-				invite = await this.plugin.shareClient.createInvite(this.selectedShare.id, {
+				await this.plugin.shareClient.createInvite(this.selectedShare.id, {
 					role,
 					expires_in_days: expiresInDays,
 					max_uses: maxUses,
@@ -1446,7 +1421,7 @@ export class ShareManagementModal extends Modal {
 		const normalizedUrl = controlPlaneUrl.replace(/\/+$/, "");
 		// Use /invite/{token}/page for browser-friendly HTML page (not raw JSON)
 		const inviteLink = `${normalizedUrl}/invite/${invite.token}/page`;
-		navigator.clipboard.writeText(inviteLink);
+		void navigator.clipboard.writeText(inviteLink);
 		new Notice("Invite link copied to clipboard!");
 	}
 
@@ -1482,19 +1457,18 @@ export class ShareManagementModal extends Modal {
 		return settings.servers.filter(s => loggedInServerIds.includes(s.id));
 	}
 
-	private async showCreateShareForm() {
+	private showCreateShareForm() {
 		const { contentEl } = this;
 		contentEl.empty();
 
 		// Back button
 		const backButton = contentEl.createEl("button", {
-			text: "← Cancel",
-			cls: "mod-muted",
+			text: "Cancel",
+			cls: "mod-muted evc-mb-3",
 		});
-		backButton.style.marginBottom = "1em";
 		backButton.addEventListener("click", () => this.renderContent());
 
-		contentEl.createEl("h3", { text: "Create New Share" });
+		contentEl.createEl("h3", { text: "Create new share" });
 
 		let selectedPath: string = "";
 		let kindSelect: HTMLSelectElement;
@@ -1603,7 +1577,7 @@ export class ShareManagementModal extends Modal {
 
 		new Setting(contentEl).addButton((button) => {
 			button
-				.setButtonText("Create Share")
+				.setButtonText("Create share")
 				.setCta()
 				.onClick(async () => {
 					const path = selectedPath.trim();
@@ -1673,7 +1647,7 @@ export class ShareManagementModal extends Modal {
 		}
 	}
 
-	private async createLocalSharedFolder(folderPath: string, shareGuid: string, serverId: string) {
+	private createLocalSharedFolder(folderPath: string, shareGuid: string, serverId: string) {
 		try {
 			// Create SharedFolder with relay-onprem marker for CRDT sync
 			const sharedFolder = this.plugin.sharedFolders.new(
@@ -1823,9 +1797,8 @@ export class ShareManagementModal extends Modal {
 	private showError(container: HTMLElement, message: string) {
 		container.createEl("p", {
 			text: message,
-			cls: "relay-onprem-error",
+			cls: "relay-onprem-error evc-text-error",
 		});
-		container.style.color = "var(--text-error)";
 	}
 
 	onClose() {

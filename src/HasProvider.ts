@@ -97,8 +97,7 @@ export class HasProvider extends HasLogging {
 				const shouldConnect = this._provider.canReconnect();
 				this.disconnect();
 				if (shouldConnect) {
-					// eslint-disable-next-line @typescript-eslint/no-floating-promises
-					this.connect();
+					void this.connect();
 				}
 			},
 		);
@@ -336,7 +335,6 @@ export class HasProvider extends HasLogging {
 		if (this._provider) {
 			this._provider.destroy();
 		}
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.loginManager = null as any;
+		this.loginManager = null as unknown as LoginManager;
 	}
 }

@@ -49,10 +49,8 @@ export class AddToVaultModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 		this.component?.$destroy();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.onConfirm = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.sharedFolders = null as any;
+		this.onConfirm = null as unknown as (remoteFolder: RemoteSharedFolder, folderName: string, folderLocation: string) => Promise<SharedFolder>;
+		this.sharedFolders = null as unknown as SharedFolders;
 		this.remoteFolder = undefined;
 		this.availableFolders.length = 0;
 	}

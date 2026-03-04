@@ -9,7 +9,6 @@ import {
 	normalizePath,
 } from "obsidian";
 import { IndexeddbPersistence } from "./storage/y-indexeddb";
-import * as idb from "lib0/indexeddb";
 import { dirname, join, sep } from "path-browserify";
 import { HasProvider, type ConnectionIntent } from "./HasProvider";
 import { Document } from "./Document";
@@ -111,6 +110,7 @@ type OperationType = Create | Rename | Delete | Update | Upgrade | Noop;
 
 class Files extends ObservableSet<IFile> {
 	// Startup performance optimization
+	// eslint-disable-next-line @typescript-eslint/unbound-method
 	notifyListeners = debounce(super.notifyListeners, 100);
 
 	update() {
@@ -219,8 +219,8 @@ export class SharedFolder extends HasProvider {
 			this.pendingUpload,
 			this.syncSettingsManager,
 		);
-		this.syncStore.on(async () => {
-			await this.syncFileTree(this.syncStore);
+		this.syncStore.on(() => {
+			void this.syncFileTree(this.syncStore);
 		});
 
 		this.unsubscribes.push(
@@ -230,29 +230,31 @@ export class SharedFolder extends HasProvider {
 		);
 
 		this.unsubscribes.push(
-			this.relayManager.storageQuotas.subscribe(async (storageQuotas) => {
-				const quota = storageQuotas.find((quota) => {
-					return quota.id === this._remote?.relay.storageQuotaId;
-				});
-				if (quota === undefined) {
-					return;
-				}
-				if (this.storageQuota !== quota.quota) {
-					if (
-						this.storageQuota !== undefined &&
-						quota.quota !== undefined &&
-						quota.quota > this.storageQuota
-					) {
-						this.debug(
-							"storage quota increase",
-							this.storageQuota,
-							quota.quota,
-						);
-						await this.netSync();
+			this.relayManager.storageQuotas.subscribe((storageQuotas) => {
+				void (async () => {
+					const quota = storageQuotas.find((quota) => {
+						return quota.id === this._remote?.relay.storageQuotaId;
+					});
+					if (quota === undefined) {
+						return;
 					}
-					this.debug("storage quota update", this.storageQuota, quota.quota);
-					this.storageQuota = quota.quota;
-				}
+					if (this.storageQuota !== quota.quota) {
+						if (
+							this.storageQuota !== undefined &&
+							quota.quota !== undefined &&
+							quota.quota > this.storageQuota
+						) {
+							this.debug(
+								"storage quota increase",
+								this.storageQuota,
+								quota.quota,
+							);
+							await this.netSync();
+						}
+						this.debug("storage quota update", this.storageQuota, quota.quota);
+						this.storageQuota = quota.quota;
+					}
+				})();
 			}),
 		);
 
@@ -269,14 +271,12 @@ export class SharedFolder extends HasProvider {
 		}
 
 		if (loginManager.loggedIn) {
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
-			this.connect();
+			void this.connect();
 		}
 
 		this.cas = new ContentAddressedStore(this);
 
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
-		this.whenReady().then(async () => {
+		void this.whenReady().then(async () => {
 			if (!this.destroyed) {
 				await this.whenSynced(); // Ensure IDB and syncStore.start() completed
 
@@ -292,40 +292,32 @@ export class SharedFolder extends HasProvider {
 								setTimeout(() => reject(new Error("provider sync timeout")), 30000)
 							)
 						]);
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					} catch (e: any) {
-						console.warn(`[SharedFolder] ${this.path}: ${e.message}, proceeding with current state`);
+					} catch (e: unknown) {
+						console.warn(`[SharedFolder] ${this.path}: ${e instanceof Error ? e.message : String(e)}, proceeding with current state`);
 					}
 				}
 
 				console.log(`[SharedFolder] ready to sync: path=${this.path}, synced=${this.synced}, authoritative=${this.authoritative}`);
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				this.addLocalDocs();
-				this.syncFileTree(this.syncStore);
+				void this.syncFileTree(this.syncStore);
 			}
 		});
 
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
 
-		this.whenSynced().then(async () => {
+		void this.whenSynced().then(() => {
 			this.syncStore.start();
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			try {
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				this._persistence.set("path", this.path);
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				this._persistence.set("relay", this.relayId || "");
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				this._persistence.set("appId", this.appId);
-				this._persistence.set("s3rn", S3RN.encode(this.s3rn));
-			} catch (e: unknown) {
+				void this._persistence.set("path", this.path);
+				void this._persistence.set("relay", this.relayId || "");
+				void this._persistence.set("appId", this.appId);
+				void this._persistence.set("s3rn", S3RN.encode(this.s3rn));
+			} catch {
 				// pass
 			}
 		});
 
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
 
-		(async () => {
+		void (async () => {
 			const serverSynced = await this.getServerSynced();
 			if (!serverSynced) {
 				await this.onceProviderSynced();
@@ -461,12 +453,10 @@ export class SharedFolder extends HasProvider {
 		this.tokenStore.clear((token) => {
 			return token.token?.folder === this.guid;
 		});
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		if (shouldConnect) {
-			this.connect();
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
+			void this.connect();
 			reconnect.forEach((file) => {
-				file.connect();
+				void file.connect();
 			});
 		}
 		this._server = value;
@@ -519,9 +509,8 @@ export class SharedFolder extends HasProvider {
 		return this._shouldConnect;
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	public set shouldConnect(connect: boolean) {
-		this._settings.update((current) => ({
+		void this._settings.update((current) => ({
 			...current,
 			connect,
 		}));
@@ -568,8 +557,8 @@ export class SharedFolder extends HasProvider {
 		try {
 			// FIXME: race condition because sharedFolder doesn't use postie
 			// for notifyListener updates.
-			this._remote?.relay;
-		} catch (e: unknown) {
+			void this._remote?.relay;
+		} catch {
 			return undefined;
 		}
 		return this._remote;
@@ -583,9 +572,8 @@ export class SharedFolder extends HasProvider {
 		this.relayId = value?.relay?.guid;
 		this.s3rn = this.relayId
 			? new S3RemoteFolder(this.relayId, this.guid)
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			: new S3Folder(this.guid);
-		this._settings.update((current) => ({
+		void this._settings.update((current) => ({
 			...current,
 			...{ relay: this.relayId },
 		}));
@@ -644,9 +632,8 @@ export class SharedFolder extends HasProvider {
 			const awaitingUpdates = await this.awaitingUpdates();
 			console.log(`[SharedFolder] whenReady: awaitingUpdates=${awaitingUpdates}, path=${this.path}, authoritative=${this.authoritative}`);
 			if (awaitingUpdates) {
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				// If this is a brand new shared folder, we want to wait for a connection before we start reserving new guids for local files.
-				this.connect();
+				void this.connect();
 
 				// Timeout after 30s to prevent silent hangs
 				const timeout = new Promise<never>((_, reject) =>
@@ -663,9 +650,8 @@ export class SharedFolder extends HasProvider {
 						})(),
 						timeout
 					]);
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				} catch (e: any) {
-					console.warn(`[SharedFolder] whenReady: ${e.message}`);
+				} catch (e: unknown) {
+					console.warn(`[SharedFolder] whenReady: ${e instanceof Error ? e.message : String(e)}`);
 					// Fall through — allow syncFileTree to run with whatever state we have
 				}
 
@@ -748,19 +734,19 @@ export class SharedFolder extends HasProvider {
 			await this.mkdir(dir);
 			diffLog?.push(`creating directory ${dir}`);
 		}
-		if (meta.type === "markdown") {
+		if (meta.type === SyncType.Document) {
 			diffLog?.push(`created local .md file for remotely added doc ${vpath}`);
 			const doc = await this.downloadDoc(vpath, false);
 			return doc;
 		}
-		if (meta.type === "canvas") {
+		if (meta.type === SyncType.Canvas) {
 			diffLog?.push(
 				`created local .canvas file for remotely added canvas ${vpath}`,
 			);
 			const canvas = await this.downloadCanvas(vpath, false);
 			return canvas;
 		}
-		if (meta.type === "folder") {
+		if (meta.type === SyncType.Folder) {
 			diffLog?.push(`created local folder for remotely added folder ${vpath}`);
 			return this.getSyncFolder(vpath, false);
 		}
@@ -981,10 +967,9 @@ export class SharedFolder extends HasProvider {
 	syncFileTree(syncStore: SyncStore): Promise<void> {
 		// If a sync is already running, mark that we want another sync after
 		if (this.syncFileTreePromise) {
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			this.syncRequestedDuringSync = true;
 			const promise = this.syncFileTreePromise.getPromise();
-			promise.then(() => {
+			void promise.then(() => {
 				if (this.syncRequestedDuringSync) {
 					this.syncRequestedDuringSync = false;
 					return this.syncFileTree(syncStore);
@@ -1002,19 +987,18 @@ export class SharedFolder extends HasProvider {
 				const metaEntries: string[] = [];
 				syncStore.forEach((meta, path) => metaEntries.push(`${path}(${meta.type}:${meta.id?.slice(0,8)})`));
 				const legacyEntries: string[] = [];
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				try { (this.syncStore as any).legacyIds?.forEach?.((guid: string, path: string) => legacyEntries.push(`${path}=${guid?.slice(0,8)}`)); } catch (e: unknown) {}
+				try { (this.syncStore as unknown as Record<string, { forEach?: (cb: (guid: string, path: string) => void) => void }>).legacyIds?.forEach?.((guid: string, path: string) => legacyEntries.push(`${path}=${guid?.slice(0,8)}`)); } catch { /* ignore */ }
 				console.log(`[SharedFolder] syncFileTree START: meta=${metaEntries.length}, legacy=${legacyEntries.length}, path=${this.path}`);
 				if (metaEntries.length > 0) console.log(`[SharedFolder] syncFileTree meta entries:`, metaEntries.slice(0, 20));
 				if (legacyEntries.length > 0) console.log(`[SharedFolder] syncFileTree legacy entries:`, legacyEntries.slice(0, 20));
 
-				this.ydoc.transact(async () => {
+				void this.ydoc.transact(() => {
 					// Sync folder operations first because renames/moves also affect files
 					this.syncStore.migrateUp();
 					this.syncByType(syncStore, diffLog, ops, [SyncType.Folder]);
 				}, this);
 				await Promise.all(ops.map((op) => op.promise));
-				this.ydoc.transact(async () => {
+				void this.ydoc.transact(() => {
 					this.syncByType(
 						syncStore,
 						diffLog,
@@ -1059,11 +1043,10 @@ export class SharedFolder extends HasProvider {
 		return this.syncFileTreePromise.getPromise();
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-floating-promises
 	move(path: string) {
 		this.path = path;
 		this.setLoggers(`[SharedFile](${this.path})`);
-		this._settings.update((current) => ({
+		void this._settings.update((current) => ({
 			...current,
 			path,
 		}));
@@ -1261,13 +1244,13 @@ export class SharedFolder extends HasProvider {
 			// File exists in sync store but not loaded - check its type from metadata
 			const meta = this.syncStore.getMeta(vpath);
 			if (meta) {
-				if (meta.type === "markdown") {
+				if (meta.type === SyncType.Document) {
 					return this.getDoc(vpath);
 				}
-				if (meta.type === "canvas") {
+				if (meta.type === SyncType.Canvas) {
 					return this.getCanvas(vpath);
 				}
-				if (meta.type === "folder") {
+				if (meta.type === SyncType.Folder) {
 					return this.getSyncFolder(vpath, update);
 				}
 				// Default to sync file for other types
@@ -1323,7 +1306,7 @@ export class SharedFolder extends HasProvider {
 		return canvas;
 	}
 
-	async downloadCanvas(vpath: string, update = true): Promise<Canvas> {
+	downloadCanvas(vpath: string, update = true): Canvas {
 		if (!Canvas.checkExtension(vpath)) {
 			throw new Error("unexpected extension");
 		}
@@ -1332,14 +1315,12 @@ export class SharedFolder extends HasProvider {
 		}
 		const guid = this.syncStore.get(vpath);
 		if (!guid) {
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			throw new Error(`called download on item that is not in ids ${vpath}`);
 		}
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		const canvas = this.getOrCreateCanvas(guid, vpath);
-		canvas.markOrigin("remote");
+		void canvas.markOrigin("remote");
 
-		this.backgroundSync.enqueueCanvasDownload(canvas);
+		void this.backgroundSync.enqueueCanvasDownload(canvas);
 
 		this.files.set(guid, canvas);
 		this.fset.add(canvas, update);
@@ -1359,11 +1340,10 @@ export class SharedFolder extends HasProvider {
 		}
 		const canvas = this.getOrCreateCanvas(guid, vpath);
 
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		const originPromise = canvas.getOrigin();
 		const awaitingUpdatesPromise = this.awaitingUpdates();
 
-		(async () => {
+		void (async () => {
 			const exists = await this.exists(canvas);
 			if (!exists) {
 				throw new Error(`Upload failed, doc does not exist at ${vpath}`);
@@ -1374,22 +1354,19 @@ export class SharedFolder extends HasProvider {
 				awaitingUpdatesPromise,
 			]);
 			if (!awaitingUpdates && origin === undefined) {
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
 				this.log(`[${canvas.path}] No Known Peers: Syncing file into ytext.`);
-				this.ydoc.transact(() => {
+				void this.ydoc.transact(() => {
 					try {
-						canvas.applyJSON(contents);
+						void canvas.applyJSON(contents);
 					} catch (e: unknown) {
 						console.warn(contents);
-						// eslint-disable-next-line @typescript-eslint/no-floating-promises
 						throw e;
 					}
 				}, this._persistence);
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				canvas.markOrigin("local");
+				void canvas.markOrigin("local");
 				this.log(`[${canvas.path}] Uploading file`);
 				await this.backgroundSync.enqueueSync(canvas);
-				this.markUploaded(canvas);
+				void this.markUploaded(canvas);
 			}
 		})();
 
@@ -1408,27 +1385,20 @@ export class SharedFolder extends HasProvider {
 		const guid = this.syncStore.get(vpath);
 		if (!guid) {
 			throw new Error("expected guid");
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		}
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		const canvas = this.getOrCreateCanvas(guid, vpath);
 
-		(async () => {
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
-			this.whenReady().then(async () => {
-				const synced = await canvas.getServerSynced();
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				if (canvas.stat.size === 0 && !synced) {
-					this.backgroundSync.enqueueCanvasDownload(canvas);
-				} else if (this.pendingUpload.get(canvas.path)) {
-					// eslint-disable-next-line @typescript-eslint/no-floating-promises
-					this.backgroundSync.enqueueSync(canvas);
-				} else if (!synced && this.relayId) {
-					// For relay-onprem: Canvas hasn't been synced to server yet
-					this.backgroundSync.enqueueCanvasDownload(canvas);
-				}
-			});
-		})();
+		void this.whenReady().then(async () => {
+			const synced = await canvas.getServerSynced();
+			if (canvas.stat.size === 0 && !synced) {
+				void this.backgroundSync.enqueueCanvasDownload(canvas);
+			} else if (this.pendingUpload.get(canvas.path)) {
+				void this.backgroundSync.enqueueSync(canvas);
+			} else if (!synced && this.relayId) {
+				// For relay-onprem: Canvas hasn't been synced to server yet
+				void this.backgroundSync.enqueueCanvasDownload(canvas);
+			}
+		});
 
 		this.files.set(guid, canvas);
 		this.fset.add(canvas, update);
@@ -1480,7 +1450,7 @@ export class SharedFolder extends HasProvider {
 		return doc;
 	}
 
-	async downloadDoc(vpath: string, update = true): Promise<Document> {
+	downloadDoc(vpath: string, update = true): Document {
 		if (!Document.checkExtension(vpath)) {
 			throw new Error("unexpected extension");
 		}
@@ -1489,14 +1459,12 @@ export class SharedFolder extends HasProvider {
 		}
 		const guid = this.syncStore.get(vpath);
 		if (!guid) {
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			throw new Error(`called download on item that is not in ids ${vpath}`);
 		}
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		const doc = this.getOrCreateDoc(guid, vpath);
-		doc.markOrigin("remote");
+		void doc.markOrigin("remote");
 
-		this.backgroundSync.enqueueDownload(doc);
+		void this.backgroundSync.enqueueDownload(doc);
 
 		this.files.set(guid, doc);
 		this.fset.add(doc, update);
@@ -1517,11 +1485,10 @@ export class SharedFolder extends HasProvider {
 		}
 		const doc = this.getOrCreateDoc(guid, vpath);
 
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		const originPromise = doc.getOrigin();
 		const awaitingUpdatesPromise = this.awaitingUpdates();
 
-		(async () => {
+		void (async () => {
 			const exists = await this.exists(doc);
 			if (!exists) {
 				throw new Error(`Upload failed, doc does not exist at ${vpath}`);
@@ -1534,15 +1501,13 @@ export class SharedFolder extends HasProvider {
 			const text = doc.ydoc.getText("contents");
 			if (!awaitingUpdates && origin === undefined) {
 				this.log(`[${doc.path}] No Known Peers: Syncing file into ytext.`);
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				this.ydoc.transact(() => {
+				void this.ydoc.transact(() => {
 					text.insert(0, contents);
 				}, this._persistence);
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				doc.markOrigin("local");
+				void doc.markOrigin("local");
 				this.log(`[${doc.path}] Uploading file`);
 				await this.backgroundSync.enqueueSync(doc);
-				this.markUploaded(doc);
+				void this.markUploaded(doc);
 			}
 		})();
 
@@ -1561,31 +1526,24 @@ export class SharedFolder extends HasProvider {
 		const guid = this.syncStore.get(vpath);
 		if (!guid) {
 			throw new Error("expected guid");
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		}
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		const doc = this.getOrCreateDoc(guid, vpath);
 
-		(async () => {
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
-			this.whenReady().then(async () => {
-				const synced = await doc.getServerSynced();
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				if (doc.tfile?.stat.size === 0 && !synced) {
-					this.backgroundSync.enqueueDownload(doc);
-				} else if (this.pendingUpload.get(doc.path)) {
-					this.backgroundSync.enqueueSync(doc);
-				} else if (!synced && this.relayId) {
-					// For relay-onprem: Document hasn't been synced to server yet.
-					// Even if the file has content, we need to exchange Y.Doc state
-					// eslint-disable-next-line @typescript-eslint/no-floating-promises
-					// with the relay to get the authoritative version (or upload ours
-					// if the relay is empty). Without this, local-only Documents
-					// never connect and content diverges between devices.
-					this.backgroundSync.enqueueDownload(doc);
-				}
-			});
-		})();
+		void this.whenReady().then(async () => {
+			const synced = await doc.getServerSynced();
+			if (doc.tfile?.stat.size === 0 && !synced) {
+				void this.backgroundSync.enqueueDownload(doc);
+			} else if (this.pendingUpload.get(doc.path)) {
+				void this.backgroundSync.enqueueSync(doc);
+			} else if (!synced && this.relayId) {
+				// For relay-onprem: Document hasn't been synced to server yet.
+				// Even if the file has content, we need to exchange Y.Doc state
+				// with the relay to get the authoritative version (or upload ours
+				// if the relay is empty). Without this, local-only Documents
+				// never connect and content diverges between devices.
+				void this.backgroundSync.enqueueDownload(doc);
+			}
+		});
 
 		this.files.set(guid, doc);
 		this.fset.add(doc, update);
@@ -1649,11 +1607,10 @@ export class SharedFolder extends HasProvider {
 		const meta = this.syncStore.getMeta(vpath);
 		if (!meta || !meta.hash) {
 			return this.uploadSyncFile(vpath, update);
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		}
 		const file = this.getOrCreateSyncFile(guid, vpath, meta.hash);
 
-		this.backgroundSync.enqueueSync(file);
+		void this.backgroundSync.enqueueSync(file);
 
 		this.files.set(guid, file);
 		this.fset.add(file, update);
@@ -1675,11 +1632,10 @@ export class SharedFolder extends HasProvider {
 		const meta = this.syncStore.getMeta(vpath);
 		if (!meta || !meta.hash) {
 			return this.uploadSyncFile(vpath, update);
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		}
 		const file = this.getOrCreateSyncFile(guid, vpath, meta.hash);
 
-		this.backgroundSync.enqueueDownload(file);
+		void this.backgroundSync.enqueueDownload(file);
 
 		this.files.set(guid, file);
 		this.fset.add(file, update);
@@ -1704,11 +1660,10 @@ export class SharedFolder extends HasProvider {
 		}
 		if (!(tfile instanceof TFile)) {
 			throw new Error(`Upload failed, expected file at ${vpath}`);
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		}
 		const file = this.getOrCreateSyncFile(guid, vpath, tfile);
 
-		this.backgroundSync.enqueueSync(file);
+		void this.backgroundSync.enqueueSync(file);
 
 		this.fset.add(file, update);
 		return file;
@@ -1734,14 +1689,12 @@ export class SharedFolder extends HasProvider {
 		}
 		const file = this.getOrCreateSyncFile(guid, vpath, tfile);
 
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
 		const meta = this.syncStore.getMeta(vpath);
 		if (!meta) {
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
 			this.log("get syncfile missing meta");
-			file.push();
+			void file.push();
 		} else {
-			file.pull();
+			void file.pull();
 		}
 
 		this.files.set(guid, file);
@@ -1788,7 +1741,7 @@ export class SharedFolder extends HasProvider {
 			this.ydoc.transact(() => {
 				this.syncStore.delete(vpath);
 				if (doc) {
-					doc.cleanup();
+					void doc.cleanup();
 					this.fset.delete(doc);
 				}
 				this.files.delete(guid);
@@ -1843,7 +1796,7 @@ export class SharedFolder extends HasProvider {
 					this.syncStore.delete(oldVPath);
 				}, this);
 				if (file) {
-					file.cleanup();
+					void file.cleanup();
 					file.destroy();
 					this.fset.delete(file);
 				}
@@ -1902,33 +1855,21 @@ export class SharedFolder extends HasProvider {
 		this.ydoc.destroy();
 		this.fset.clear();
 		this._settings.destroy();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this._settings = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.diskBufferStore = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.relayManager = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.backgroundSync = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.loginManager = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.tokenStore = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.fileManager = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.syncStore = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.syncSettingsManager = null as any;
+		this._settings = null as unknown as NamespacedSettings<SharedFolderSettings, Record<string, unknown>>;
+		this.diskBufferStore = null as unknown as DiskBufferStore;
+		this.relayManager = null as unknown as RelayManager;
+		this.backgroundSync = null as unknown as BackgroundSync;
+		this.loginManager = null as unknown as LoginManager;
+		this.tokenStore = null as unknown as LiveTokenStore;
+		this.fileManager = null as unknown as FileManager;
+		this.syncStore = null as unknown as SyncStore;
+		this.syncSettingsManager = null as unknown as SyncSettingsManager;
 		this.whenSyncedPromise?.destroy();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.whenSyncedPromise = null as any;
+		this.whenSyncedPromise = null as unknown as Dependency<void> | null;
 		this.readyPromise?.destroy();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.readyPromise = null as any;
+		this.readyPromise = null as unknown as Dependency<SharedFolder> | null;
 		this.syncFileTreePromise?.destroy();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.syncFileTreePromise = null as any;
+		this.syncFileTreePromise = null as unknown as SharedPromise<void> | null;
 	}
 }
 
@@ -1962,7 +1903,6 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 					this.items().forEach((folder) => {
 						const remote = remotes.find((remote) => remote.guid == folder.guid);
 						if (folder.remote != remote) {
-							// eslint-disable-next-line @typescript-eslint/no-floating-promises
 							updated = true;
 						}
 						folder.remote = remote;
@@ -1978,13 +1918,13 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 	public delete(item: SharedFolder): boolean {
 		item?.destroy();
 		const deleted = super.delete(item);
-		this.settings.update((current) => {
+		void this.settings.update((current) => {
 			return current.filter((settings) => settings.guid !== item.guid);
 		});
 		return deleted;
 	}
 
-	update = debounce(this.notifyListeners, 100);
+	update = debounce(() => this.notifyListeners(), 100);
 
 	public get manager(): RelayManager {
 		return this.relayManager;
@@ -2012,10 +1952,8 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 		this.unsubscribes.forEach((unsub) => {
 			unsub();
 		});
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.relayManager = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.folderBuilder = null as any;
+		this.relayManager = null as unknown as RelayManager;
+		this.folderBuilder = null as unknown as (path: string, guid: string, relayId?: string, awaitingUpdates?: boolean) => SharedFolder;
 	}
 
 	load() {
@@ -2043,7 +1981,7 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 				this._new(folder.path, folder.guid, relayId);
 				updated = true;
 			} catch (e: unknown) {
-				this.warn(`Skipping duplicate folder ${folder.path}: ${e}`);
+				this.warn(`Skipping duplicate folder ${folder.path}: ${e instanceof Error ? e.message : String(e)}`);
 			}
 		});
 

@@ -9,7 +9,7 @@
 import type PocketBase from "pocketbase";
 import type { BaseAuthStore } from "pocketbase";
 import { curryLog } from "../debug";
-import type { IAuthProvider, AuthUser, AuthToken, AuthResponse } from "./IAuthProvider";
+import type { IAuthProvider, AuthUser, AuthResponse } from "./IAuthProvider";
 import type { User } from "../User";
 
 export class PocketBaseAuthAdapter implements IAuthProvider {
@@ -43,21 +43,21 @@ export class PocketBaseAuthAdapter implements IAuthProvider {
 		return this.pb.authStore.token;
 	}
 
-	async getValidToken(): Promise<string | undefined> {
-		return this.pb.authStore.token;
+	getValidToken(): Promise<string | undefined> {
+		return Promise.resolve(this.pb.authStore.token);
 	}
 
-	async loginWithPassword(email: string, password: string): Promise<AuthResponse> {
-		throw new Error(
+	loginWithPassword(email: string, password: string): Promise<AuthResponse> {
+		return Promise.reject(new Error(
 			"Password login is not supported in System 3 mode. Please use OAuth2 authentication."
-		);
+		));
 	}
 
 	async loginWithOAuth2(provider: string): Promise<AuthResponse> {
 		this.log(`OAuth2 login with provider: ${provider}`);
 
 		try {
-			const authData = await this.pb.collection("users").authWithOAuth2({
+			await this.pb.collection("users").authWithOAuth2({
 				provider: provider,
 			});
 
@@ -88,7 +88,7 @@ export class PocketBaseAuthAdapter implements IAuthProvider {
 		this.log("Refreshing PocketBase token...");
 
 		try {
-			const authData = await this.pb.collection("users").authRefresh();
+			await this.pb.collection("users").authRefresh();
 
 			const user = this.userGetter();
 			if (!user) {
@@ -115,11 +115,12 @@ export class PocketBaseAuthAdapter implements IAuthProvider {
 		}
 	}
 
-	async logout(): Promise<void> {
+	logout(): Promise<void> {
 		this.log("Logging out from PocketBase...");
 		this.pb.cancelAllRequests();
 		this.pb.authStore.clear();
 		this.log("Logged out successfully");
+		return Promise.resolve();
 	}
 
 	isTokenValid(): boolean {

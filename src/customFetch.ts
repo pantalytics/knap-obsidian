@@ -14,14 +14,12 @@ if (globalThis.Response === undefined || globalThis.Headers === undefined) {
 		console.warn(
 			"[Relay] Polyfilling Fetch API (Electron Bug: https://github.com/electron/electron/pull/42419)",
 		);
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		if ((globalThis as any).blinkfetch) {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			globalThis.fetch = (globalThis as any).blinkfetch;
+		const globalRecord = globalThis as unknown as Record<string, unknown>;
+		if (globalRecord["blinkfetch"]) {
+			globalThis.fetch = globalRecord["blinkfetch"] as typeof globalThis.fetch;
 			const keys = ["fetch", "Response", "FormData", "Request", "Headers"];
 			for (const key of keys) {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				(globalThis as any)[key] = (globalThis as any)[`blink${key}`];
+				globalRecord[key] = globalRecord[`blink${key}`];
 			}
 		}
 	} catch (e: unknown) {
@@ -66,18 +64,16 @@ export const customFetch = async (
 	// Retry logic for transient network errors (stale keep-alive connections, HTTP/2 RST_STREAM)
 	const MAX_RETRIES = 2;
 	let response: RequestUrlResponse | undefined = undefined;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let lastError: any = undefined;
+	let lastError: unknown = undefined;
 
 	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
 		try {
 			response = await requestUrl(requestParams);
 			lastError = undefined;
 			break;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		} catch (error: any) {
+		} catch (error: unknown) {
 			lastError = error;
-			const msg = error?.message || "";
+			const msg = error instanceof Error ? error.message : "";
 			const isRetryable =
 				msg.includes("net::ERR_FAILED") ||
 				msg.includes("net::ERR_HTTP2") ||
@@ -104,7 +100,7 @@ export const customFetch = async (
 	}
 
 	if (!response) {
-		throw lastError || new Error("Request failed after retries");
+		throw lastError instanceof Error ? lastError : new Error("Request failed after retries");
 	}
 
 	if (!response.arrayBuffer.byteLength) {
@@ -121,8 +117,8 @@ export const customFetch = async (
 	});
 
 	// Add json method to the response
-	const json = async () => {
-		return JSON.parse(response!.text);
+	const json = () => {
+		return Promise.resolve(JSON.parse(response!.text));
 	};
 	Object.defineProperty(fetchResponse, "json", {
 		value: json,
@@ -142,7 +138,7 @@ export const customFetch = async (
 		if (contentType.includes("application/json")) {
 			try {
 				response_json = JSON.parse(response_text);
-			} catch (e: unknown) {
+			} catch {
 				// pass
 			}
 		}

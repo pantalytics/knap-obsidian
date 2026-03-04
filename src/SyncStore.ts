@@ -256,8 +256,7 @@ export class SyncStore extends Observable<SyncStore> {
 
 	start() {
 		withFlag(flag.enableDeltaLogging, () => {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const logObserver = (event: Y.YMapEvent<any>) => {
+			const makeLogObserver = <T>() => (event: Y.YMapEvent<T>) => {
 				let log = "";
 				log += `Transaction origin: ${event.transaction.origin}${event.transaction.origin?.constructor?.name}\n`;
 				event.changes.keys.forEach((change, key) => {
@@ -273,17 +272,19 @@ export class SyncStore extends Observable<SyncStore> {
 				});
 				this.debug(log);
 			};
-			this.legacyIds.observe(logObserver);
-			this.meta.observe(logObserver);
+			const legacyLogObserver = makeLogObserver<string>();
+			const metaLogObserver = makeLogObserver<Meta>();
+			this.legacyIds.observe(legacyLogObserver);
+			this.meta.observe(metaLogObserver);
 			this.unsubscribes.push(() => {
-				this.legacyIds.unobserve(logObserver);
+				this.legacyIds.unobserve(legacyLogObserver);
 			});
 			this.unsubscribes.push(() => {
-				this.meta.unobserve(logObserver);
+				this.meta.unobserve(metaLogObserver);
 			});
 		});
 
-		const syncFileObserver = async (event: Y.YMapEvent<Meta>) => {
+		const syncFileObserver = (event: Y.YMapEvent<Meta>) => {
 			if (event.changes.keys.size === 0) {
 				this.log("no changes detected");
 				return;
@@ -295,7 +296,7 @@ export class SyncStore extends Observable<SyncStore> {
 			this.processFolderOperation(event);
 			this.notifyListeners();
 		};
-		const legacyListener = async (event: Y.YMapEvent<string>) => {
+		const legacyListener = (event: Y.YMapEvent<string>) => {
 			this.migrateUp();
 			this.notifyListeners();
 		};
@@ -533,9 +534,7 @@ export class SyncStore extends Observable<SyncStore> {
 		this.overlay.clear();
 		this.deleteSet.clear();
 		this.renames.clear();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.legacyIds = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.meta = null as any;
+		this.legacyIds = null as unknown as Y.Map<string>;
+		this.meta = null as unknown as Y.Map<Meta>;
 	}
 }

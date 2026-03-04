@@ -1,6 +1,5 @@
 "use strict";
 import { IndexeddbPersistence } from "./storage/y-indexeddb";
-import * as idb from "lib0/indexeddb";
 import * as Y from "yjs";
 import { HasProvider } from "./HasProvider";
 import { LoginManager } from "./LoginManager";
@@ -94,8 +93,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 			throw e;
 		}
 
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
-		this.whenSynced().then(() => {
+		void this.whenSynced().then(() => {
 			const statsObserver = (event: Y.YTextEvent) => {
 				const origin = event.transaction.origin;
 				if (event.changes.keys.size === 0) return;
@@ -108,27 +106,21 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 			});
 			this.updateStats();
 			try {
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				this._persistence.set("path", this.path);
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				this._persistence.set("relay", this.sharedFolder.relayId || "");
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				this._persistence.set("appId", this.sharedFolder.appId);
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				this._persistence.set("s3rn", S3RN.encode(this.s3rn));
-			} catch (e: unknown) {
+				void this._persistence.set("path", this.path);
+				void this._persistence.set("relay", this.sharedFolder.relayId || "");
+				void this._persistence.set("appId", this.sharedFolder.appId);
+				void this._persistence.set("s3rn", S3RN.encode(this.s3rn));
+			} catch {
 				// pass
 			}
 
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
-			(async () => {
+			void (async () => {
 				const serverSynced = await this.getServerSynced();
 				if (!serverSynced) {
 					await this.onceProviderSynced();
 					await this.markSynced();
 				}
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				this.sharedFolder.markUploaded(this);
+				void this.sharedFolder.markUploaded(this);
 			})();
 		});
 
@@ -137,7 +129,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 				let log = "";
 				log += `Transaction origin: ${event.transaction.origin} ${event.transaction.origin?.constructor?.name}\n`;
 				for (const delta of event.changes.delta) {
-					log += `insert: ${delta.insert}\n\nretain: ${delta.retain}\n\ndelete: ${delta.delete}\n`;
+					log += `insert: ${String(delta.insert)}\n\nretain: ${delta.retain}\n\ndelete: ${delta.delete}\n`;
 				}
 				this.debug(log);
 			};
@@ -159,7 +151,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 		this.updateStats();
 	}
 
-	async process(fn: (data: string) => string) {
+	process(fn: (data: string) => string) {
 		if (this.tfile && flags().enableAutomaticDiffResolution) {
 			this.pendingOps.push(fn);
 		}
@@ -283,8 +275,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 			applied.push(fn);
 
 			if (text == contents) {
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				this.clearDiskBuffer();
+				void this.clearDiskBuffer();
 				if (og == this.text) {
 					diffMatchPatch(this.ydoc, text, this);
 				} else {
@@ -305,8 +296,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 		}
 		this.pendingOps = [];
 		if (!stale) {
-			// eslint-disable-next-line @typescript-eslint/no-floating-promises
-			this.clearDiskBuffer();
+			void this.clearDiskBuffer();
 		}
 		return stale;
 	}
@@ -359,8 +349,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 			if (awaitingUpdates) {
 				// If this is a brand new shared folder, we want to wait for a connection before we start reserving new guids for local files.
 				this.log("awaiting updates");
-				// eslint-disable-next-line @typescript-eslint/no-floating-promises
-				this.connect();
+				void this.connect();
 				await this.onceConnected();
 				this.log("connected");
 				await this.onceProviderSynced();
@@ -419,12 +408,11 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 			this.warn("skipping save for pending delete", this.path);
 			return;
 		}
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
-		this.vault.modify(this.tfile, this.text);
+		void this.vault.modify(this.tfile, this.text);
 		this.warn("file saved", this.path);
 	}
 
-	requestSave = debounce(this.save, 2000);
+	requestSave = debounce(() => this.save(), 2000);
 
 	async markOrigin(origin: "local" | "remote"): Promise<void> {
 		await this._persistence.setOrigin(origin);
@@ -457,25 +445,20 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 			this._diskBuffer.contents = "";
 			this._diskBuffer = undefined;
 		}
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this._diskBufferStore = null as any;
+		this._diskBufferStore = null as unknown as DiskBufferStore | undefined;
 		this.whenSyncedPromise?.destroy();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.whenSyncedPromise = null as any;
+		this.whenSyncedPromise = null as unknown as Dependency<void> | null;
 		this.readyPromise?.destroy();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.readyPromise = null as any;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this._parent = null as any;
+		this.readyPromise = null as unknown as Dependency<Document> | undefined;
+		this._parent = null as unknown as SharedFolder;
 	}
 
-	public async read(): Promise<string> {
-		// eslint-disable-next-line @typescript-eslint/no-floating-promises
+	public read(): string {
 		return this.text;
 	}
 
-	public async cleanup(): Promise<void> {
-		this._diskBufferStore?.removeDiskBuffer(this.guid);
+	public cleanup(): void {
+		void this._diskBufferStore?.removeDiskBuffer(this.guid);
 	}
 
 	// Helper method to update file stats
@@ -485,13 +468,13 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 	}
 
 	// Additional methods that might be useful
-	public async write(content: string): Promise<void> {
+	public write(content: string): void {
 		this.ytext.delete(0, this.ytext.length);
 		this.ytext.insert(0, content);
 		this.updateStats();
 	}
 
-	public async append(content: string): Promise<void> {
+	public append(content: string): void {
 		this.ytext.insert(this.ytext.length, content);
 		this.updateStats();
 	}

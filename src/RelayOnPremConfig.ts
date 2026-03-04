@@ -19,7 +19,7 @@ export function generateServerId(controlPlaneUrl: string): string {
 		const hostPart = url.hostname.replace(/\./g, "-");
 		const portPart = url.port || (url.protocol === "https:" ? "443" : "80");
 		return `${hostPart}-${portPart}`;
-	} catch (e: unknown) {
+	} catch {
 		// Fallback to timestamp-based ID if URL parsing fails
 		return `server-${Date.now()}`;
 	}
@@ -232,7 +232,7 @@ export function migrateRelayOnPremSettings(
 	let serverName: string;
 	try {
 		serverName = new URL(legacy.controlPlaneUrl).hostname;
-	} catch (e: unknown) {
+	} catch {
 		serverName = "Relay Server";
 	}
 
@@ -281,7 +281,7 @@ export function validateServerConfig(server: RelayOnPremServer): {
 			if (!url.protocol.match(/^https?:$/)) {
 				errors.push("Control Plane URL must use HTTP or HTTPS protocol");
 			}
-		} catch (e: unknown) {
+		} catch {
 			errors.push("Control Plane URL is invalid");
 		}
 	}
@@ -292,7 +292,7 @@ export function validateServerConfig(server: RelayOnPremServer): {
 			if (!url.protocol.match(/^wss?:$/)) {
 				errors.push("Relay Server URL must use WS or WSS protocol");
 			}
-		} catch (e: unknown) {
+		} catch {
 			errors.push("Relay Server URL is invalid");
 		}
 	}

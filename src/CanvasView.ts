@@ -1,12 +1,10 @@
 import type { TFile, TextFileView, WorkspaceLeaf } from "obsidian";
 
 export interface ObsidianCanvas extends TextFileView {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	__proto__: any;
+	__proto__: unknown;
 	importData(data: CanvasData, noclue: boolean): void;
 	requestSave(): void;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	applyHistory(data: any): void;
+	applyHistory(data: unknown): void;
 	getData(): CanvasData;
 	markMoved(item: CanvasNode | CanvasEdge): void;
 	markDirty(item: CanvasNode | CanvasEdge): void;

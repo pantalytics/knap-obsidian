@@ -48,7 +48,7 @@ export class Dependency<T> {
 					);
 					const [success, result] = this.checkFunction();
 					if (success) {
-						onSuccess(result);
+						void onSuccess(result);
 					}
 				}, 3000);
 				this.promiseFunction().then(
@@ -63,7 +63,7 @@ export class Dependency<T> {
 							clearTimeout(this.timeoutId);
 						}
 						this.currentPromise = null; // Reset on failure
-						reject(error);
+						reject(error instanceof Error ? error : new Error(String(error)));
 					},
 				);
 			});
@@ -112,7 +112,7 @@ export class SharedPromise<T> {
 							clearTimeout(this.timeoutId);
 						}
 						this.currentPromise = null;
-						reject(error);
+						reject(error instanceof Error ? error : new Error(String(error)));
 					},
 				);
 			});
@@ -131,8 +131,7 @@ export class SharedPromise<T> {
 
 export function withTimeoutWarning<T>(
 	promise: Promise<T>,
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	...logArgs: any[]
+	...logArgs: unknown[]
 ): Promise<T> {
 	return new Promise((resolve, reject) => {
 		const timeoutId = window.setTimeout(() => {
@@ -146,7 +145,7 @@ export function withTimeoutWarning<T>(
 			},
 			(error) => {
 				clearTimeout(timeoutId);
-				reject(error);
+				reject(error instanceof Error ? error : new Error(String(error)));
 			},
 		);
 	});
