@@ -200,7 +200,9 @@ export function curryLog(initialText: string, level: LogLevel = "log") {
 
 			if (!logConfig.disableConsole) {
 				if (logConfig.allowStackTraces || level === 'debug' || level === 'log') {
-					console[level](formatLogEntry(logEntry));
+					if (level === "warn") console.warn(formatLogEntry(logEntry));
+					else if (level === "error") console.error(formatLogEntry(logEntry));
+					else console.debug(formatLogEntry(logEntry));
 				} else {
 					const styles = {
 						warn: 'color: #ff8c00; background: rgba(255, 140, 0, 0.1); font-weight: normal; padding: 1px 4px; border-radius: 2px;',

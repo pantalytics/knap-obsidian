@@ -178,9 +178,9 @@ export class S3RN {
 				if (!this.validateUUID(entity.fileId)) {
 					throw new Error("Invalid document UUID");
 				}
-				s3rn += `:sha256:${String(entity.hash)}`;
-				s3rn += `:contentType:${String(entity.contentType)}`;
-				s3rn += `:contentLength:${String(entity.contentLength)}`;
+				s3rn += `:sha256:${entity.hash as string}`;
+				s3rn += `:contentType:${entity.contentType as string}`;
+				s3rn += `:contentLength:${entity.contentLength as string}`;
 			}
 		}
 

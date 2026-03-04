@@ -176,7 +176,7 @@ export class RelayOnPremAuthStore {
 	 */
 	private _storageGet(key: string): unknown {
 		const hasLocalStorage = typeof window !== "undefined" && window?.localStorage;
-		this.log(`_storageGet: key=${key}, hasLocalStorage=${String(hasLocalStorage)}`);
+		this.log(`_storageGet: key=${key}, hasLocalStorage=${String(!!hasLocalStorage)}`);
 
 		if (hasLocalStorage) {
 			// Try with retries in case localStorage is temporarily unavailable
@@ -224,7 +224,7 @@ export class RelayOnPremAuthStore {
 	 */
 	private _storageSet(key: string, value: unknown) {
 		const hasLocalStorage = typeof window !== "undefined" && window?.localStorage;
-		this.log(`_storageSet: key=${key}, hasLocalStorage=${String(hasLocalStorage)}`);
+		this.log(`_storageSet: key=${key}, hasLocalStorage=${String(!!hasLocalStorage)}`);
 
 		if (hasLocalStorage) {
 			try {
