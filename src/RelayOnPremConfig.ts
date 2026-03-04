@@ -136,7 +136,7 @@ export function migrateRelayOnPremSettings(
 
 	// Check if already in new format (has servers array)
 	if ("servers" in oldSettings && Array.isArray(oldSettings.servers)) {
-		const orig = oldSettings as RelayOnPremSettings;
+		const orig = oldSettings;
 		let changed = false;
 		let renamedServerId: string | undefined;
 

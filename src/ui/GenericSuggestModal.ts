@@ -25,7 +25,7 @@ export class GenericSuggestModal<T> extends Modal {
 		const contentEl = modalContainer || modalEl;
 
 		this.component = new this.ComponentClass({
-			target: contentEl as Element,
+			target: contentEl,
 			props: {
 				...this.componentProps,
 				autofocus: true,

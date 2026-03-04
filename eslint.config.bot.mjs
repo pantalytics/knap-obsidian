@@ -55,6 +55,13 @@ export default tseslint.config(
 			"no-prototype-builtins": "error",
 		},
 	},
+	// Bot doesn't apply @typescript-eslint/unbound-method to JS files
+	{
+		files: ["**/*.js"],
+		rules: {
+			"@typescript-eslint/unbound-method": "off",
+		},
+	},
 	{
 		ignores: [
 			"node_modules/",

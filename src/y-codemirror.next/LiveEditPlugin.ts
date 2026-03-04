@@ -173,7 +173,7 @@ export class LiveCMPluginValue implements PluginValue {
 		);
 		this.debug("created");
 
-		// eslint-disable-next-line @typescript-eslint/no-this-alias
+		// eslint-disable-next-line @typescript-eslint/no-this-alias -- needed to preserve `this` reference inside getPatcher callback functions where `this` is rebound
 		const liveEditPlugin = this;
 		let fmSave = false;
 

@@ -12,6 +12,7 @@ import { RelayOnPremShareClientManager, type ShareWithServer } from "../RelayOnP
 import { FolderSuggestModal } from "./FolderSuggestModal";
 import { getDefaultServer, type RelayOnPremServer } from "../RelayOnPremConfig";
 import { S3RN } from "../S3RN";
+import { confirmDialog, promptDialog } from "./dialogs";
 
 export class ShareManagementModal extends Modal {
 	private shares: ShareWithServer[] = [];
@@ -186,7 +187,7 @@ export class ShareManagementModal extends Modal {
 						return await this.plugin.shareClient.getServerInfo();
 					}
 				} catch {
-					console.log("[ShareManagement] Failed to get server info, web publishing disabled");
+					console.debug("[ShareManagement] Failed to get server info, web publishing disabled");
 				}
 				return null;
 			})();
@@ -211,7 +212,7 @@ export class ShareManagementModal extends Modal {
 				} catch (inviteError: unknown) {
 					const errorMessage = inviteError instanceof Error ? inviteError.message : "";
 					if (errorMessage.includes("403") || errorMessage.includes("Insufficient permissions")) {
-						console.log("[ShareManagement] User is not owner, skipping invites");
+						console.debug("[ShareManagement] User is not owner, skipping invites");
 						this.isOwner = false;
 					} else {
 						throw inviteError;
@@ -466,8 +467,12 @@ export class ShareManagementModal extends Modal {
 					button
 						.setButtonText("Disconnect")
 						.setWarning()
-						.onClick(() => {
-							if (!confirm(`Disconnect local folder "${localFolder.path}" from this share? Local files will not be deleted.`)) return;
+						.onClick(async () => {
+							const ok = await confirmDialog(
+								this.app,
+								`Disconnect local folder "${localFolder.path}" from this share? Local files will not be deleted.`
+							);
+							if (!ok) return;
 							this.plugin.sharedFolders.delete(localFolder);
 							this.plugin.folderNavDecorations?.quickRefresh();
 							new Notice("Folder disconnected");
@@ -559,7 +564,7 @@ export class ShareManagementModal extends Modal {
 		// If changing to protected, ask for password
 		let password: string | undefined;
 		if (visibility === "protected") {
-			const passwordInput = prompt("Enter password for protected share:");
+			const passwordInput = await promptDialog(this.app, "Enter password for protected share:");
 			if (!passwordInput) {
 				new Notice("Password is required for protected shares");
 				this.renderContent(); // Re-render to reset dropdown
@@ -569,7 +574,8 @@ export class ShareManagementModal extends Modal {
 		}
 
 		// Confirm the change
-		const confirmed = confirm(
+		const confirmed = await confirmDialog(
+			this.app,
 			`Change visibility to ${visibility}?${visibility === "public" ? "\n\nWarning: This will make the share accessible to anyone with the link." : ""}`
 		);
 		if (!confirmed) {
@@ -788,7 +794,7 @@ export class ShareManagementModal extends Modal {
 
 		try {
 			const items = this.getFolderItems(this.selectedShare.path);
-			console.log("[WebSync] Folder items:", items.length, "files from path:", this.selectedShare.path);
+			console.debug("[WebSync] Folder items:", items.length, "files from path:", this.selectedShare.path);
 			if (items.length === 0) {
 				new Notice("Folder is empty or could not be read");
 				return;
@@ -797,14 +803,14 @@ export class ShareManagementModal extends Modal {
 			let updatedShare;
 
 			if (this.plugin.shareClientManager) {
-				console.log("[WebSync] Using shareClientManager, serverId:", this.selectedShare.serverId);
+				console.debug("[WebSync] Using shareClientManager, serverId:", this.selectedShare.serverId);
 				updatedShare = await this.plugin.shareClientManager.updateShare(
 					this.selectedShare.serverId,
 					this.selectedShare.id,
 					{ web_folder_items: items }
 				);
 			} else if (this.plugin.shareClient) {
-				console.log("[WebSync] Using shareClient (single-server)");
+				console.debug("[WebSync] Using shareClient (single-server)");
 				updatedShare = await this.plugin.shareClient.updateShare(
 					this.selectedShare.id,
 					{ web_folder_items: items }
@@ -813,7 +819,7 @@ export class ShareManagementModal extends Modal {
 				throw new Error("No share client available");
 			}
 
-			console.log("[WebSync] updateShare response:", JSON.stringify({
+			console.debug("[WebSync] updateShare response:", JSON.stringify({
 				id: updatedShare.id,
 				web_slug: updatedShare.web_slug,
 				web_published: updatedShare.web_published,
@@ -827,7 +833,7 @@ export class ShareManagementModal extends Modal {
 
 			// Sync content of each markdown file (v1.8 web editing)
 			const slug = this.selectedShare.web_slug;
-			console.log("[WebSync] Checking web_slug for content sync:", slug);
+			console.debug("[WebSync] Checking web_slug for content sync:", slug);
 			if (slug) {
 				let syncedFiles = 0;
 				const failedFiles: string[] = [];
@@ -835,12 +841,12 @@ export class ShareManagementModal extends Modal {
 					if (item.type === "doc") {
 						try {
 							const filePath = `${this.selectedShare.path}/${item.path}`;
-							console.log("[WebSync] Reading content from:", filePath);
+							console.debug("[WebSync] Reading content from:", filePath);
 							const content = await this.getDocumentContent(filePath);
-							console.log("[WebSync] Content for", item.path, ":", content ? `${content.length} chars` : "NULL");
+							console.debug("[WebSync] Content for", item.path, ":", content ? `${content.length} chars` : "NULL");
 							if (content) {
 								if (this.plugin.shareClientManager) {
-									console.log("[WebSync] Calling syncFolderFileContent for:", item.path);
+									console.debug("[WebSync] Calling syncFolderFileContent for:", item.path);
 									await this.plugin.shareClientManager.syncFolderFileContent(
 										this.selectedShare.serverId,
 										slug,
@@ -855,7 +861,7 @@ export class ShareManagementModal extends Modal {
 									);
 								}
 								syncedFiles++;
-								console.log("[WebSync] Successfully synced:", item.path);
+								console.debug("[WebSync] Successfully synced:", item.path);
 							}
 						} catch (error: unknown) {
 							console.error(`[WebSync] Failed to sync content for ${item.path}:`, error);
@@ -869,7 +875,7 @@ export class ShareManagementModal extends Modal {
 					new Notice(`Folder synced: ${items.length} items, ${syncedFiles} files with content!`);
 				}
 			} else {
-				console.log("[WebSync] No web_slug, skipping content sync");
+				console.debug("[WebSync] No web_slug, skipping content sync");
 				new Notice(`Folder synced with ${items.length} items!`);
 			}
 		} catch (error: unknown) {
@@ -932,11 +938,11 @@ export class ShareManagementModal extends Modal {
 		try {
 			const sharedFolder = this.plugin.sharedFolders.lookup(path);
 			if (!sharedFolder) {
-				console.log("[ShareManagement] No SharedFolder found for path:", path);
+				console.debug("[ShareManagement] No SharedFolder found for path:", path);
 				return null;
 			}
 			const docId = S3RN.encode(sharedFolder.s3rn);
-			console.log("[ShareManagement] Got doc_id for path:", path, "->", docId);
+			console.debug("[ShareManagement] Got doc_id for path:", path, "->", docId);
 			return docId;
 		} catch (error: unknown) {
 			console.error("[ShareManagement] Failed to get doc_id for path:", path, error);
@@ -949,7 +955,8 @@ export class ShareManagementModal extends Modal {
 
 		// Warn if enabling web-publish on a private share
 		if (enabled && this.selectedShare.visibility === "private") {
-			const makePublic = confirm(
+			const makePublic = await confirmDialog(
+				this.app,
 				"This share is private. Web-published pages from private shares require authentication.\n\n" +
 				"Would you like to change visibility to public so anyone can view the web page?\n\n" +
 				"Click OK to make public, or Cancel to keep private."
@@ -1428,7 +1435,7 @@ export class ShareManagementModal extends Modal {
 	private async revokeInvite(inviteId: string) {
 		if (!this.selectedShare) return;
 
-		const confirmed = confirm("Are you sure you want to revoke this invite link?");
+		const confirmed = await confirmDialog(this.app, "Are you sure you want to revoke this invite link?");
 		if (!confirmed) return;
 
 		try {
@@ -1635,7 +1642,7 @@ export class ShareManagementModal extends Modal {
 
 			// Create local SharedFolder for visual indicators and sync
 			if (kind === "folder") {
-				await this.createLocalSharedFolder(share.path, share.id, serverId);
+				this.createLocalSharedFolder(share.path, share.id, serverId);
 			}
 
 			await this.loadShares();
@@ -1665,7 +1672,7 @@ export class ShareManagementModal extends Modal {
 			// Trigger visual indicators refresh
 			this.plugin.folderNavDecorations?.quickRefresh();
 
-			console.log(`[RelayOnPrem] Created SharedFolder for ${folderPath} on server ${serverId}`);
+			console.debug(`[RelayOnPrem] Created SharedFolder for ${folderPath} on server ${serverId}`);
 		} catch (error: unknown) {
 			console.error(`[RelayOnPrem] Failed to create SharedFolder:`, error);
 		}
@@ -1756,8 +1763,9 @@ export class ShareManagementModal extends Modal {
 		if (!this.selectedShare) return;
 
 		// Confirmation
-		const confirmed = confirm(
-			`Are you sure you want to delete "${this.selectedShare.path}"? This action cannot be undone.`,
+		const confirmed = await confirmDialog(
+			this.app,
+			`Are you sure you want to delete "${this.selectedShare.path}"? This action cannot be undone.`
 		);
 
 		if (!confirmed) return;

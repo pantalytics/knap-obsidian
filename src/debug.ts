@@ -206,7 +206,7 @@ export function curryLog(initialText: string, level: LogLevel = "log") {
 						warn: 'color: #ff8c00; background: rgba(255, 140, 0, 0.1); font-weight: normal; padding: 1px 4px; border-radius: 2px;',
 						error: 'color: #ff5555; background: rgba(255, 85, 85, 0.1); font-weight: normal; padding: 1px 4px; border-radius: 2px;'
 					};
-					console.log(`%c${formatLogEntry(logEntry)}`, styles[level]);
+					console.debug(`%c${formatLogEntry(logEntry)}`, styles[level]);
 				}
 			}
 

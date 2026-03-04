@@ -140,7 +140,7 @@ export function createUserFromOAuth(
 	id: string,
 	token: string,
 	authStoreModel: unknown,
-	rawUser?: GoogleUser | GitHubUser | MicrosoftUser | OIDCUser | unknown,
+	rawUser?: unknown,
 ): User {
 	const normalizedOAuth = rawUser ? normalizeOAuthUser(rawUser) : null;
 
@@ -554,7 +554,7 @@ export class LoginManager extends Observable<LoginManager> {
 		if (providers) {
 			const oidcProvider = providers["oidc"];
 			if (oidcProvider?.info?.authUrl) {
-				console.log("[OIDC Provider] Creating dynamic intercept for authUrl:", oidcProvider.info.authUrl);
+				console.debug("[OIDC Provider] Creating dynamic intercept for authUrl:", oidcProvider.info.authUrl);
 				intercepts.push(createInterceptFromAuthUrl(oidcProvider.info.authUrl));
 			}
 		} else {
@@ -572,7 +572,7 @@ export class LoginManager extends Observable<LoginManager> {
 		// This method can be called to update webview intercepts with provider info
 		// Implementation depends on how the main plugin handles intercept updates
 		const newIntercepts = this.getWebviewIntercepts(providers);
-		console.log("[OIDC Provider] Updated webview intercepts:", newIntercepts.map(r => r.source));
+		console.debug("[OIDC Provider] Updated webview intercepts:", newIntercepts.map(r => r.source));
 		return newIntercepts;
 	}
 

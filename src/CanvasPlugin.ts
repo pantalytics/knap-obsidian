@@ -112,7 +112,7 @@ export class CanvasPlugin extends HasLogging {
 			(() => {
 				const plugin = new ViewHookPlugin(
 					embedViewTyped,
-					this.relayCanvas.sharedFolder.proxy.getDoc(embedViewTyped.file!.path),
+					this.relayCanvas.sharedFolder.proxy.getDoc(embedViewTyped.file.path),
 				);
 				plugin.initialize().catch((error: unknown) => {
 					this.error(
@@ -137,7 +137,7 @@ export class CanvasPlugin extends HasLogging {
 			this.relayCanvas.path,
 		);
 
-		// eslint-disable-next-line
+		// eslint-disable-next-line @typescript-eslint/no-this-alias -- needed to preserve `this` reference inside getPatcher callback functions
 		const that = this;
 		const exported = Canvas.exportCanvasData(this.relayCanvas.ydoc);
 		const hasCanvasData =

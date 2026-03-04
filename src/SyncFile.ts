@@ -430,7 +430,7 @@ export class SyncFile
 			}
 			if (hash !== this.meta.hash) {
 				// local is newer
-				if (this.stat.mtime > (this.meta as FileMetas).synctime) {
+				if (this.stat.mtime > this.meta.synctime) {
 					await this.push();
 					return;
 				}
@@ -539,7 +539,7 @@ export class SyncFile
 	}
 
 	public async delete(): Promise<void> {
-		await this.caf.clear();
+		this.caf.clear();
 		return this.vault.delete(this.tfile);
 	}
 

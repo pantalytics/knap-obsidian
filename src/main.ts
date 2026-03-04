@@ -108,6 +108,7 @@ import type { IAuthProvider } from "./auth/IAuthProvider";
 import { RelayOnPremShareClient, type FolderItem } from "./RelayOnPremShareClient";
 import { RelayOnPremShareClientManager } from "./RelayOnPremShareClientManager";
 import { QuickShareModal } from "./ui/QuickShareModal";
+import { confirmDialog } from "./ui/dialogs";
 
 interface DebugSettings {
 	debugging: boolean;
@@ -666,6 +667,7 @@ export default class Live extends Plugin {
 			vaultName,
 			3,
 			relayOnPremTokenProvider,
+			this.app,
 		);
 
 		this.networkStatus = new NetworkStatus(this.timeProvider, HEALTH_URL);
@@ -805,6 +807,7 @@ export default class Live extends Plugin {
 									.setIcon("settings")
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
+											// eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for optional polyfill
 											const { ShareManagementModal } = require("./ui/ShareManagementModal");
 											new ShareManagementModal(this.app, this, folder.settings.onpremServerId).open();
 										} else {
@@ -836,6 +839,7 @@ export default class Live extends Plugin {
 									.setIcon("settings")
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
+											// eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for optional polyfill
 											const { ShareManagementModal } = require("./ui/ShareManagementModal");
 											new ShareManagementModal(this.app, this, folder.settings.onpremServerId).open();
 										} else {
@@ -850,7 +854,8 @@ export default class Live extends Plugin {
 										.setTitle("Relay: unshare folder")
 										.setIcon("folder-x")
 										.onClick(async () => {
-											const confirmed = confirm(
+											const confirmed = await confirmDialog(
+												this.app,
 												`Are you sure you want to unshare "${folder.path}"?\n\nThis will remove the share from the server and disconnect this folder.`
 											);
 											if (!confirmed) return;
@@ -859,7 +864,7 @@ export default class Live extends Plugin {
 												// Delete from server
 												if (this.shareClientManager && folder.guid) {
 													await this.shareClientManager.deleteShare(
-														folder.settings!.onpremServerId!,
+														folder.settings.onpremServerId!,
 														folder.guid
 													);
 												}
@@ -994,6 +999,7 @@ export default class Live extends Plugin {
 			this.hashStore,
 			this.backgroundSync,
 			folderSettings,
+			this.app,
 			relayId,
 			awaitingUpdates,
 		);
@@ -1204,6 +1210,7 @@ export default class Live extends Plugin {
 					.setTitle("Manage shares")
 					.setIcon("folder-shared")
 					.onClick(() => {
+						// eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for optional polyfill
 						const { ShareManagementModal } = require("./ui/ShareManagementModal");
 						new ShareManagementModal(this.app, this).open();
 					});
@@ -1423,7 +1430,7 @@ export default class Live extends Plugin {
 	}
 
 	patchWebviewer(): void {
-		// eslint-disable-next-line
+		// eslint-disable-next-line @typescript-eslint/no-this-alias -- needed to preserve `this` reference inside getPatcher callback functions
 		const plugin = this;
 		try {
 			if (this.webviewerPatched) {
@@ -1447,9 +1454,17 @@ export default class Live extends Plugin {
 				return;
 			}
 
+			// Capture the open-url event in a closure so the getter below can access it
+			// without relying on the deprecated window.event global
+			let capturedOpenUrlEvent: { type?: string; detail?: { url?: string } } | undefined;
+			const openUrlListener = (e: Event) => {
+				capturedOpenUrlEvent = e as unknown as { type?: string; detail?: { url?: string } };
+			};
+			window.addEventListener("open-url", openUrlListener, true);
+
 			Object.defineProperty(options, "openExternalURLs", {
 				get() {
-					const currentEvent = window.event as unknown as { type?: string; detail?: { url?: string } } | undefined;
+					const currentEvent = capturedOpenUrlEvent;
 					if (currentEvent?.type === "open-url" && currentEvent?.detail?.url) {
 						const url = currentEvent.detail.url;
 						for (const pattern of plugin.interceptedUrls) {
@@ -1474,6 +1489,7 @@ export default class Live extends Plugin {
 			});
 
 			this.register(() => {
+				window.removeEventListener("open-url", openUrlListener, true);
 				Object.defineProperty(options, "openExternalURLs", originalDesc);
 			});
 
@@ -1650,7 +1666,7 @@ export default class Live extends Plugin {
 			}),
 		);
 
-		// eslint-disable-next-line @typescript-eslint/no-this-alias
+		// eslint-disable-next-line @typescript-eslint/no-this-alias -- needed to preserve `this` reference inside getPatcher callback functions where `this` is rebound
 		const plugin = this;
 
 		getPatcher().patch(MarkdownView.prototype, {

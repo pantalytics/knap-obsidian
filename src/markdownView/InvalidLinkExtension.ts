@@ -111,6 +111,7 @@ export class InvalidLinkPluginValue {
 			to: number;
 		}[] = [];
 		const decorationSets = view.state.facet(EditorView.decorations);
+		// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- DecorationSet from @codemirror/view is an error type, union is intentional
 		decorationSets.forEach(
 			(
 				decoSetOrFunc: DecorationSet | ((view: EditorView) => DecorationSet),

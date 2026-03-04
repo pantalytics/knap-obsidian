@@ -563,7 +563,7 @@ export class NamespacedSettings<
 				} else {
 					// Update root level of array item
 					baseArray[index] = {
-						...(baseArray[index] as Record<string, unknown>),
+						...baseArray[index],
 						...(value as Record<string, unknown>),
 						[arrayPattern.key]: arrayPattern.value,
 					};

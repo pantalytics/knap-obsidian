@@ -139,15 +139,15 @@ export class TextFileViewPlugin extends HasLogging {
 			}
 			if (stale && this.view) {
 				this.warn("Document is stale - showing merge banner");
-				void this.view.checkStale().then(async (stale) => {
+				void this.view.checkStale().then((stale) => {
 					if (!stale) {
-						await this.syncViewToCRDT();
+						this.syncViewToCRDT();
 					}
 				}); // This will show the merge banner
 			} else {
 				// Document is authoritative, force view to match CRDT state (like getKeyFrame in LiveEditPlugin)
 				this.warn("Document is authoritative - syncing view to CRDT state");
-				await this.syncViewToCRDT();
+				this.syncViewToCRDT();
 			}
 		}
 	}
@@ -190,7 +190,7 @@ export class TextFileViewPlugin extends HasLogging {
 			this.view.document.path,
 		);
 
-		// eslint-disable-next-line
+		// eslint-disable-next-line @typescript-eslint/no-this-alias -- needed to preserve `this` reference inside getPatcher callback functions
 		const that = this;
 
 		this.unsubscribes.push(
@@ -317,6 +317,7 @@ export class TextFileViewPlugin extends HasLogging {
 		this.viewHookPlugin?.destroy();
 
 		this.observer = null as unknown as ((event: YTextEvent, tr: Transaction) => void) | undefined;
+		// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- YText from yjs internals is an error type, union with undefined is intentional
 		this._ytext = null as unknown as YText | undefined;
 		this.view = null as unknown as LiveView<TextFileView>;
 		this.doc = null as unknown as Document | undefined;

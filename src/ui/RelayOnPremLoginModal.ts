@@ -42,7 +42,7 @@ export class RelayOnPremLoginModal extends Modal {
 				this.oauthProviders = await this.shareClient.getOAuthProviders();
 			} catch (error: unknown) {
 				// OAuth providers not available, continue with password-only login
-				console.log("OAuth providers not available:", error);
+				console.debug("OAuth providers not available:", error);
 			}
 		}
 

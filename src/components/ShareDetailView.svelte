@@ -9,6 +9,7 @@
 	import type { ShareWithServer } from "../RelayOnPremShareClientManager";
 	import { FolderSuggestModal } from "../ui/FolderSuggestModal";
 	import { S3RN } from "../S3RN";
+	import { confirmDialog, promptDialog, choiceDialog } from "../ui/dialogs";
 
 	export let plugin: Live;
 	export let server: RelayOnPremServer;
@@ -206,7 +207,7 @@
 	}
 
 	async function revokeInvite(inviteId: string) {
-		if (!confirm("Revoke this invite link?")) return;
+		if (!(await confirmDialog(plugin.app, "Revoke this invite link?"))) return;
 		try {
 			if (plugin.shareClientManager) {
 				await plugin.shareClientManager.revokeInvite(share.serverId, share.id, inviteId);
@@ -224,7 +225,7 @@
 	async function updateVisibility(newVisibility: string) {
 		let password: string | undefined;
 		if (newVisibility === "protected") {
-			const input = prompt("Enter password for protected share:");
+			const input = await promptDialog(plugin.app, "Enter password for protected share:");
 			if (!input) {
 				new Notice("Password is required for protected shares");
 				currentShare = { ...currentShare }; // trigger re-render to reset
@@ -232,7 +233,7 @@
 			}
 			password = input;
 		}
-		if (!confirm(`Change visibility to ${newVisibility}?`)) {
+		if (!(await confirmDialog(plugin.app, `Change visibility to ${newVisibility}?`))) {
 			currentShare = { ...currentShare };
 			return;
 		}
@@ -255,7 +256,7 @@
 
 	// Delete
 	async function deleteShare() {
-		if (!confirm(`Delete "${currentShare.path}"? This cannot be undone.`)) return;
+		if (!(await confirmDialog(plugin.app, `Delete "${currentShare.path}"? This cannot be undone.`))) return;
 		try {
 			if (plugin.shareClientManager) {
 				await plugin.shareClientManager.deleteShare(share.serverId, share.id);
@@ -279,19 +280,15 @@
 	async function toggleWebPublishing(enabled: boolean) {
 		if (enabled && currentShare.visibility === "private") {
 			// Private shares need visibility change before web publishing
-			const choice = prompt(
-				'This share is private. Web publishing requires "public" or "protected" visibility.\n\n' +
-				'Type "public" for open access, or "protected" for password-protected access.\n' +
-				'Cancel to abort.',
-				"protected"
+			const newVisibility = await choiceDialog(
+				plugin.app,
+				'This share is private. Web publishing requires "public" or "protected" visibility. Choose how you want to publish:',
+				[
+					{ label: "Make public (open access)", value: "public" },
+					{ label: "Make protected (password)", value: "protected" },
+				]
 			);
-			if (!choice) return; // User cancelled — don't publish
-
-			const newVisibility = choice.trim().toLowerCase();
-			if (newVisibility !== "public" && newVisibility !== "protected") {
-				new Notice('Invalid visibility. Use "public" or "protected".');
-				return;
-			}
+			if (!newVisibility) return; // User cancelled — don't publish
 
 			try {
 				const payload = { visibility: newVisibility as "public" | "protected" };
@@ -566,8 +563,8 @@
 		modal.open();
 	}
 
-	function disconnectFolder() {
-		if (!confirm(`Disconnect local folder "${localFolderPath}" from this share? Local files will not be deleted.`)) return;
+	async function disconnectFolder() {
+		if (!(await confirmDialog(plugin.app, `Disconnect local folder "${localFolderPath}" from this share? Local files will not be deleted.`))) return;
 		const localFolder = plugin.sharedFolders.find((sf) => sf.guid === share.id);
 		if (localFolder) {
 			plugin.sharedFolders.delete(localFolder);

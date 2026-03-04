@@ -44,6 +44,7 @@ export class PositionTranformer {
 		return Y.createRelativePositionFromTypeIndex(this.ytext, pos, assoc);
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- RelativePosition from yjs internals is an error type, union with object is intentional
 	fromYPos(rpos: RelativePosition | object) {
 		if (!this.ytext.doc) {
 			throw new Error("YText is missing a document");

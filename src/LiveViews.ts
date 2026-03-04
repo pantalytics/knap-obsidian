@@ -494,14 +494,14 @@ export class LiveView<ViewType extends TextFileView>
 					file2: diskBuffer,
 					showMergeOption: true,
 					onResolve: async () => {
-						void this.document.clearDiskBuffer();
+						await this.document.clearDiskBuffer();
 						this.clearMergeButton();
 						// Force view to sync to CRDT state after differ resolution
 						if (
 							this._plugin &&
 							typeof this._plugin.syncViewToCRDT === "function"
 						) {
-							await this._plugin.syncViewToCRDT();
+							this._plugin.syncViewToCRDT();
 						}
 					},
 				});
@@ -544,13 +544,13 @@ export class LiveView<ViewType extends TextFileView>
 						file2: diskBuffer,
 						showMergeOption: true,
 						onResolve: async () => {
-							void this.document.clearDiskBuffer();
+							await this.document.clearDiskBuffer();
 							// Force view to sync to CRDT state after differ resolution
 							if (
 								this._plugin &&
 								typeof this._plugin.syncViewToCRDT === "function"
 							) {
-								await this._plugin.syncViewToCRDT();
+								this._plugin.syncViewToCRDT();
 							}
 						},
 					});
@@ -1162,7 +1162,7 @@ export class LiveViewManager {
 
 		let views: S3View[] = [];
 		try {
-			views = await this.getViews();
+			views = this.getViews();
 		} catch (e: unknown) {
 			this.warn("[System 3][Relay][Live Views] error getting views", e);
 			return false;

@@ -35,6 +35,7 @@ if (globalThis.EventSource === undefined) {
 	} else {
 		console.warn("[Relay] Polyfilling EventSource API");
 		// @ts-ignore
+		// eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for optional polyfill
 		globalThis.EventSource = require("eventsource");
 	}
 }
@@ -118,7 +119,7 @@ export const customFetch = async (
 
 	// Add json method to the response
 	const json = () => {
-		return Promise.resolve(JSON.parse(response!.text));
+		return Promise.resolve(JSON.parse(response.text));
 	};
 	Object.defineProperty(fetchResponse, "json", {
 		value: json,

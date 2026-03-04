@@ -50,6 +50,7 @@ export class LiveNodePluginValue implements PluginValue {
 		return this.node;
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- YText from yjs internals is an error type, union with undefined is intentional
 	private getYText(): YText | undefined {
 		this.view = this.connectionManager?.findCanvas(this.editor);
 

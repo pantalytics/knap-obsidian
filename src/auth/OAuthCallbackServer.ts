@@ -48,8 +48,9 @@ export class OAuthCallbackServer {
 		if (!Platform.isDesktop) {
 			throw new Error("OAuth callback server is only supported on desktop");
 		}
-		// Dynamic import — only available in Node.js (Electron desktop)
-		const http = await import("http");
+		// Dynamic require — only available in Node.js (Electron desktop)
+		// eslint-disable-next-line @typescript-eslint/no-require-imports -- Node.js http module needed for OAuth callback server in Electron
+		const http = require("http") as typeof import("http");
 		return new Promise((resolve, reject) => {
 			// Create a simple HTTP server — cast to our minimal interface
 			const httpServer = http.createServer((req, res) => {

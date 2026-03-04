@@ -1,87 +1,93 @@
+import type { App } from "obsidian";
+
+/**
+ * Vault-scoped localStorage Map backed by App#saveLocalStorage / App#loadLocalStorage.
+ *
+ * All entries are stored as a single JSON blob under `namespace` key, which Obsidian
+ * automatically scopes to the current vault. This avoids direct access to the
+ * restricted `localStorage` global and ensures data is vault-unique.
+ */
 export class LocalStorage<T> implements Map<string, T> {
 	private namespace: string;
-	private seperator = "/";
+	private app: App;
+	private cache: Map<string, T>;
 
-	constructor(namespace: string) {
+	constructor(namespace: string, app: App) {
 		this.namespace = namespace;
+		this.app = app;
+		this.cache = this._load();
 	}
 
-	private fullKey(key: string): string {
-		return `${this.namespace}${this.seperator}${key}`;
+	private _load(): Map<string, T> {
+		const raw = this.app.loadLocalStorage(this.namespace) as Record<string, T> | null;
+		if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+			return new Map(Object.entries(raw));
+		}
+		return new Map();
+	}
+
+	private _persist(): void {
+		const obj: Record<string, T> = {};
+		this.cache.forEach((value, key) => {
+			obj[key] = value;
+		});
+		this.app.saveLocalStorage(this.namespace, obj);
 	}
 
 	public get size(): number {
-		return Object.keys(localStorage).filter((key: string) =>
-			key.startsWith(this.namespace + this.seperator),
-		).length;
+		return this.cache.size;
 	}
 
 	public clear(): void {
-		Object.keys(localStorage)
-			.filter((key: string) => key.startsWith(this.namespace + this.seperator))
-			.forEach((key: string) => localStorage.removeItem(key));
+		this.cache.clear();
+		this.app.saveLocalStorage(this.namespace, null);
 	}
 
 	public delete(key: string): boolean {
-		const storageKey = this.fullKey(key);
-		const exists = localStorage.getItem(storageKey) !== null;
-		localStorage.removeItem(storageKey);
-		return exists;
+		const existed = this.cache.delete(key);
+		if (existed) {
+			this._persist();
+		}
+		return existed;
 	}
 
 	public forEach(
 		callbackfn: (value: T, key: string, map: Map<string, T>) => void,
 		thisArg?: unknown,
 	): void {
-		Object.keys(localStorage)
-			.filter((key: string) => key.startsWith(this.namespace + this.seperator))
-			.forEach((key: string) => {
-				const storageKey = key.split(`${this.namespace}${this.seperator}`)[1];
-				const value = this.get(storageKey) as unknown as T;
-				callbackfn.call(thisArg, value, storageKey, this);
-			});
+		this.cache.forEach((value, key) => {
+			callbackfn.call(thisArg, value, key, this);
+		});
 	}
 
 	public get(key: string): T | undefined {
-		const storageKey = this.fullKey(key);
-		const item = localStorage.getItem(storageKey);
-		return item ? JSON.parse(item) : undefined;
+		return this.cache.get(key);
 	}
 
 	public has(key: string): boolean {
-		const storageKey = this.fullKey(key);
-		return localStorage.getItem(storageKey) !== null;
+		return this.cache.has(key);
 	}
 
 	public set(key: string, value: T): this {
-		const storageKey = this.fullKey(key);
-		localStorage.setItem(storageKey, JSON.stringify(value));
+		this.cache.set(key, value);
+		this._persist();
 		return this;
 	}
 
 	public keys(): IterableIterator<string> {
-		const keys = Object.keys(localStorage)
-			.filter((key: string) => key.startsWith(this.namespace + this.seperator))
-			.map((key: string) => key.split(`${this.namespace}${this.seperator}`)[1]);
-		return keys.values();
+		return this.cache.keys();
 	}
 
 	public values(): IterableIterator<T> {
-		 
-		const values = Array.from(this.keys()).map((key) => this.get(key)!);
-		return values.values();
+		return this.cache.values();
 	}
 
 	public entries(): IterableIterator<[string, T]> {
-		const entries = Array.from(this.keys()).map(
-			 
-			(key) => [key, this.get(key)!] as [string, T],
-		);
-		return entries.values();
+		return this.cache.entries();
 	}
 
 	[Symbol.iterator](): IterableIterator<[string, T]> {
-		return this.entries();
+		return this.cache.entries();
 	}
 
 	get [Symbol.toStringTag](): string {

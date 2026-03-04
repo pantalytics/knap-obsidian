@@ -6,6 +6,7 @@ import { LoginManager } from "./LoginManager";
 import { curryLog } from "./debug";
 import type { ClientToken, FileToken } from "./client/types";
 import { LocalStorage } from "./LocalStorage";
+import type { App } from "obsidian";
 import {
 	S3RN,
 	type S3RNType,
@@ -34,6 +35,7 @@ export class LiveTokenStore extends TokenStore<ClientToken> {
 		vaultName: string,
 		maxConnections = 5,
 		relayOnPremTokenProvider?: RelayOnPremTokenProvider,
+		app?: App,
 	) {
 		super(
 			{
@@ -52,11 +54,9 @@ export class LiveTokenStore extends TokenStore<ClientToken> {
 					);
 				},
 				getJwtExpiry: getJwtExpiryFromClientToken,
-				getStorage: function () {
-					return new LocalStorage<TokenInfo<ClientToken>>(
-						"TokenStore/" + vaultName,
-					);
-				},
+				getStorage: app
+					? () => new LocalStorage<TokenInfo<ClientToken>>("TokenStore/" + vaultName, app)
+					: undefined,
 				getTimeProvider: () => {
 					return timeProvider;
 				},

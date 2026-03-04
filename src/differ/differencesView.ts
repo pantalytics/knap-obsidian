@@ -59,7 +59,7 @@ export function openDiffView(
 ): void {
 	// Capture the currently active leaf to return to it later
 	if (!state.originalLeaf) {
-		state.originalLeaf = workspace.activeLeaf || undefined;
+		state.originalLeaf = workspace.getMostRecentLeaf() ?? undefined;
 	}
 
 	// Closes all leafs (views) of the type VIEW_TYPE_DIFFERENCES

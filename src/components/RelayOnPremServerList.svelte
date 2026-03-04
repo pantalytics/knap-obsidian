@@ -6,6 +6,7 @@
 	import { EVC_SERVER_ID, generateServerId, validateServerConfig } from "../RelayOnPremConfig";
 	import { RelayOnPremLoginModal } from "../ui/RelayOnPremLoginModal";
 	import { customFetch } from "../customFetch";
+	import { confirmDialog } from "../ui/dialogs";
 
 	export let plugin: Live;
 
@@ -243,7 +244,7 @@
 		if (!server) return;
 
 		// Confirm removal
-		if (!confirm(`Remove server "${server.name}"? This will also log you out from this server.`)) {
+		if (!(await confirmDialog(plugin.app, `Remove server "${server.name}"? This will also log you out from this server.`))) {
 			return;
 		}
 

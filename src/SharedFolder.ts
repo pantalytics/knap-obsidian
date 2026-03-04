@@ -1,5 +1,6 @@
 "use strict";
 import {
+	App,
 	FileManager,
 	TAbstractFile,
 	TFile,
@@ -109,8 +110,8 @@ interface Noop extends Operation {
 type OperationType = Create | Rename | Delete | Update | Upgrade | Noop;
 
 class Files extends ObservableSet<IFile> {
-	// Startup performance optimization
-	// eslint-disable-next-line @typescript-eslint/unbound-method
+	// Startup performance optimization: debounce to batch rapid file-tree updates
+	// eslint-disable-next-line @typescript-eslint/unbound-method -- `super.notifyListeners` is passed as a callback to debounce, not called as a method
 	notifyListeners = debounce(super.notifyListeners, 100);
 
 	update() {
@@ -174,6 +175,7 @@ export class SharedFolder extends HasProvider {
 		private hashStore: ContentAddressedFileStore,
 		public backgroundSync: BackgroundSync,
 		private _settings: NamespacedSettings<SharedFolderSettings>,
+		private obsidianApp: App,
 		relayId?: string,
 		awaitingUpdates: boolean = true,
 	) {
@@ -190,6 +192,7 @@ export class SharedFolder extends HasProvider {
 		this.fset = new Files();
 		this.pendingUpload = new LocalStorage<string>(
 			`${appId}-evc-team-relay/folders/${this.guid}/pendingUploads`,
+			this.obsidianApp,
 		);
 		this.pendingUpload.forEach((guid, vpath) => {
 			if (!this.existsSync(vpath)) {
@@ -297,7 +300,7 @@ export class SharedFolder extends HasProvider {
 					}
 				}
 
-				console.log(`[SharedFolder] ready to sync: path=${this.path}, synced=${this.synced}, authoritative=${this.authoritative}`);
+				console.debug(`[SharedFolder] ready to sync: path=${this.path}, synced=${this.synced}, authoritative=${this.authoritative}`);
 				this.addLocalDocs();
 				void this.syncFileTree(this.syncStore);
 			}
@@ -426,7 +429,7 @@ export class SharedFolder extends HasProvider {
 			});
 		}, this);
 		if (written > 0) {
-			console.log(`[SharedFolder] ensureFileMetadata: wrote ${written} Y.Map entries for ${this.path}`);
+			console.debug(`[SharedFolder] ensureFileMetadata: wrote ${written} Y.Map entries for ${this.path}`);
 		}
 	}
 
@@ -617,7 +620,7 @@ export class SharedFolder extends HasProvider {
 		await this.whenSynced();
 		const hasLocal = this.hasLocalDB();
 		const serverSynced = await this.getServerSynced();
-		console.log(`[SharedFolder] awaitingUpdates: authoritative=${this.authoritative}, serverSynced=${serverSynced}, hasLocalDB=${hasLocal}, path=${this.path}`);
+		console.debug(`[SharedFolder] awaitingUpdates: authoritative=${this.authoritative}, serverSynced=${serverSynced}, hasLocalDB=${hasLocal}, path=${this.path}`);
 		if (this.authoritative) {
 			return false;
 		}
@@ -630,7 +633,7 @@ export class SharedFolder extends HasProvider {
 	whenReady(): Promise<SharedFolder> {
 		const promiseFn = async (): Promise<SharedFolder> => {
 			const awaitingUpdates = await this.awaitingUpdates();
-			console.log(`[SharedFolder] whenReady: awaitingUpdates=${awaitingUpdates}, path=${this.path}, authoritative=${this.authoritative}`);
+			console.debug(`[SharedFolder] whenReady: awaitingUpdates=${awaitingUpdates}, path=${this.path}, authoritative=${this.authoritative}`);
 			if (awaitingUpdates) {
 				// If this is a brand new shared folder, we want to wait for a connection before we start reserving new guids for local files.
 				void this.connect();
@@ -644,9 +647,9 @@ export class SharedFolder extends HasProvider {
 					await Promise.race([
 						(async () => {
 							await this.onceConnected();
-							console.log(`[SharedFolder] whenReady: onceConnected resolved`);
+							console.debug(`[SharedFolder] whenReady: onceConnected resolved`);
 							await this.onceProviderSynced();
-							console.log(`[SharedFolder] whenReady: onceProviderSynced resolved`);
+							console.debug(`[SharedFolder] whenReady: onceProviderSynced resolved`);
 						})(),
 						timeout
 					]);
@@ -658,7 +661,7 @@ export class SharedFolder extends HasProvider {
 				return this;
 			}
 			// If this is a shared folder with edits, then we can behave as though we're just offline.
-			console.log(`[SharedFolder] whenReady: NOT awaiting updates, resolving immediately`);
+			console.debug(`[SharedFolder] whenReady: NOT awaiting updates, resolving immediately`);
 			return this;
 		};
 		this.readyPromise =
@@ -727,7 +730,7 @@ export class SharedFolder extends HasProvider {
 		meta: Meta,
 		diffLog?: string[],
 	): Promise<IFile> {
-		console.log(`[SharedFolder] _handleServerCreate: vpath=${vpath}, type=${meta.type}, id=${meta.id?.slice(0,8)}`);
+		console.debug(`[SharedFolder] _handleServerCreate: vpath=${vpath}, type=${meta.type}, id=${meta.id?.slice(0,8)}`);
 		// Create directories as needed
 		const dir = dirname(vpath);
 		if (!this.existsSync(dir)) {
@@ -736,14 +739,14 @@ export class SharedFolder extends HasProvider {
 		}
 		if (meta.type === SyncType.Document) {
 			diffLog?.push(`created local .md file for remotely added doc ${vpath}`);
-			const doc = await this.downloadDoc(vpath, false);
+			const doc = this.downloadDoc(vpath, false);
 			return doc;
 		}
 		if (meta.type === SyncType.Canvas) {
 			diffLog?.push(
 				`created local .canvas file for remotely added canvas ${vpath}`,
 			);
-			const canvas = await this.downloadCanvas(vpath, false);
+			const canvas = this.downloadCanvas(vpath, false);
 			return canvas;
 		}
 		if (meta.type === SyncType.Folder) {
@@ -869,7 +872,7 @@ export class SharedFolder extends HasProvider {
 		}
 	}
 
-	private async _upgradeToCanvas(
+	private _upgradeToCanvas(
 		syncFile: SyncFile,
 		remoteGuid: string,
 		path: string,
@@ -888,8 +891,9 @@ export class SharedFolder extends HasProvider {
 			);
 
 			// downloadCanvas will handle adding to files and fset
-			await this.downloadCanvas(path, false);
+			this.downloadCanvas(path, false);
 			this.log(`Successfully upgraded ${path} to Canvas`);
+			return Promise.resolve();
 		} catch (error: unknown) {
 			this.error("Error during SyncFile to Canvas upgrade:", error);
 			throw error;
@@ -988,9 +992,9 @@ export class SharedFolder extends HasProvider {
 				syncStore.forEach((meta, path) => metaEntries.push(`${path}(${meta.type}:${meta.id?.slice(0,8)})`));
 				const legacyEntries: string[] = [];
 				try { (this.syncStore as unknown as Record<string, { forEach?: (cb: (guid: string, path: string) => void) => void }>).legacyIds?.forEach?.((guid: string, path: string) => legacyEntries.push(`${path}=${guid?.slice(0,8)}`)); } catch { /* ignore */ }
-				console.log(`[SharedFolder] syncFileTree START: meta=${metaEntries.length}, legacy=${legacyEntries.length}, path=${this.path}`);
-				if (metaEntries.length > 0) console.log(`[SharedFolder] syncFileTree meta entries:`, metaEntries.slice(0, 20));
-				if (legacyEntries.length > 0) console.log(`[SharedFolder] syncFileTree legacy entries:`, legacyEntries.slice(0, 20));
+				console.debug(`[SharedFolder] syncFileTree START: meta=${metaEntries.length}, legacy=${legacyEntries.length}, path=${this.path}`);
+				if (metaEntries.length > 0) console.debug(`[SharedFolder] syncFileTree meta entries:`, metaEntries.slice(0, 20));
+				if (legacyEntries.length > 0) console.debug(`[SharedFolder] syncFileTree legacy entries:`, legacyEntries.slice(0, 20));
 
 				void this.ydoc.transact(() => {
 					// Sync folder operations first because renames/moves also affect files
