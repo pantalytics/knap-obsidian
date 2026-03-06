@@ -1541,11 +1541,12 @@ export class SharedFolder extends HasProvider {
 				void this.backgroundSync.enqueueSync(doc);
 			} else if (!synced && this.relayId) {
 				// For relay-onprem: Document hasn't been synced to server yet.
-				// Even if the file has content, we need to exchange Y.Doc state
-				// with the relay to get the authoritative version (or upload ours
-				// if the relay is empty). Without this, local-only Documents
-				// never connect and content diverges between devices.
-				void this.backgroundSync.enqueueDownload(doc);
+				// Use enqueueSync (WebSocket path) which properly reconciles:
+				// if the relay is empty and local file has content, it uploads;
+				// if the relay has content, it merges via diffMatchPatch.
+				// enqueueDownload would try HTTP first (always 401 for CWT)
+				// then fall back to WS, but with worse timing guarantees.
+				void this.backgroundSync.enqueueSync(doc);
 			}
 		});
 

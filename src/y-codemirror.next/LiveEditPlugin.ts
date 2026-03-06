@@ -389,6 +389,17 @@ export class LiveCMPluginValue implements PluginValue {
 		if (isLiveMd(this.view) && !this.view.tracking && !this.destroyed) {
 			await this.view.document.whenSynced();
 			await this.waitForProviderSync();
+			// Guard: if relay returned empty content but the editor has text,
+			// upload the editor content to Y.Text instead of wiping the editor.
+			// This prevents data loss when opening a file before background sync
+			// has uploaded its content to a newly created share.
+			if (this.view.document.text === "" && this.editor.state.doc.length > 0) {
+				const editorContent = this.editor.state.doc.toString();
+				this.warn("[resync] relay is empty but editor has content — uploading to Y.Text");
+				this.view.document.ydoc.getText("contents").insert(0, editorContent);
+				this.view.tracking = true;
+				return;
+			}
 			const keyFrame = await this.getKeyFrame();
 			if (isLiveMd(this.view) && !this.view.tracking && !this.destroyed) {
 				this.editor.dispatch({
@@ -399,6 +410,13 @@ export class LiveCMPluginValue implements PluginValue {
 		} else if (this.active(this.view) && this.document) {
 			await this.document.whenSynced();
 			await this.waitForProviderSync();
+			// Same guard for embedded/SharedFolder documents
+			if (this.document.text === "" && this.editor.state.doc.length > 0) {
+				const editorContent = this.editor.state.doc.toString();
+				this.warn("[resync] relay is empty but editor has content — uploading to Y.Text");
+				this.document.ydoc.getText("contents").insert(0, editorContent);
+				return;
+			}
 			const keyFrame = await this.getKeyFrame();
 			if (this.active(this.view) && !this.destroyed) {
 				this.editor.dispatch({
