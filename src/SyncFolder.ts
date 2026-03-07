@@ -135,7 +135,9 @@ export class SyncFolder extends HasLogging implements IFile {
 	}
 
 	public async delete(): Promise<void> {
-		return this.vault.delete(this.tfolder);
+		if (this._tfolder) {
+			await this.sharedFolder.trashFile(this._tfolder);
+		}
 	}
 
 	public cleanup() {}

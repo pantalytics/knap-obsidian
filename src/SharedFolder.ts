@@ -1766,6 +1766,10 @@ export class SharedFolder extends HasProvider {
 		}
 	}
 
+	async trashFile(file: TAbstractFile): Promise<void> {
+		await this.fileManager.trashFile(file);
+	}
+
 	renameFile(tfile: TAbstractFile, oldPath: string) {
 		const newPath = tfile.path;
 		let newVPath = "";

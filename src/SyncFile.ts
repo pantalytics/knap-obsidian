@@ -540,7 +540,7 @@ export class SyncFile
 
 	public async delete(): Promise<void> {
 		this.caf.clear();
-		return this.vault.delete(this.tfile);
+		await this.sharedFolder.trashFile(this.tfile);
 	}
 
 
