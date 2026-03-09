@@ -3,6 +3,7 @@
 import { decodeJwt } from "jose";
 import type { TimeProvider } from "./TimeProvider";
 import { RelayInstances } from "./debug";
+import { RateLimitError } from "./auth/RelayOnPremTokenProvider";
 
 interface TokenStoreConfig<StorageToken, NetToken> {
 	log: (message: string) => void;
@@ -251,6 +252,46 @@ export class TokenStore<TokenType extends HasToken> {
 		return this.tokenMap?.get(documentId)?.token;
 	}
 
+	/**
+	 * Attempt a single token refresh via `onRefresh`.  If the server returns
+	 * HTTP 429 (surfaced as `RateLimitError`) the call is retried with
+	 * exponential backoff + jitter up to `maxRetries` times.
+	 *
+	 * Base delay starts at `retryAfterMs` from the error (or 2 000 ms) and
+	 * doubles each attempt, capped at 60 s.  A ±20 % jitter is added to
+	 * avoid thundering-herd when many Documents retry simultaneously.
+	 */
+	private async _onRefreshWithRetry(
+		documentId: string,
+		maxRetries = 5,
+	): Promise<TokenType> {
+		const MAX_DELAY_MS = 60_000;
+		let attempt = 0;
+
+		while (true) {
+			try {
+				return await this.onRefresh(documentId);
+			} catch (err: unknown) {
+				if (err instanceof RateLimitError && attempt < maxRetries) {
+					attempt++;
+					// Base delay: server-suggested retryAfterMs or 2 s
+					const baseDelay = Math.min(err.retryAfterMs || 2_000, MAX_DELAY_MS);
+					// Exponential backoff: 2^(attempt-1) * base, capped at 60 s
+					const expDelay = Math.min(baseDelay * Math.pow(2, attempt - 1), MAX_DELAY_MS);
+					// ±20 % jitter
+					const jitter = expDelay * 0.2 * (Math.random() * 2 - 1);
+					const delay = Math.round(expDelay + jitter);
+					console.warn(
+						`[DIAG][TokenStore] 429 rate limit for ${documentId}. attempt=${attempt}/${maxRetries} retrying in ${delay}ms`
+					);
+					await new Promise<void>((resolve) => setTimeout(resolve, delay));
+					continue;
+				}
+				throw err;
+			}
+		}
+	}
+
 	private getTokenFromNetwork(
 		documentId: string,
 		friendlyName: string,
@@ -268,7 +309,7 @@ export class TokenStore<TokenType extends HasToken> {
 			attempts: existing?.attempts ?? 0,
 		} as TokenInfo<TokenType>);
 		this.callbacks.set(documentId, callback);
-		const sharedPromise = this.onRefresh(documentId)
+		const sharedPromise = this._onRefreshWithRetry(documentId)
 			.then((newToken: TokenType) => {
 				this.onTokenRefreshed(documentId, newToken);
 				this._activePromises.delete(documentId);
