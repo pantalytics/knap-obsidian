@@ -1,7 +1,7 @@
 {
 	"id": "evc-team-relay",
 	"name": "EVC Team Relay",
-	"version": "1.1.8",
+	"version": "1.1.9",
 	"minAppVersion": "1.4.0",
 	"description": "Enterprise collaboration with self-hosted relay infrastructure. Real-time editing with live cursors and secure team workspaces.",
 	"author": "EVC Team",
