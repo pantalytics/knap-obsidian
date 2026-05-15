@@ -196,7 +196,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 		if (!this.ytext) {
 			return "";
 		}
-		return this.ytext.toString();
+		return this.ytext.toJSON();
 	}
 
 	public async diskBuffer(read = false): Promise<TFile> {

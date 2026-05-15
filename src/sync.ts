@@ -31,7 +31,7 @@ export async function getSyncInfo(
 
 		request.onerror = (event) => {
 			reject(
-				new Error(`Error opening database: ${String((event.target as IDBOpenDBRequest).error)}`),
+				new Error(`Error opening database: ${(event.target as IDBOpenDBRequest).error?.message ?? "unknown"}`),
 			);
 		};
 
@@ -51,7 +51,7 @@ export async function getSyncInfo(
 
 			getRequest.onerror = (event) => {
 				db.close();
-				reject(new Error(`Error reading data: ${String((event.target as IDBRequest).error)}`));
+				reject(new Error(`Error reading data: ${(event.target as IDBRequest).error?.message ?? "unknown"}`));
 			};
 
 			getRequest.onsuccess = (event) => {

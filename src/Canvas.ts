@@ -117,7 +117,7 @@ export class Canvas extends HasProvider implements IFile, HasMimeType {
 
 	public textNode(node: CanvasNodeData): Y.Text {
 		const ytext = this.ydoc.getText(node.id);
-		if (ytext.toString() === "") {
+		if (ytext.toJSON() === "") {
 			ytext.insert(0, node.text);
 		}
 		return ytext;
@@ -135,7 +135,7 @@ export class Canvas extends HasProvider implements IFile, HasMimeType {
 			const ytext = ydoc.getText(ynode.id);
 			nodes.push({
 				...ynode,
-				...{ text: ytext.toString() || ynode.text },
+				...{ text: ytext.toJSON() || ynode.text },
 			});
 		}
 		return { edges: edges, nodes: nodes };

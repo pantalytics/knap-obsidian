@@ -920,7 +920,7 @@ export class BackgroundSync extends HasLogging {
 			const newDoc = new Y.Doc();
 			Y.applyUpdate(newDoc, updateBytes);
 			const users = newDoc.getMap("users");
-			const contents = newDoc.getText("contents").toString();
+			const contents = newDoc.getText("contents").toJSON();
 
 			if (contents === "") {
 				if (users.size === 0) {

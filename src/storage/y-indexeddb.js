@@ -132,6 +132,7 @@ export class IndexeddbPersistence extends Observable {
     }
     doc.on('update', this._storeUpdate)
     this.destroy = this.destroy.bind(this)
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     doc.on('destroy', this.destroy)
   }
 
@@ -154,6 +155,7 @@ export class IndexeddbPersistence extends Observable {
       clearTimeout(this._storeTimeoutId)
     }
     this.doc.off('update', this._storeUpdate)
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     this.doc.off('destroy', this.destroy)
     this._destroyed = true
     void this._db.then(db => {
