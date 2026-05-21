@@ -23,7 +23,24 @@ import {
 } from "../LiveViews";
 
 import * as Y from "yjs";
+import type { RelativePosition } from "yjs";
 import { Awareness } from "y-protocols/awareness.js";
+
+interface AwarenessCursor {
+	anchor: RelativePosition;
+	head: RelativePosition;
+}
+
+interface AwarenessUser {
+	name?: string;
+	color?: string;
+	colorLight?: string;
+}
+
+interface AwarenessState {
+	cursor?: AwarenessCursor | null;
+	user?: AwarenessUser;
+}
 import { curryLog } from "src/debug";
 import { TextFileView, editorInfoField } from "obsidian";
 import { Document } from "../Document";
@@ -258,7 +275,7 @@ export class YRemoteSelectionsPluginValue implements PluginValue {
 
 		const ydoc: Y.Doc = ytext.doc;
 		const decorations: Array<Range<Decoration>> = [];
-		const localAwarenessState = this._awareness.getLocalState();
+		const localAwarenessState = this._awareness.getLocalState() as AwarenessState | null;
 
 		// set local awareness state (update cursors)
 		if (localAwarenessState != null) {
@@ -270,14 +287,14 @@ export class YRemoteSelectionsPluginValue implements PluginValue {
 					? null
 					: Y.createRelativePositionFromJSON(
 							localAwarenessState.cursor.anchor,
-							 
+
 						);
 			const currentHead =
 				localAwarenessState.cursor == null
 					? null
 					: Y.createRelativePositionFromJSON(
 							localAwarenessState.cursor.head,
-							 
+
 						);
 
 			if (sel != null) {
@@ -299,7 +316,8 @@ export class YRemoteSelectionsPluginValue implements PluginValue {
 		}
 
 		// update decorations (remote selections)
-		awareness.getStates().forEach((state, clientid) => {
+		awareness.getStates().forEach((rawState, clientid) => {
+			const state = rawState as AwarenessState;
 			if (clientid === awareness.doc.clientID) {
 				return;
 			}
@@ -336,8 +354,9 @@ export class YRemoteSelectionsPluginValue implements PluginValue {
 				this.decorations = Decoration.none;
 				return;
 			}
-			const { color = "#30bced", name = "Anonymous" } = state.user || {};
-			const colorLight = (state.user && state.user.colorLight) || color + "33";
+			const user: AwarenessUser = state.user ?? {};
+			const { color = "#30bced", name = "Anonymous" } = user;
+			const colorLight = user.colorLight ?? color + "33";
 			const start = math.min(anchor.index, head.index);
 			const end = math.max(anchor.index, head.index);
 			const startLine = update.view.state.doc.lineAt(start);

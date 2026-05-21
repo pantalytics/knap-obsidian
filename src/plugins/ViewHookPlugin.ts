@@ -1,5 +1,20 @@
 import { MarkdownView } from "obsidian";
 import { getPatcher } from "../Patcher";
+
+// Internal Obsidian APIs not exposed in public type definitions
+interface InternalMarkdownView {
+	getMode?(): string;
+	text?: string;
+	editor?: {
+		cm: {
+			dispatch: (transaction: { changes: ChangeSpec[] }) => void;
+			state: { doc: { toString(): string } };
+		};
+	};
+	previewMode?: {
+		renderer?: { set: (text: string) => void };
+	};
+}
 import { YText, YTextEvent, Transaction } from "yjs/dist/src/internals";
 import { Document } from "../Document";
 import type { ViewRenderer } from "./ViewRenderer";
@@ -56,11 +71,10 @@ export class ViewHookPlugin extends HasLogging {
 				getPatcher().patch(view, {
 					// @ts-ignore
 					saveFrontmatter(old: unknown) {
-						return function (data: unknown) {
+						return function (this: unknown, data: unknown) {
 							that.debug("saveFrontmatter hook triggered");
 							that.saving = true;
-							// @ts-ignore
-							const result = old.call(this, data);
+							const result = (old as (...args: unknown[]) => unknown).call(this, data);
 							that.saving = false;
 							return result;
 						};
@@ -74,17 +88,15 @@ export class ViewHookPlugin extends HasLogging {
 			getPatcher().patch(view, {
 				// @ts-ignore
 				save(old: unknown) {
-					return function (data: unknown) {
-						// @ts-ignore
-						const result = old.call(this, data);
+					return function (this: unknown, data: unknown) {
+						const result = (old as (...args: unknown[]) => unknown).call(this, data);
 						try {
-							// @ts-ignore
-							if (that.view.getMode?.() === "preview" && that.saving) {
+							const internalView = that.view as unknown as InternalMarkdownView;
+							if (internalView.getMode?.() === "preview" && that.saving) {
 								that.debug("Syncing metadata changes to CRDT during save");
 								diffMatchPatch(
 									that.document.ydoc,
-									// @ts-ignore
-									that.view.text,
+									internalView.text ?? "",
 									that.document,
 								);
 							}
@@ -102,18 +114,14 @@ export class ViewHookPlugin extends HasLogging {
 			this.unsubscribes.push(
 				getPatcher().patch(view.previewMode as unknown as object, {
 					edit(old: unknown) {
-						return function (data: string) {
+						return function (this: unknown, data: string) {
 							that.debug("Preview edit hook triggered");
-							//@ts-ignore
-							if (that.view.getMode?.() === "preview") {
-								//@ts-ignore
-								if (that.view.editor) {
+							const internalView = that.view as unknown as InternalMarkdownView;
+							if (internalView.getMode?.() === "preview") {
+								if (internalView.editor) {
 									// If CodeMirror editor is available, dispatch changes there
 									const changes = that.incrementalBufferChange(data);
-									// @ts-ignore
-									that.view.editor.cm.dispatch({
-										changes,
-									});
+									internalView.editor.cm.dispatch({ changes });
 									that.debug("Dispatched preview edit to CodeMirror");
 								} else {
 									// Otherwise sync directly to CRDT
@@ -123,8 +131,7 @@ export class ViewHookPlugin extends HasLogging {
 								return;
 							}
 
-							// @ts-ignore
-							return old.call(this, data);
+							return (old as (...args: unknown[]) => unknown).call(this, data);
 						};
 					},
 				}),
@@ -181,8 +188,7 @@ export class ViewHookPlugin extends HasLogging {
 	 * Calculate incremental buffer changes using diff-match-patch
 	 */
 	private incrementalBufferChange(newBuffer: string): ChangeSpec[] {
-		// @ts-ignore
-		const currentBuffer = this.view.editor.cm.state.doc.toString();
+		const currentBuffer = (this.view as unknown as InternalMarkdownView).editor?.cm.state.doc.toString() ?? "";
 		const dmp = new diff_match_patch();
 		const diffs = dmp.diff_main(currentBuffer, newBuffer);
 		dmp.diff_cleanupSemantic(diffs);
@@ -221,8 +227,7 @@ export class ViewHookPlugin extends HasLogging {
 		await this.document.whenReady();
 
 		// Perform initial render
-		// @ts-ignore
-		this.view.previewMode.renderer.set(this.document.text);
+		(this.view as unknown as InternalMarkdownView).previewMode?.renderer?.set(this.document.text);
 		this.renderAll();
 
 		void this.document.connect();

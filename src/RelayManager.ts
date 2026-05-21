@@ -56,6 +56,8 @@ function hasName(obj: unknown): obj is Named {
 interface UserDAO extends RecordModel {
 	id: string;
 	name: string;
+	email: string;
+	picture: string;
 }
 
 interface RoleDAO extends RecordModel {
@@ -119,6 +121,7 @@ export interface StorageQuotaDAO extends RecordModel {
 	usage: number;
 	metered: boolean;
 	max_file_size: number;
+	pending?: number;
 }
 
 interface RelayInvitationDAO extends RecordModel {
@@ -224,7 +227,7 @@ class StorageQuotaAuto
 		return this.storageQuota.quota;
 	}
 
-	public get pending() {
+	public get pending(): number | undefined {
 		return this.storageQuota.pending;
 	}
 
@@ -315,15 +318,15 @@ class RelayUserAuto extends Auto implements RelayUser {
 		return this.user.id;
 	}
 
-	public get name() {
+	public get name(): string {
 		return this.user.name;
 	}
 
-	public get email() {
+	public get email(): string {
 		return this.user.email;
 	}
 
-	public get picture() {
+	public get picture(): string {
 		return this.user.picture;
 	}
 
@@ -944,9 +947,9 @@ class Store extends HasLogging {
 		if (record.expand) {
 			for (const [, value] of Object.entries(record.expand)) {
 				if (Array.isArray(value)) {
-					this.ingestBatch(value);
+					this.ingestBatch(value as RecordModel[]);
 				} else {
-					this.ingest(value);
+					this.ingest(value as RecordModel);
 				}
 			}
 		}
@@ -1723,13 +1726,10 @@ export class RelayManager extends HasLogging {
 			throw new Error("Auth is not valid");
 		}
 		const url = `/api/subscription/${subscription.id}/token`;
-		const response = await this.pb.send(url, {
+		const response = await this.pb.send<{ token: string }>(url, {
 			method: "POST",
 		});
-		if (response !== 200) {
-			throw new Error("Token API failed");
-		}
-		return response.json()["token"];
+		return response.token;
 	}
 
 	_handleEvent = (
@@ -1854,7 +1854,7 @@ export class RelayManager extends HasLogging {
 				return Promise.resolve([]);
 			}
 			if (typeof options === "function") {
-				options = options(this.pb.authStore.model.id);
+				options = options(this.pb.authStore.model!.id as string);
 			}
 			return this.pb.collection(collection).getFullList<RecordModel>(options);
 		};
@@ -1899,7 +1899,7 @@ export class RelayManager extends HasLogging {
 	async acceptInvitation(shareKey: string): Promise<Relay> {
 		if (!this.pb) throw new Error("Failed to accept invitation");
 		const response = await this.pb
-			.send("/api/accept-invitation", {
+			.send<RecordModel>("/api/accept-invitation", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -1912,7 +1912,7 @@ export class RelayManager extends HasLogging {
 				throw response;
 			});
 		this.debug("[InviteAccept]", response);
-		const relay = this.store?.ingest<Relay>(response);
+		const relay = this.store?.ingest<Relay>(response as RecordModel);
 		if (!relay) {
 			throw new Error("Failed to accept invitation");
 		}
@@ -1974,7 +1974,7 @@ export class RelayManager extends HasLogging {
 		}
 
 		// Call the self-host endpoint
-		const response = await this.pb.send("/api/collections/relays/self-host", {
+		const response = await this.pb.send<RecordModel>("/api/collections/relays/self-host", {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
@@ -1983,7 +1983,7 @@ export class RelayManager extends HasLogging {
 		});
 
 		// Ingest the response into the store
-		const relay = this.store?.ingest<Relay>(response);
+		const relay = this.store?.ingest<Relay>(response as RecordModel);
 		if (!relay) {
 			throw new Error("Failed to create self-hosted relay");
 		}

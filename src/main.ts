@@ -380,7 +380,7 @@ export default class Live extends Plugin {
 		this.warn = curryLog("[System 3][Relay]", "warn");
 		this.error = curryLog("[System 3][Relay]", "error");
 
-		this.settings = new Settings(this, DEFAULT_SETTINGS);
+		this.settings = new Settings<RelaySettings>(this, DEFAULT_SETTINGS);
 		await this.settings.load();
 
 		// Migrate relay-onprem settings from legacy single-server format to multi-server
@@ -808,7 +808,7 @@ export default class Live extends Plugin {
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
 											// eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for optional polyfill
-											const { ShareManagementModal } = require("./ui/ShareManagementModal");
+											const { ShareManagementModal } = require("./ui/ShareManagementModal") as typeof import("./ui/ShareManagementModal");
 											new ShareManagementModal(this.app, this, folder.settings.onpremServerId).open();
 										} else {
 											void this.openSettings(`/shared-folders?id=${folder.guid}`);
@@ -840,7 +840,7 @@ export default class Live extends Plugin {
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
 											// eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for optional polyfill
-											const { ShareManagementModal } = require("./ui/ShareManagementModal");
+											const { ShareManagementModal } = require("./ui/ShareManagementModal") as typeof import("./ui/ShareManagementModal");
 											new ShareManagementModal(this.app, this, folder.settings.onpremServerId).open();
 										} else {
 											void this.openSettings(`/shared-folders?id=${folder.guid}`);
@@ -1211,7 +1211,7 @@ export default class Live extends Plugin {
 					.setIcon("folder-shared")
 					.onClick(() => {
 						// eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for optional polyfill
-						const { ShareManagementModal } = require("./ui/ShareManagementModal");
+						const { ShareManagementModal } = require("./ui/ShareManagementModal") as typeof import("./ui/ShareManagementModal");
 						new ShareManagementModal(this.app, this).open();
 					});
 			});
@@ -1463,7 +1463,7 @@ export default class Live extends Plugin {
 			window.addEventListener("open-url", openUrlListener, true);
 
 			Object.defineProperty(options, "openExternalURLs", {
-				get() {
+				get(): boolean | undefined {
 					const currentEvent = capturedOpenUrlEvent;
 					if (currentEvent?.type === "open-url" && currentEvent?.detail?.url) {
 						const url = currentEvent.detail.url;
@@ -1480,9 +1480,9 @@ export default class Live extends Plugin {
 							}
 						}
 					}
-					return originalDesc.value;
+					return originalDesc.value as boolean | undefined;
 				},
-				set(value) {
+				set(value: boolean) {
 					originalDesc.value = value;
 				},
 				configurable: true,
@@ -1672,10 +1672,9 @@ export default class Live extends Plugin {
 		getPatcher().patch(MarkdownView.prototype, {
 			// When this is called, the active editors haven't yet updated.
 			onUnloadFile(old: unknown) {
-				return function (file: unknown) {
+				return function (this: unknown, file: unknown) {
 					plugin._liveViews.wipe();
-					// @ts-ignore
-					return old.call(this, file);
+					return (old as (...args: unknown[]) => unknown).call(this, file);
 				};
 			},
 		});
@@ -1683,6 +1682,7 @@ export default class Live extends Plugin {
 		getPatcher().patch(this.app.vault, {
 			process(old: unknown) {
 				return function (
+					this: unknown,
 					tfile: unknown,
 					fn: (data: string) => string,
 					options: unknown,
@@ -1701,8 +1701,7 @@ export default class Live extends Plugin {
 						plugin.log(e);
 					}
 
-					// @ts-ignore
-					return old.call(this, tfile, fn, options);
+					return (old as (...args: unknown[]) => unknown).call(this, tfile, fn, options);
 				};
 			},
 		});

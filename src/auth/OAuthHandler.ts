@@ -10,6 +10,19 @@ import { customFetch } from "../customFetch";
 import { OAuthCallbackServer } from "./OAuthCallbackServer";
 import type { AuthResponse } from "./IAuthProvider";
 
+interface OAuthAuthorizeApiResponse {
+	authorize_url: string;
+}
+
+interface OAuthCallbackApiResponse {
+	user_id: string;
+	user_email: string;
+	user_name?: string;
+	access_token: string;
+	expires_in?: number;
+	refresh_token?: string;
+}
+
 const log = curryLog("[OAuthHandler]");
 
 export interface OAuthStartResult {
@@ -63,7 +76,7 @@ export class OAuthHandler {
 				throw new Error(`Failed to get authorize URL: ${response.status} ${errorText}`);
 			}
 
-			const data = await response.json();
+			const data = await response.json() as OAuthAuthorizeApiResponse;
 			const authorizeUrl = data.authorize_url;
 
 			if (!authorizeUrl) {
@@ -121,7 +134,7 @@ export class OAuthHandler {
 				throw new Error(`OAuth callback exchange failed: ${response.status} ${errorText}`);
 			}
 
-			const data = await response.json();
+			const data = await response.json() as OAuthCallbackApiResponse;
 
 			log("OAuth token exchange successful");
 
@@ -130,12 +143,12 @@ export class OAuthHandler {
 				user: {
 					id: data.user_id,
 					email: data.user_email,
-					name: data.user_name || data.user_email,
+					name: data.user_name ?? data.user_email,
 					picture: undefined, // Server doesn't return picture in callback
 				},
 				token: {
 					token: data.access_token,
-					expiresAt: Date.now() + (data.expires_in || 3600) * 1000,
+					expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000,
 				},
 				refreshToken: data.refresh_token,
 			};

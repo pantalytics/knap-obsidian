@@ -317,7 +317,7 @@ export class RelayOnPremShareClient {
 				throw new Error(`Failed to list shares: ${response.status} ${errorText}`);
 			}
 
-			const data: ShareListResponse = await response.json();
+			const data = await response.json() as ShareListResponse;
 			log(`Retrieved ${data.length} shares`);
 			return data;
 		} catch (error: unknown) {
@@ -346,7 +346,7 @@ export class RelayOnPremShareClient {
 				throw new Error(`Failed to get share: ${response.status} ${errorText}`);
 			}
 
-			const data: ShareDetailResponse = await response.json();
+			const data = await response.json() as ShareDetailResponse;
 			log(`Retrieved share: ${data.path}`);
 			return data;
 		} catch (error: unknown) {
@@ -375,7 +375,7 @@ export class RelayOnPremShareClient {
 				throw new Error(`Failed to get share members: ${response.status} ${errorText}`);
 			}
 
-			const members: ShareMember[] = await response.json();
+			const members = await response.json() as ShareMember[];
 			log(`Retrieved ${members.length} members`);
 			return members;
 		} catch (error: unknown) {
@@ -408,7 +408,7 @@ export class RelayOnPremShareClient {
 				throw new Error(`Failed to create share: ${response.status} ${errorText}`);
 			}
 
-			const share: RelayOnPremShare = await response.json();
+			const share = await response.json() as RelayOnPremShare;
 			log(`Created share: ${share.id}`);
 			return share;
 		} catch (error: unknown) {
@@ -447,7 +447,7 @@ export class RelayOnPremShareClient {
 				throw new Error(`Failed to update share: ${response.status} ${errorText}`);
 			}
 
-			const share: RelayOnPremShare = await response.json();
+			const share = await response.json() as RelayOnPremShare;
 			log(`Updated share: ${share.id}`);
 			return share;
 		} catch (error: unknown) {
@@ -510,7 +510,7 @@ export class RelayOnPremShareClient {
 				throw new Error(`Failed to add member: ${response.status} ${errorText}`);
 			}
 
-			const member: ShareMember = await response.json();
+			const member = await response.json() as ShareMember;
 			log(`Added member: ${member.user_id}`);
 			return member;
 		} catch (error: unknown) {
@@ -573,7 +573,7 @@ export class RelayOnPremShareClient {
 				);
 			}
 
-			const member: ShareMember = await response.json();
+			const member = await response.json() as ShareMember;
 			log(`Updated member role: ${member.user_id}`);
 			return member;
 		} catch (error: unknown) {
@@ -605,7 +605,7 @@ export class RelayOnPremShareClient {
 				throw new Error(`Failed to search user: ${response.status} ${errorText}`);
 			}
 
-			const user: User = await response.json();
+			const user = await response.json() as User;
 			log(`Found user: ${user.id}`);
 			return user;
 		} catch (error: unknown) {
@@ -635,7 +635,7 @@ export class RelayOnPremShareClient {
 				throw new Error(`Failed to create invite: ${response.status} ${errorText}`);
 			}
 
-			const invite: Invite = await response.json();
+			const invite = await response.json() as Invite;
 			log(`Created invite: ${invite.id}`);
 			return invite;
 		} catch (error: unknown) {
@@ -664,7 +664,7 @@ export class RelayOnPremShareClient {
 				throw new Error(`Failed to list invites: ${response.status} ${errorText}`);
 			}
 
-			const invites: Invite[] = await response.json();
+			const invites = await response.json() as Invite[];
 			log(`Retrieved ${invites.length} invites`);
 			return invites;
 		} catch (error: unknown) {
@@ -722,7 +722,7 @@ export class RelayOnPremShareClient {
 				throw new Error(`Failed to get OAuth providers: ${response.status} ${errorText}`);
 			}
 
-			const providers: OAuthProvider[] = await response.json();
+			const providers = await response.json() as OAuthProvider[];
 			log(`Retrieved ${providers.length} OAuth providers`);
 			return providers;
 		} catch (error: unknown) {
@@ -750,7 +750,7 @@ export class RelayOnPremShareClient {
 				throw new Error(`Failed to get server info: ${response.status} ${errorText}`);
 			}
 
-			const info: ServerInfo = await response.json();
+			const info = await response.json() as ServerInfo;
 			log(`Retrieved server info: ${info.name} v${info.version}`);
 			return info;
 		} catch (error: unknown) {
@@ -817,7 +817,7 @@ export class RelayOnPremShareClient {
 				throw new Error(`Failed to get billing plan: ${response.status} ${errorText}`);
 			}
 
-			const plan: BillingPlanResponse = await response.json();
+			const plan = await response.json() as BillingPlanResponse;
 			log(`Retrieved billing plan: ${plan.plan}`);
 			return plan;
 		} catch (error: unknown) {
@@ -845,7 +845,7 @@ export class RelayOnPremShareClient {
 				throw new Error(`Failed to get available plans: ${response.status} ${errorText}`);
 			}
 
-			const data = await response.json();
+			const data = await response.json() as { plans: AvailablePlan[] };
 			log(`Retrieved ${data.plans.length} available plans`);
 			return data.plans;
 		} catch (error: unknown) {
@@ -869,13 +869,13 @@ export class RelayOnPremShareClient {
 			const errorText = await response.text();
 			let message = `Failed to create checkout: ${response.status}`;
 			try {
-				const body = JSON.parse(errorText);
-				message = body?.error?.message || body?.detail || message;
+				const body = JSON.parse(errorText) as { error?: { message?: string }; detail?: string };
+				message = body?.error?.message ?? body?.detail ?? message;
 			} catch { /* use default message */ }
 			throw new BillingApiError(message, response.status);
 		}
 
-		return response.json();
+		return (await response.json()) as { checkout_url?: string; id?: string; status?: string };
 	}
 
 	/**
@@ -896,13 +896,13 @@ export class RelayOnPremShareClient {
 			const errorText = await response.text();
 			let message = `Failed to change plan: ${response.status}`;
 			try {
-				const parsed = JSON.parse(errorText);
-				message = parsed?.error?.message || parsed?.detail || message;
+				const parsed = JSON.parse(errorText) as { error?: { message?: string }; detail?: string };
+				message = parsed?.error?.message ?? parsed?.detail ?? message;
 			} catch { /* use default message */ }
 			throw new BillingApiError(message, response.status);
 		}
 
-		return response.json();
+		return (await response.json()) as { status?: string; message?: string; product_id?: string };
 	}
 
 	/**
@@ -920,7 +920,7 @@ export class RelayOnPremShareClient {
 			throw new Error(`Failed to cancel subscription: ${response.status} ${errorText}`);
 		}
 
-		return response.json();
+		return (await response.json()) as { status: string; message?: string };
 	}
 
 	/**
@@ -945,13 +945,13 @@ export class RelayOnPremShareClient {
 			const errorText = await response.text();
 			let message = `Failed to create portal session: ${response.status}`;
 			try {
-				const parsed = JSON.parse(errorText);
-				message = parsed?.error?.message || parsed?.detail || message;
+				const parsed = JSON.parse(errorText) as { error?: { message?: string }; detail?: string };
+				message = parsed?.error?.message ?? parsed?.detail ?? message;
 			} catch { /* use default message */ }
 			throw new BillingApiError(message, response.status);
 		}
 
-		return response.json();
+		return (await response.json()) as { url?: string; message?: string };
 	}
 
 	/**
@@ -959,9 +959,9 @@ export class RelayOnPremShareClient {
 	 */
 	static parseLimitExceededError(errorText: string): LimitExceededError | null {
 		try {
-			const data = JSON.parse(errorText);
+			const data = JSON.parse(errorText) as { error?: string };
 			if (data.error === "limit_exceeded") {
-				return data as LimitExceededError;
+				return data as unknown as LimitExceededError;
 			}
 		} catch {
 			// Not a JSON response or not a limit_exceeded error
@@ -974,9 +974,9 @@ export class RelayOnPremShareClient {
 	 */
 	static parseVisibilityNotAllowedError(errorText: string): VisibilityNotAllowedError | null {
 		try {
-			const data = JSON.parse(errorText);
+			const data = JSON.parse(errorText) as { error?: string };
 			if (data.error === "visibility_not_allowed") {
-				return data as VisibilityNotAllowedError;
+				return data as unknown as VisibilityNotAllowedError;
 			}
 		} catch {
 			// Not a JSON response or not a visibility error
