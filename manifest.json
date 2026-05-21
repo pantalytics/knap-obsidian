@@ -1,9 +1,9 @@
 {
   "id": "evc-team-relay",
   "name": "EVC Team Relay",
-  "version": "1.1.11",
+  "version": "1.1.12",
   "minAppVersion": "1.4.0",
-  "description": "Enterprise collaboration with self-hosted relay infrastructure. Real-time editing with live cursors and secure team workspaces.",
+  "description": "Real-time multiplayer editing and folder sharing for Obsidian, with a self-hosted or managed relay server.",
   "author": "EVC Team",
   "authorUrl": "https://github.com/entire-vc",
   "isDesktopOnly": false

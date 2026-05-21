@@ -1,8 +1,5 @@
 # EVC Team Relay Plugin
 
-[![GitHub release](https://img.shields.io/github/v/release/entire-vc/evc-team-relay-obsidian-plugin?style=flat-square)](https://github.com/entire-vc/evc-team-relay-obsidian-plugin/releases)
-[![Downloads](https://img.shields.io/github/downloads/entire-vc/evc-team-relay-obsidian-plugin/total?style=flat-square)](https://github.com/entire-vc/evc-team-relay-obsidian-plugin/releases)
-[![License: MIT](https://img.shields.io/github/license/entire-vc/evc-team-relay-obsidian-plugin?style=flat-square)](LICENSE)
 
 **Real-time collaboration and web publishing for Obsidian.**
 
@@ -46,16 +43,20 @@ You love Obsidian, but your team needs more:
 
 ## Install
 
-### Option A — BRAT (recommended)
-1. Install **BRAT**: *Settings → Community plugins → Browse → "BRAT" → Install*
-2. Open BRAT: *Settings → BRAT → Add beta plugin*
-3. Paste: `https://github.com/entire-vc/evc-team-relay-obsidian-plugin`
-4. Enable: *Settings → Community plugins → EVC Team Relay → Enable*
+1. *Settings → Community plugins → Browse* → search **"EVC Team Relay"**
+2. **Install**, then **Enable**
 
-### Option B — Manual
+Or open directly: `obsidian://show-plugin?id=evc-team-relay`  
+Plugin page: https://obsidian.md/plugins?id=evc-team-relay
+
+<details>
+<summary>Manual install</summary>
+
 1. Download from [latest release](https://github.com/entire-vc/evc-team-relay-obsidian-plugin/releases)
 2. Copy to `.obsidian/plugins/evc-team-relay/`
 3. Enable in Settings
+
+</details>
 
 ---
 
@@ -111,17 +112,6 @@ Publish your vault as a beautiful website. Better than Obsidian Publish — cust
 
 ---
 
-## Part of the Entire VC Toolbox
-
-| Product | What it does | Link |
-|---------|-------------|------|
-| **Local Sync** | Vault ↔ AI dev tools sync | [repo](https://github.com/entire-vc/evc-local-sync-plugin) |
-| **Team Relay** | Self-hosted collaboration server | [repo](https://github.com/entire-vc/evc-team-relay) |
-| **Team Relay Plugin** ← you are here | Obsidian plugin for Team Relay | this repo |
-| **Spark MCP** | MCP server for AI workflow catalog | [repo](https://github.com/entire-vc/evc-spark-mcp) |
-| **OpenClaw Skill** | AI agent ↔ vault access | [repo](https://github.com/entire-vc/evc-team-relay-openclaw-skill) |
-
----
 
 
 ## Network Usage
