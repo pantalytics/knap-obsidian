@@ -159,7 +159,7 @@ export class TokenStore<TokenType extends HasToken> {
 	dequeue(): string | null {
 		this.log("getting next item in queue");
 		if (this.refreshQueue.size > 0) {
-			const nextDocumentId = this.refreshQueue.values().next().value;
+			const nextDocumentId = this.refreshQueue.values().next().value as string;
 			this.refreshQueue.delete(nextDocumentId);
 			return nextDocumentId;
 		}

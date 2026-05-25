@@ -258,7 +258,7 @@ export class SyncStore extends Observable<SyncStore> {
 		withFlag(flag.enableDeltaLogging, () => {
 			const makeLogObserver = <T>() => (event: Y.YMapEvent<T>) => {
 				let log = "";
-				log += `Transaction origin: ${event.transaction.origin}${event.transaction.origin?.constructor?.name}\n`;
+				log += `Transaction origin: ${String(event.transaction.origin)}${(event.transaction.origin as { constructor?: { name?: string } } | null | undefined)?.constructor?.name ?? ""}\n`;
 				event.changes.keys.forEach((change, key) => {
 					if (change.action === "add") {
 						log += `Added ${key}: ${this.get(key)}\n`;
@@ -290,7 +290,7 @@ export class SyncStore extends Observable<SyncStore> {
 				return;
 			}
 
-			const origin = event.transaction.origin;
+			const origin: unknown = event.transaction.origin;
 			if (origin == this) return;
 
 			this.processFolderOperation(event);

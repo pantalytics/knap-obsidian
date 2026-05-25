@@ -31,7 +31,7 @@ export function withAnyOf(
 	otherwise();
 }
 
-interface ServerFlags {
+export interface ServerFlags {
 	name: string;
 	value: boolean;
 	override: boolean;

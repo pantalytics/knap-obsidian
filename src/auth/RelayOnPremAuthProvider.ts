@@ -248,7 +248,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 	private decodeToken(token: string): { exp?: number; sub?: string } {
 		try {
 			const [, payload] = token.split(".");
-			const decoded = JSON.parse(atob(payload));
+			const decoded = JSON.parse(atob(payload)) as { exp?: number; sub?: string };
 			return decoded;
 		} catch (error: unknown) {
 			this.log("Failed to decode token:", error);
@@ -279,7 +279,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 				throw new Error(`Login failed: ${loginResponse.status} - ${errorText}`);
 			}
 
-			const loginData: LoginResponse = await loginResponse.json();
+			const loginData = await loginResponse.json() as LoginResponse;
 			this.token = loginData.access_token;
 			this.storedRefreshToken = loginData.refresh_token;
 
@@ -306,7 +306,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 				throw new Error(`Failed to fetch user info: ${meResponse.status}`);
 			}
 
-			const userData: MeResponse = await meResponse.json();
+			const userData = await meResponse.json() as MeResponse;
 
 			this.user = {
 				id: userData.id,
@@ -411,7 +411,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 					throw err;
 				}
 
-				const refreshData: RefreshTokenResponse = await refreshResponse.json();
+				const refreshData = await refreshResponse.json() as RefreshTokenResponse;
 
 				// Update tokens
 				this.token = refreshData.access_token;
@@ -427,7 +427,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 				});
 
 				if (meResponse.ok) {
-					const userData: MeResponse = await meResponse.json();
+					const userData = await meResponse.json() as MeResponse;
 					this.user = {
 						id: userData.id,
 						email: userData.email,
@@ -462,7 +462,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 					throw new Error(`Token verification failed: ${meResponse.status}`);
 				}
 
-				const userData: MeResponse = await meResponse.json();
+				const userData = await meResponse.json() as MeResponse;
 
 				this.user = {
 					id: userData.id,

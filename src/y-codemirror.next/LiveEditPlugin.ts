@@ -178,10 +178,15 @@ export class LiveCMPluginValue implements PluginValue {
 		let fmSave = false;
 
 		if (this.view?.view) {
+			type PatchTargetView = {
+				setViewData: (data: string, clear: boolean) => void;
+				saveFrontmatter: (data: unknown) => void;
+				requestSave: () => void;
+			};
 			this.unsubscribes.push(
-				getPatcher().patch(this.view.view, {
-					setViewData(old: unknown) {
-						return function (data: string, clear: boolean) {
+				getPatcher().patch(this.view.view as unknown as PatchTargetView, {
+					setViewData(old: (this: unknown, data: string, clear: boolean) => void) {
+						return function (this: unknown, data: string, clear: boolean) {
 							if (clear) {
 								if (isLiveMd(liveEditPlugin.view)) {
 									if (liveEditPlugin.view.document.text === data) {
@@ -196,28 +201,23 @@ export class LiveCMPluginValue implements PluginValue {
 								});
 								return;
 							}
-							// @ts-ignore
 							return old.call(this, data, clear);
 						};
 					},
-					// @ts-ignore
-					saveFrontmatter(old: unknown) {
-						return function (data: unknown) {
+					saveFrontmatter(old: (this: unknown, data: unknown) => void) {
+						return function (this: unknown, data: unknown) {
 							fmSave = true;
-							// @ts-ignore
-							const result = old.call(this, data);
+							const result: unknown = old.call(this, data);
 							fmSave = false;
 							return result;
 						};
 					},
-					requestSave(old: unknown) {
-						return function () {
-							// @ts-ignore
-							const result = old.call(this);
+					requestSave(old: (this: unknown) => void) {
+						return function (this: unknown) {
+							const result: unknown = old.call(this);
 							if (!liveEditPlugin.destroyed && liveEditPlugin.document) {
 								try {
-									// @ts-ignore
-									this.app.metadataCache.trigger("resolve", this.file);
+									(this as unknown as MarkdownView).app.metadataCache.trigger("resolve", (this as unknown as MarkdownView).file);
 								} catch {
 									// pass
 								}

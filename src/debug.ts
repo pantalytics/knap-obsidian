@@ -139,12 +139,12 @@ function serializeArg(arg: unknown): string {
 		try {
 			return JSON.stringify(
 				arg,
-				(key, value) => {
+				(key, value: unknown) => {
 					if (typeof value === "object" && value !== null) {
-						if (seen.has(value)) {
+						if (seen.has(value as object)) {
 							return "[Circular]";
 						}
-						seen.add(value);
+						seen.add(value as object);
 					}
 					// Filter out sensitive information
 					if (

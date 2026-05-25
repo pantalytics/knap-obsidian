@@ -34,9 +34,8 @@ if (globalThis.EventSource === undefined) {
 		);
 	} else {
 		console.warn("[Relay] Polyfilling EventSource API");
-		// @ts-ignore
 		// eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for optional polyfill
-		globalThis.EventSource = require("eventsource");
+		globalThis.EventSource = require("eventsource") as typeof EventSource;
 	}
 }
 
@@ -134,11 +133,11 @@ export const customFetch = async (
 					: "debug";
 		const response_text = response.text;
 
-		let response_json;
+		let response_json: unknown;
 		const contentType = response.headers["content-type"] || "";
 		if (contentType.includes("application/json")) {
 			try {
-				response_json = JSON.parse(response_text);
+				response_json = JSON.parse(response_text) as unknown;
 			} catch {
 				// pass
 			}

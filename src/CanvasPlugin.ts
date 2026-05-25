@@ -10,6 +10,7 @@ import type {
 } from "src/CanvasView";
 import type { RelayCanvasView, LiveViewManager } from "src/LiveViews";
 import { HasLogging } from "src/debug";
+import type { TextFileView } from "obsidian";
 
 import * as Y from "yjs";
 import { ViewHookPlugin } from "./plugins/ViewHookPlugin";
@@ -81,13 +82,10 @@ export class CanvasPlugin extends HasLogging {
 		}
 	}
 
-	public getEmbedViews() {
+	public getEmbedViews(): TextFileView[] {
 		return [...this.canvas.nodes.values()]
-			.map((nodeData) => {
-				//@ts-ignore
-				return nodeData.child;
-			})
-			.filter((x) => !!x);
+			.map((nodeData) => (nodeData as CanvasNode & { child?: TextFileView }).child)
+			.filter((x): x is TextFileView => !!x);
 	}
 
 	public markDirty(node: CanvasNodeData) {
@@ -150,10 +148,9 @@ export class CanvasPlugin extends HasLogging {
 
 		this.unsubscribes.push(
 			getPatcher().patch(this.canvas as unknown as Record<string, (...args: unknown[]) => unknown>, {
-				requestSave(old: unknown) {
-					return function () {
-						// @ts-ignore
-						const res = old.call(this);
+				requestSave(old: (this: unknown) => unknown) {
+					return function (this: unknown) {
+						const res: unknown = old.call(this);
 						try {
 							that.relayCanvas.importFromView(that.view);
 						} catch (e: unknown) {
@@ -162,10 +159,9 @@ export class CanvasPlugin extends HasLogging {
 						return res;
 					};
 				},
-				applyHistory(old: unknown) {
-					return function (data: unknown) {
-						// @ts-ignore
-						const res = old.call(this, data);
+				applyHistory(old: (this: unknown, data: unknown) => unknown) {
+					return function (this: unknown, data: unknown) {
+						const res: unknown = old.call(this, data);
 						try {
 							that.relayCanvas.importFromView(that.view);
 						} catch (e: unknown) {
@@ -182,7 +178,8 @@ export class CanvasPlugin extends HasLogging {
 			store: Map<string, CanvasNode> | Map<string, CanvasEdge>,
 		) => {
 			let log = "";
-			log += `Transaction origin: ${event.transaction.origin} ${event.transaction.origin?.constructor?.name}\n`;
+			const txOrigin = event.transaction.origin as { constructor?: { name?: string } } | null | undefined;
+			log += `Transaction origin: ${String(event.transaction.origin)} ${txOrigin?.constructor?.name ?? ""}\n`;
 			if (!this.relayCanvas) {
 				this.log("relay canvas is already destroyed");
 			}
@@ -213,15 +210,14 @@ export class CanvasPlugin extends HasLogging {
 			this.canvas.importData(exported, true);
 			this.canvas.requestSave();
 			for (const key of event.keysChanged) {
-				const node = store.get(key);
+				const node = store.get(key as string);
 				if (node) {
 					if (this.canvas.nodes.has(node.id)) {
 						this.observeNode((node as CanvasNode).getData());
 						
 						// Check if this is a newly created embed node that needs ViewHookPlugin
 						if (flags().enableLiveEmbeds) {
-							//@ts-ignore
-							const embedView = node.child;
+							const embedView = (node as CanvasNode & { child?: TextFileView }).child;
 							if (embedView?.file && !this.isEmbedAlreadyTracked(embedView)) {
 								this.connectEmbedView(embedView);
 							}

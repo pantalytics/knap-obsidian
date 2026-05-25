@@ -113,7 +113,6 @@ export class InvalidLinkPluginValue {
 		const decorationSets = view.state.facet(EditorView.decorations);
 		decorationSets.forEach(
 			(
-			// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- DecorationSet from @codemirror/view resolves as error type
 				decoSetOrFunc: DecorationSet | ((view: EditorView) => DecorationSet),
 			) => {
 				const decoSet =
@@ -125,8 +124,9 @@ export class InvalidLinkPluginValue {
 					0,
 					view.state.doc.length,
 					(from: number, to: number, deco: Decoration) => {
-						const classes = deco.spec?.class || "";
-						const linkEnd = classes.contains("cm-formatting-link-end");
+						const specClass = (deco.spec as Record<string, unknown> | undefined)?.class;
+					const classes = typeof specClass === "string" ? specClass : "";
+					const linkEnd = classes.contains("cm-formatting-link-end");
 						if (linkEnd) {
 							links.push({
 								from,
@@ -152,7 +152,7 @@ export class InvalidLinkPluginValue {
 		if (!this.view?.document?.tfile) {
 			return;
 		}
-		const cacheLinks = new Map();
+		const cacheLinks = new Map<number, CacheLink>();
 		for (const link of cache?.links || []) {
 			const linkedFile = this.app.metadataCache.getFirstLinkpathDest(
 				link.link,

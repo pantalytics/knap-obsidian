@@ -317,7 +317,6 @@ export class TextFileViewPlugin extends HasLogging {
 		this.viewHookPlugin?.destroy();
 
 		this.observer = null as unknown as ((event: YTextEvent, tr: Transaction) => void) | undefined;
-		// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- YText from yjs internals is an error type, union with undefined is intentional
 		this._ytext = null as unknown as YText | undefined;
 		this.view = null as unknown as LiveView<TextFileView>;
 		this.doc = null as unknown as Document | undefined;

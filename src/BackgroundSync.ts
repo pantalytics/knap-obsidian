@@ -759,7 +759,7 @@ export class BackgroundSync extends HasLogging {
 		if (isCanvas(doc) && currentCanvasData) {
 			// For canvas, use deep object comparison instead of string equality
 			const currentFileJson = currentFileContents
-				? JSON.parse(currentFileContents)
+				? JSON.parse(currentFileContents) as unknown
 				: { nodes: [], edges: [] };
 			contentsMatch = areObjectsEqual(currentCanvasData, currentFileJson);
 		} else {

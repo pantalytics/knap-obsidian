@@ -134,8 +134,8 @@ export class PocketBaseAuthAdapter implements IAuthProvider {
 		try {
 			const token = this.pb.authStore.token;
 			const [, payload] = token.split(".");
-			const decodedPayload = JSON.parse(atob(payload));
-			return (decodedPayload.exp || 0) * 1000; // Convert to milliseconds
+			const decodedPayload = JSON.parse(atob(payload)) as { exp?: number };
+			return ((decodedPayload.exp ?? 0)) * 1000; // Convert to milliseconds
 		} catch (error: unknown) {
 			this.log("Failed to decode token expiry:", error);
 			return 0;

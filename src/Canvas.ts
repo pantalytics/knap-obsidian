@@ -279,7 +279,7 @@ export class Canvas extends HasProvider implements IFile, HasMimeType {
 
 	applyJSON(json: string) {
 		if (json === "") return;
-		const data = JSON.parse(json);
+		const data = JSON.parse(json) as CanvasData;
 		this.applyData(data);
 	}
 

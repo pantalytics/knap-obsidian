@@ -80,7 +80,7 @@ messageHandlers[messageAwareness] = (
 ) => {
 	awarenessProtocol.applyAwarenessUpdate(
 		provider.awareness,
-		decoding.readVarUint8Array(decoder),
+		decoding.readVarUint8Array(decoder) as Uint8Array,
 		provider,
 	);
 };
@@ -131,9 +131,9 @@ const setupWS = (provider: YSweetProvider) => {
 
 		websocket.onmessage = (event) => {
 			provider.wsLastMessageReceived = time.getUnixTime();
-			const encoder = readMessage(provider, new Uint8Array(event.data), true);
+			const encoder = readMessage(provider, new Uint8Array(event.data as ArrayBuffer), true);
 			if (encoding.length(encoder) > 1) {
-				websocket.send(encoding.toUint8Array(encoder));
+				websocket.send(encoding.toUint8Array(encoder) as Uint8Array);
 			}
 		};
 		websocket.onerror = (event) => {
@@ -191,7 +191,7 @@ const setupWS = (provider: YSweetProvider) => {
 			const encoder = encoding.createEncoder();
 			encoding.writeVarUint(encoder, messageSync);
 			syncProtocol.writeSyncStep1(encoder, provider.doc);
-			websocket.send(encoding.toUint8Array(encoder));
+			websocket.send(encoding.toUint8Array(encoder) as Uint8Array);
 			// broadcast local awareness state
 			if (provider.awareness.getLocalState() !== null) {
 				const encoderAwarenessState = encoding.createEncoder();
@@ -202,7 +202,7 @@ const setupWS = (provider: YSweetProvider) => {
 						provider.doc.clientID,
 					]),
 				);
-				websocket.send(encoding.toUint8Array(encoderAwarenessState));
+				websocket.send(encoding.toUint8Array(encoderAwarenessState) as Uint8Array);
 
 				// Re-send awareness after delay for relay room warm-up
 				// First awareness message can be dropped while relay initializes the doc room
@@ -217,7 +217,7 @@ const setupWS = (provider: YSweetProvider) => {
 								[provider.doc.clientID],
 							),
 						);
-						websocket.send(encoding.toUint8Array(retryEncoder));
+						websocket.send(encoding.toUint8Array(retryEncoder) as Uint8Array);
 					}
 				}, 2000);
 			}
@@ -231,7 +231,7 @@ const setupWS = (provider: YSweetProvider) => {
 	}
 };
 
-const broadcastMessage = (provider: YSweetProvider, buf: ArrayBuffer) => {
+const broadcastMessage = (provider: YSweetProvider, buf: Uint8Array) => {
 	const ws = provider.ws;
 	if (provider.wsconnected && ws && ws.readyState === ws.OPEN) {
 		ws.send(buf);
@@ -386,7 +386,7 @@ export class YSweetProvider extends Observable<string> {
 					const encoder = encoding.createEncoder();
 					encoding.writeVarUint(encoder, messageSync);
 					syncProtocol.writeSyncStep1(encoder, doc);
-					this.ws.send(encoding.toUint8Array(encoder));
+					this.ws.send(encoding.toUint8Array(encoder) as Uint8Array);
 				}
 			}, resyncInterval);
 		}
@@ -408,7 +408,7 @@ export class YSweetProvider extends Observable<string> {
 				const encoder = encoding.createEncoder();
 				encoding.writeVarUint(encoder, messageSync);
 				syncProtocol.writeUpdate(encoder, update);
-				broadcastMessage(this, encoding.toUint8Array(encoder));
+				broadcastMessage(this, encoding.toUint8Array(encoder) as Uint8Array);
 			}
 		};
 
@@ -432,7 +432,7 @@ export class YSweetProvider extends Observable<string> {
 				encoder,
 				awarenessProtocol.encodeAwarenessUpdate(awareness, changedClients),
 			);
-			broadcastMessage(this, encoding.toUint8Array(encoder));
+			broadcastMessage(this, encoding.toUint8Array(encoder) as Uint8Array);
 		};
 
 		this._unloadHandler = () => {
@@ -539,7 +539,7 @@ export class YSweetProvider extends Observable<string> {
 
 		if (typeof window !== "undefined") {
 			window.removeEventListener("unload", this._unloadHandler);
-			window.clearInterval(this.awareness._checkInterval);
+			window.clearInterval(this.awareness._checkInterval as number | undefined);
 		} else if (typeof process !== "undefined") {
 			process.off("exit", this._unloadHandler);
 		}
@@ -603,7 +603,7 @@ export class YSweetProvider extends Observable<string> {
 				new Map(),
 			),
 		);
-		broadcastMessage(this, encoding.toUint8Array(encoder));
+		broadcastMessage(this, encoding.toUint8Array(encoder) as Uint8Array);
 		if (this.bcconnected) {
 			bc.unsubscribe(this.bcChannel, this._bcSubscriber);
 			this.bcconnected = false;

@@ -185,7 +185,7 @@ export class RelayOnPremTokenProvider {
 				throw new Error(`Token request failed: ${response.status} - ${errorText}`);
 			}
 
-			const data: RelayTokenResponse = await response.json();
+			const data = await response.json() as RelayTokenResponse;
 
 			// Convert to ClientToken format expected by the plugin
 			const expiresAt = new Date(data.expires_at);

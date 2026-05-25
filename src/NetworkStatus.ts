@@ -88,8 +88,9 @@ class NetworkStatus {
 		})
 			.then((response) => {
 				if (response.status === 200) {
-					if (response.json && response.json.status) {
-						this.status = response.json;
+					const responseJson = response.json as ServiceStatus | undefined;
+					if (responseJson?.status) {
+						this.status = responseJson;
 					}
 					if (!this.online) {
 						this.log("back online");

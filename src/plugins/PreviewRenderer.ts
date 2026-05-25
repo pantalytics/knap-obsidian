@@ -38,17 +38,21 @@ export class PreviewRenderer extends HasLogging implements ViewRenderer {
 		try {
 			this.debug("Rendering preview from document");
 			
+			type ObsidianMarkdownViewInternal = {
+				text?: string;
+				previewMode?: { renderer?: { set: (text: string) => void } };
+				onInternalDataChange?: () => void;
+			};
+			const internalView = this.view as unknown as ObsidianMarkdownViewInternal;
+
 			// Update the view's internal text state
-			// @ts-ignore - accessing internal Obsidian API
-			this.view.text = document.text;
-			
+			internalView.text = document.text;
+
 			// Update the preview renderer
-			// @ts-ignore - accessing internal Obsidian API
-			this.view.previewMode.renderer.set(document.text);
+			internalView.previewMode?.renderer?.set(document.text);
 
 			// Trigger internal data change handler if available
-			// @ts-ignore - accessing internal Obsidian API
-			this.view.onInternalDataChange?.();
+			internalView.onInternalDataChange?.();
 
 			this.debug("Preview render completed");
 		} catch (error: unknown) {

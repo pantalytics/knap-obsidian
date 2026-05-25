@@ -28,7 +28,7 @@ export function removeKey(markdownString: string, keyMatch: string) {
 
 	for (const key in parsed.data) {
 		if (key === keyMatch) {
-			parsed.data.remove(key);
+			(parsed.data as Record<string, unknown> & { remove?: (key: string) => void }).remove?.(key);
 		}
 	}
 

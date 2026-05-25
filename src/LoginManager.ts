@@ -22,7 +22,7 @@ declare const GIT_TAG: string;
 import { customFetch } from "./customFetch";
 import { LocalAuthStore } from "./pocketbase/LocalAuthStore";
 import type { TimeProvider } from "./TimeProvider";
-import { FeatureFlagManager } from "./flagManager";
+import { FeatureFlagManager, type ServerFlags } from "./flagManager";
 import type { NamespacedSettings } from "./SettingsStorage";
 import type { EndpointManager } from "./EndpointManager";
 
@@ -277,7 +277,7 @@ export class LoginManager extends Observable<LoginManager> {
 		if (this.pb && this.pb.authStore.model?.id) {
 			this.pb
 				.collection("users")
-				.getOne(this.pb.authStore.model.id)
+				.getOne(this.pb.authStore.model.id as string)
 				.then(() => {
 					this.getFlags();
 				})
@@ -315,9 +315,10 @@ export class LoginManager extends Observable<LoginManager> {
 				.then((authData) => {
 					const token = authData.token;
 					const [, payload] = token.split(".");
-					const decodedPayload = JSON.parse(atob(payload));
+					interface JwtPayload { exp?: number; id?: string; email?: string }
+					const decodedPayload = JSON.parse(atob(payload)) as JwtPayload;
 
-					const expiryDate = new Date(decodedPayload.exp * 1000);
+					const expiryDate = new Date((decodedPayload.exp ?? 0) * 1000);
 					const now = new Date();
 					const daysUntilExpiry = Math.ceil(
 						(expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
@@ -348,14 +349,14 @@ export class LoginManager extends Observable<LoginManager> {
 			this.notifyListeners(); // notify anyway
 			return false;
 		}
-		this.user = this.makeUser(this.pb.authStore, authData?.meta?.rawUser);
+		this.user = this.makeUser(this.pb.authStore, authData?.meta?.rawUser as GoogleUser | GitHubUser | MicrosoftUser | OIDCUser | undefined);
 		this.notifyListeners();
 		if (authData) {
 			this.pb
 				.collection("oauth2_response")
 				.create({
 					user: authData.record.id,
-					oauth_response: authData.meta?.rawUser,
+					oauth_response: authData.meta?.rawUser as unknown,
 				})
 				.then(() => {
 					this.notifyListeners();
@@ -402,7 +403,7 @@ export class LoginManager extends Observable<LoginManager> {
 		})
 			.then((response) => {
 				if (response.status === 200) {
-					const serverFlags = response.json;
+					const serverFlags = response.json as ServerFlags[];
 					void FeatureFlagManager.getInstance().applyServerFlags(serverFlags);
 				}
 			})
@@ -480,7 +481,7 @@ export class LoginManager extends Observable<LoginManager> {
 		rawUser?: GoogleUser | GitHubUser | MicrosoftUser | OIDCUser,
 	): User {
 		return createUserFromOAuth(
-			authStore.model?.id,
+			(authStore.model?.id as string | undefined) ?? "",
 			authStore.token,
 			authStore.model,
 			rawUser,
@@ -657,7 +658,7 @@ export class LoginManager extends Observable<LoginManager> {
 					.then((response) => {
 						if (response) {
 							clearInterval(timer);
-							return resolve(provider.login(response.code));
+							return resolve(provider.login(response.code as string));
 						}
 					})
 					.catch((e: unknown) => {});

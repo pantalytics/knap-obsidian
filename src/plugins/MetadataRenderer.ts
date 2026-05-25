@@ -4,6 +4,16 @@ import type { ViewRenderer } from "./ViewRenderer";
 import { flags } from "../flagManager";
 import { HasLogging } from "../debug";
 
+interface MetadataEditorRendered {
+	entry: unknown;
+	renderProperty(entry: unknown, force?: boolean): void;
+}
+
+interface MetadataEditorInternal {
+	synchronize(data: unknown): void;
+	rendered: MetadataEditorRendered[];
+}
+
 /**
  * Pure UI rendering logic for metadata editor synchronization.
  * Updates metadata editor UI when document changes occur.
@@ -33,8 +43,7 @@ export class MetadataRenderer extends HasLogging implements ViewRenderer {
 		try {
 			this.debug("Rendering metadata from document");
 			
-			// @ts-ignore - accessing internal Obsidian API
-			const metadataEditor = this.view.metadataEditor;
+			const metadataEditor = (this.view as unknown as { metadataEditor?: MetadataEditorInternal }).metadataEditor;
 			
 			if (!metadataEditor) {
 				this.debug("No metadata editor available");

@@ -111,7 +111,6 @@ type OperationType = Create | Rename | Delete | Update | Upgrade | Noop;
 
 class Files extends ObservableSet<IFile> {
 	// Startup performance optimization: debounce to batch rapid file-tree updates
-	// eslint-disable-next-line @typescript-eslint/unbound-method -- `super.notifyListeners` is passed as a callback to debounce, not called as a method
 	notifyListeners = debounce(super.notifyListeners, 100);
 
 	update() {

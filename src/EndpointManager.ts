@@ -351,15 +351,15 @@ export class EndpointManager {
 				throw new Error(`License fetch failed: ${response.status} ${response.statusText}`);
 			}
 
-			const data = await response.json();
-			
+			const data: unknown = await response.json();
+
 			// Parse licenses using type guards
 			let licenses: License[] = [];
-			
+
 			if (isLicenseArray(data)) {
 				licenses = data;
 			} else if (data && typeof data === 'object' && 'licenses' in data && isLicenseArray(data.licenses)) {
-				licenses = data.licenses;
+				licenses = data.licenses as License[];
 			} else if (isLicense(data)) {
 				licenses = [data];
 			} else {
@@ -924,17 +924,17 @@ export class EndpointManager {
 				throw new Error(`License fetch failed: ${response.status} ${response.statusText}`);
 			}
 
-			const data = await response.json();
-			
+			const data: unknown = await response.json();
+
 			this.log("License response received from:", certUrl);
-			
+
 			// Parse licenses using type guards
 			let licenses: License[] = [];
-			
+
 			if (isLicenseArray(data)) {
 				licenses = data;
 			} else if (data && typeof data === 'object' && 'licenses' in data && isLicenseArray(data.licenses)) {
-				licenses = data.licenses;
+				licenses = data.licenses as License[];
 			} else if (isLicense(data)) {
 				licenses = [data];
 			} else {

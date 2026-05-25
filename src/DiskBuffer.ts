@@ -96,7 +96,7 @@ export class DiskBufferStore {
 				const request = store.get(guid);
 				request.onerror = () => reject(request.error ?? new Error("Failed to load disk buffer"));
 				request.onsuccess = () =>
-					resolve(request.result ? request.result.contents : null);
+					resolve(request.result ? (request.result as { contents: string | null }).contents : null);
 			} catch (e: unknown) {
 				reject(e instanceof Error ? e : new Error(String(e)));
 			}

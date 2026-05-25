@@ -95,7 +95,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 
 		void this.whenSynced().then(() => {
 			const statsObserver = (event: Y.YTextEvent) => {
-				const origin = event.transaction.origin;
+				const origin: unknown = event.transaction.origin;
 				if (event.changes.keys.size === 0) return;
 				if (origin == this) return;
 				this.updateStats();
@@ -127,7 +127,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 		withFlag(flag.enableDeltaLogging, () => {
 			const logObserver = (event: Y.YTextEvent) => {
 				let log = "";
-				log += `Transaction origin: ${event.transaction.origin} ${event.transaction.origin?.constructor?.name}\n`;
+				log += `Transaction origin: ${String(event.transaction.origin)} ${(event.transaction.origin as { constructor?: { name?: string } } | null | undefined)?.constructor?.name ?? ""}\n`;
 				for (const delta of event.changes.delta) {
 					log += `insert: ${String(delta.insert)}\n\nretain: ${delta.retain}\n\ndelete: ${delta.delete}\n`;
 				}

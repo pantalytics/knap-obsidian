@@ -542,8 +542,8 @@ class FileExplorerWalker {
 	private _getFileExplorerItem(path: string) {
 		// XXX this is a private API
 		try {
-			//@ts-expect-error this is a private API
-			return this.fileExplorer.view.fileItems[path];
+			type FileExplorerView = { fileItems?: Record<string, unknown> };
+			return (this.fileExplorer.view as unknown as FileExplorerView).fileItems?.[path] ?? null;
 		} catch {
 			return null;
 		}

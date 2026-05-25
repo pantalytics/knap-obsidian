@@ -196,7 +196,7 @@ export class RelayOnPremAuthStore {
 					}
 
 					try {
-						const parsed = JSON.parse(rawValue);
+						const parsed: unknown = JSON.parse(rawValue) as unknown;
 						return parsed;
 					} catch {
 						// not a json, return as-is
