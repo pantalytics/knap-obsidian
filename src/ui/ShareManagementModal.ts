@@ -23,6 +23,7 @@ export class ShareManagementModal extends Modal {
 	private isLoading = false;
 	private serverId?: string;
 	private serverName?: string;
+	private initialShareId?: string;
 	private webPublishEnabled = false;
 	private webPublishDomain: string | null = null;
 
@@ -31,10 +32,12 @@ export class ShareManagementModal extends Modal {
 		private plugin: Live,
 		serverId?: string,
 		serverName?: string,
+		initialShareId?: string,
 	) {
 		super(app);
 		this.serverId = serverId;
 		this.serverName = serverName;
+		this.initialShareId = initialShareId;
 
 		if (serverName) {
 			this.setTitle(`Shares — ${serverName}`);
@@ -71,6 +74,15 @@ export class ShareManagementModal extends Modal {
 		try {
 			await this.loadShares();
 			contentEl.empty();
+			// When opened for a specific share (e.g. "Edit share" from a folder's
+			// context menu), jump straight to that share's details instead of the list.
+			if (this.initialShareId) {
+				const share = this.shares.find((s) => s.id === this.initialShareId);
+				if (share) {
+					await this.loadShareDetails(share);
+					return;
+				}
+			}
 			this.renderContent();
 		} catch (error: unknown) {
 			contentEl.empty();

@@ -809,7 +809,7 @@ export default class Live extends Plugin {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
 											// eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for optional polyfill
 											const { ShareManagementModal } = require("./ui/ShareManagementModal") as typeof import("./ui/ShareManagementModal");
-											new ShareManagementModal(this.app, this, folder.settings.onpremServerId).open();
+											new ShareManagementModal(this.app, this, folder.settings.onpremServerId, undefined, folder.guid).open();
 										} else {
 											void this.openSettings(`/shared-folders?id=${folder.guid}`);
 										}
@@ -841,7 +841,7 @@ export default class Live extends Plugin {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
 											// eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for optional polyfill
 											const { ShareManagementModal } = require("./ui/ShareManagementModal") as typeof import("./ui/ShareManagementModal");
-											new ShareManagementModal(this.app, this, folder.settings.onpremServerId).open();
+											new ShareManagementModal(this.app, this, folder.settings.onpremServerId, undefined, folder.guid).open();
 										} else {
 											void this.openSettings(`/shared-folders?id=${folder.guid}`);
 										}
