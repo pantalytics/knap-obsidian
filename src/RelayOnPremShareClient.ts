@@ -983,4 +983,90 @@ export class RelayOnPremShareClient {
 		}
 		return null;
 	}
+
+	async listAgentKeys(shareId: string): Promise<AgentKey[]> {
+		log(`Listing agent keys for share ${shareId}`);
+		try {
+			const response = await customFetch(
+				`${this.normalizedUrl}/v1/web/shares/${shareId}/agent-keys`,
+				{ method: "GET", headers: await this.getHeaders() },
+			);
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(`Failed to list agent keys: ${response.status} ${errorText}`);
+			}
+			return await response.json() as AgentKey[];
+		} catch (error: unknown) {
+			log("Error listing agent keys:", error);
+			throw error;
+		}
+	}
+
+	async createAgentKey(shareId: string, request: CreateAgentKeyRequest): Promise<CreateAgentKeyResponse> {
+		log(`Creating agent key for share ${shareId}: ${request.label}`);
+		try {
+			const response = await customFetch(
+				`${this.normalizedUrl}/v1/web/shares/${shareId}/agent-keys`,
+				{
+					method: "POST",
+					headers: await this.getHeaders(),
+					body: JSON.stringify(request),
+				},
+			);
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(`Failed to create agent key: ${response.status} ${errorText}`);
+			}
+			return await response.json() as CreateAgentKeyResponse;
+		} catch (error: unknown) {
+			log("Error creating agent key:", error);
+			throw error;
+		}
+	}
+
+	async revokeAgentKey(shareId: string, keyId: string): Promise<void> {
+		log(`Revoking agent key ${keyId} from share ${shareId}`);
+		try {
+			const response = await customFetch(
+				`${this.normalizedUrl}/v1/web/shares/${shareId}/agent-keys/${keyId}`,
+				{ method: "DELETE", headers: await this.getHeaders() },
+			);
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(`Failed to revoke agent key: ${response.status} ${errorText}`);
+			}
+			log(`Revoked agent key: ${keyId}`);
+		} catch (error: unknown) {
+			log("Error revoking agent key:", error);
+			throw error;
+		}
+	}
+}
+
+export interface AgentKey {
+	id: string;
+	label: string;
+	share_id: string;
+	scopes: string[];
+	created_by: string;
+	is_active: boolean;
+	created_at: string;
+	expires_at?: string | null;
+	last_used_at?: string | null;
+	revoked_at?: string | null;
+}
+
+export interface CreateAgentKeyRequest {
+	label: string;
+	expires_at?: string; // ISO 8601 string
+}
+
+export interface CreateAgentKeyResponse {
+	id: string;
+	key: string; // shown once only at creation time
+	label: string;
+	scopes: string[];
+	share_id: string;
+	expires_at?: string | null;
+	created_at: string;
 }

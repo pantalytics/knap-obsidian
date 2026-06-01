@@ -8,6 +8,7 @@
 	import CreateShareView from "./CreateShareView.svelte";
 	import CreateInviteView from "./CreateInviteView.svelte";
 	import BillingView from "./BillingView.svelte";
+	import AgentKeysView from "./AgentKeysView.svelte";
 	import Breadcrumbs from "./Breadcrumbs.svelte";
 	import evcLogo from "../assets/evc-logo.png";
 
@@ -19,7 +20,7 @@
 	const EVC_URL = "https://github.com/entire-vc";
 
 	// Navigation state
-	type ViewType = "servers" | "shares" | "shareDetail" | "createShare" | "createInvite" | "billing";
+	type ViewType = "servers" | "shares" | "shareDetail" | "createShare" | "createInvite" | "billing" | "agentKeys";
 	let currentView: ViewType = "servers";
 	let selectedServer: RelayOnPremServer | null = null;
 	let selectedShare: ShareWithServer | null = null;
@@ -67,6 +68,16 @@
 		currentView = "shareDetail";
 	}
 
+	function handleOpenAgentKeys() {
+		currentView = "agentKeys";
+	}
+
+	function handleOpenServerAgentKeys(event: CustomEvent<{ server: RelayOnPremServer }>) {
+		selectedServer = event.detail.server;
+		selectedShare = null;
+		currentView = "agentKeys";
+	}
+
 	// Breadcrumb items
 	$: breadcrumbItems = getBreadcrumbs(currentView, selectedServer, selectedShare);
 
@@ -94,6 +105,15 @@
 				onClick: () => navigateTo("shareDetail"),
 			});
 			items.push({ type: "text", text: "Create Invite" });
+		} else if (view === "agentKeys") {
+			if (share) {
+				items.push({
+					type: "text",
+					text: share.path,
+					onClick: () => navigateTo("shareDetail"),
+				});
+			}
+			items.push({ type: "text", text: "Agent Keys" });
 		} else if (share && (view === "shareDetail")) {
 			items.push({ type: "text", text: share.path });
 		}
@@ -161,7 +181,7 @@
 						Configure your relay-onprem servers. Click "Shares" to manage shares.
 					</div>
 				</div>
-				<RelayOnPremServerList {plugin} on:openShares={handleOpenShares} on:openBilling={handleOpenBilling} on:serversChanged={() => { authRefreshKey++; }} />
+				<RelayOnPremServerList {plugin} on:openShares={handleOpenShares} on:openBilling={handleOpenBilling} on:openAgentKeys={handleOpenServerAgentKeys} on:serversChanged={() => { authRefreshKey++; }} />
 			</div>
 		{:else if currentView === "shares" && selectedServer}
 			<ShareListView
@@ -177,6 +197,7 @@
 				share={selectedShare}
 				on:createInvite={() => { currentView = "createInvite"; }}
 				on:deleted={handleShareDeleted}
+				on:agentKeys={handleOpenAgentKeys}
 			/>
 		{:else if currentView === "createShare" && selectedServer}
 			<CreateShareView
@@ -196,6 +217,12 @@
 			<BillingView
 				{plugin}
 				server={selectedServer}
+			/>
+		{:else if currentView === "agentKeys" && selectedServer}
+			<AgentKeysView
+				{plugin}
+				server={selectedServer}
+				initialShare={selectedShare}
 			/>
 		{/if}
 	</div>

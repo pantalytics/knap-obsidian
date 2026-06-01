@@ -749,6 +749,16 @@ export class LoginManager extends Observable<LoginManager> {
 	}
 
 	/**
+	 * Re-authenticate for a sensitive action (e.g. creating agent keys)
+	 * Forces a fresh OAuth2 login to get a new token with a recent iat claim.
+	 */
+	async reAuthForSensitiveAction(serverId: string): Promise<void> {
+		const provider = this.multiServerAuthManager?.getProvider(serverId) ?? this.authProvider;
+		if (!provider) return;
+		await provider.loginWithOAuth2('casdoor');
+	}
+
+	/**
 	 * Login to a specific server
 	 */
 	async loginToServer(serverId: string, email: string, password: string): Promise<boolean> {

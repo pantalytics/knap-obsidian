@@ -14,6 +14,7 @@
 		serversChanged: void;
 		openShares: { server: RelayOnPremServer };
 		openBilling: { server: RelayOnPremServer };
+		openAgentKeys: { server: RelayOnPremServer };
 	}>();
 
 	const relayOnPremSettings = plugin.relayOnPremSettings;
@@ -403,6 +404,9 @@
 							Plan & Usage
 						</button>
 					{/if}
+					<button class="relay-server-btn" on:click={() => dispatch('openAgentKeys', { server })}>
+						Agent Keys
+					</button>
 				{/if}
 				<button class="relay-server-btn" on:click={() => startEditServer(server)}>
 					Edit

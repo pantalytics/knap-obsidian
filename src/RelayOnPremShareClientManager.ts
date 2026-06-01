@@ -17,6 +17,9 @@ import {
 	type User,
 	type Invite,
 	type CreateInviteRequest,
+	type AgentKey,
+	type CreateAgentKeyRequest,
+	type CreateAgentKeyResponse,
 } from "./RelayOnPremShareClient";
 import type { MultiServerAuthManager } from "./auth/MultiServerAuthManager";
 
@@ -481,6 +484,33 @@ export class RelayOnPremShareClientManager {
 	invalidateShareCache(serverId: string, shareId: string): void {
 		const cacheKey = `${serverId}:${shareId}`;
 		this.shareCache.delete(cacheKey);
+	}
+
+	/**
+	 * List agent keys for a share
+	 */
+	async listAgentKeys(serverId: string, shareId: string): Promise<AgentKey[]> {
+		const client = this.clients.get(serverId);
+		if (!client) throw new Error(`No client for server ${serverId}`);
+		return client.listAgentKeys(shareId);
+	}
+
+	/**
+	 * Create an agent key for a share
+	 */
+	async createAgentKey(serverId: string, shareId: string, request: CreateAgentKeyRequest): Promise<CreateAgentKeyResponse> {
+		const client = this.clients.get(serverId);
+		if (!client) throw new Error(`No client for server ${serverId}`);
+		return client.createAgentKey(shareId, request);
+	}
+
+	/**
+	 * Revoke an agent key
+	 */
+	async revokeAgentKey(serverId: string, shareId: string, keyId: string): Promise<void> {
+		const client = this.clients.get(serverId);
+		if (!client) throw new Error(`No client for server ${serverId}`);
+		return client.revokeAgentKey(shareId, keyId);
 	}
 
 	/**

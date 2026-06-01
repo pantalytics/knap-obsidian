@@ -19,6 +19,7 @@
 		createInvite: void;
 		deleted: void;
 		back: void;
+		agentKeys: void;
 	}>();
 
 	let members: ShareMember[] = [];
@@ -689,6 +690,19 @@
 					</div>
 				{/if}
 			</div>
+		{/if}
+
+		<!-- Agent Keys (owner only) -->
+		{#if isOwner}
+		<div class="evc-section">
+			<div class="evc-section-header">
+				<div class="evc-section-title">Agent Keys</div>
+				<button class="evc-small-btn" on:click={() => dispatch('agentKeys')}>Manage</button>
+			</div>
+			<div class="evc-setting-desc">
+				API keys for automated agents to access this share without your login credentials.
+			</div>
+		</div>
 		{/if}
 
 		<!-- Web Publishing (owner + server supports it) -->
