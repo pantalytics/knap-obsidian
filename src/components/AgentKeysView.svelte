@@ -459,7 +459,7 @@
 					<button class="evc-small-btn" on:click={copyRevealedKey}>
 						{revealCopied ? "Copied!" : "Copy"}
 					</button>
-					<button class="evc-small-btn" on:click={() => downloadKey(revealedKey!.key, revealedKey!.label, revealedKey!.expiresAt)}>
+					<button class="evc-small-btn" on:click={() => revealedKey && downloadKey(revealedKey.key, revealedKey.label, revealedKey.expiresAt)}>
 						Download .txt
 					</button>
 				</div>
