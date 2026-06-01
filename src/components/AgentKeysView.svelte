@@ -414,7 +414,7 @@
 									await plugin.loginManager.reAuthForSensitiveAction(server.id);
 									createError = null;
 									createNeeds401Reauth = false;
-								} catch (e: unknown) {
+								} catch (e) {
 									new Notice(`Re-auth failed: ${e instanceof Error ? e.message : "error"}`);
 								}
 							}}>Re-authenticate</button>
