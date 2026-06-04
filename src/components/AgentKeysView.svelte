@@ -25,7 +25,7 @@
 	let createNeeds401Reauth = false;
 
 	// Reveal modal state
-	let revealedKey: { key: string; label: string; shareId: string; shareName: string; expiresAt: string | null } | null = null;
+	let revealedKey: { key: string; label: string | null; shareId: string; shareName: string; expiresAt: string | null } | null = null;
 	let revealCopied = false;
 	let revealCloseWarning = false;
 
@@ -66,9 +66,10 @@
 		return now.toISOString();
 	}
 
-	function downloadKey(key: string, label: string, expiresAt: string | null): void {
+	function downloadKey(key: string, label: string | null, expiresAt: string | null): void {
+		const displayLabel = label || "(unnamed)";
 		const content = [
-			`Agent Key: ${label}`,
+			`Agent Key: ${displayLabel}`,
 			`Key: ${key}`,
 			expiresAt ? `Expires: ${expiresAt}` : "Expires: Never",
 			`Downloaded: ${new Date().toISOString()}`,
@@ -77,7 +78,7 @@
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement("a");
 		a.href = url;
-		a.download = `agent-key-${label.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.txt`;
+		a.download = `agent-key-${displayLabel.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.txt`;
 		document.body.appendChild(a);
 		a.click();
 		document.body.removeChild(a);
@@ -307,7 +308,7 @@
 						<tbody>
 							{#each (keysByShare[share.id] ?? []) as key (key.id)}
 								<tr>
-									<td class="ak-label">{key.label}</td>
+									<td class="ak-label">{key.label || '(unnamed)'}</td>
 									<td title={key.created_at}>{timeAgo(key.created_at)}</td>
 									<td>{key.expires_at ? new Date(key.expires_at).toLocaleDateString() : "Never"}</td>
 									<td>
@@ -414,7 +415,7 @@
 	<div class="ak-overlay" role="presentation" on:click|self={() => {}}>
 		<div class="ak-modal" role="dialog" aria-modal="true" on:click|stopPropagation>
 			<div class="ak-modal-header">
-				<span class="ak-modal-title">Key created: {revealedKey.label}</span>
+				<span class="ak-modal-title">Key created: {revealedKey.label || '(unnamed)'}</span>
 				<button class="ak-close-btn" on:click={handleRevealClose} title="Close">✕</button>
 			</div>
 
@@ -463,7 +464,7 @@
 				<span class="ak-modal-title">Revoke key?</span>
 			</div>
 			<div class="ak-modal-body">
-				<p>Revoke <strong>{revokeTarget.key.label}</strong>? This cannot be undone — any agent using this key will lose access immediately.</p>
+				<p>Revoke <strong>{revokeTarget.key.label || '(unnamed)'}</strong>? This cannot be undone — any agent using this key will lose access immediately.</p>
 			</div>
 			<div class="ak-modal-footer">
 				<button class="evc-small-btn" on:click={() => { revokeTarget = null; }}>Cancel</button>

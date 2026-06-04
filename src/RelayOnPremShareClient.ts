@@ -1045,7 +1045,7 @@ export class RelayOnPremShareClient {
 
 export interface AgentKey {
 	id: string;
-	label: string;
+	label: string | null;
 	share_id: string;
 	scopes: string[];
 	created_by: string;
@@ -1064,7 +1064,7 @@ export interface CreateAgentKeyRequest {
 export interface CreateAgentKeyResponse {
 	id: string;
 	key: string; // shown once only at creation time
-	label: string;
+	label: string | null;
 	scopes: string[];
 	share_id: string;
 	expires_at?: string | null;
