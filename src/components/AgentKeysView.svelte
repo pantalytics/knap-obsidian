@@ -84,25 +84,6 @@
 		URL.revokeObjectURL(url);
 	}
 
-	function checkSessionFreshness(): boolean {
-		try {
-			const provider =
-				plugin.loginManager.getMultiServerAuthManager?.()?.getProvider(server.id) ??
-				plugin.loginManager.getAuthProvider?.();
-			if (!provider) return true;
-			const token = (provider as any).getToken?.() ?? (provider as any).token ?? null;
-			if (!token || typeof token !== "string") return true;
-			const parts = token.split(".");
-			if (parts.length !== 3) return true;
-			const payload = JSON.parse(atob(parts[1]));
-			const iat: number = payload.iat ?? 0;
-			const ageMs = Date.now() - iat * 1000;
-			return ageMs <= 120 * 1000; // fresh if within 120 seconds (spec requirement)
-		} catch {
-			return true; // don't block user on decode failure
-		}
-	}
-
 	// -------------------------------------------------------------------------
 	// Data loading
 	// -------------------------------------------------------------------------
@@ -159,16 +140,7 @@
 	// Create modal
 	// -------------------------------------------------------------------------
 
-	async function openCreateModal(preselectedShareId?: string) {
-		const fresh = checkSessionFreshness();
-		if (!fresh) {
-			try {
-				await plugin.loginManager.reAuthForSensitiveAction(server.id);
-			} catch (e: unknown) {
-				new Notice(`Re-authentication failed: ${e instanceof Error ? e.message : "Unknown error"}`);
-				return;
-			}
-		}
+	function openCreateModal(preselectedShareId?: string) {
 		newKeyLabel = "";
 		newKeyShareId = preselectedShareId ?? initialShare?.id ?? shares[0]?.id ?? "";
 		newKeyExpiryChoice = "never";

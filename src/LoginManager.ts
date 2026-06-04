@@ -749,13 +749,14 @@ export class LoginManager extends Observable<LoginManager> {
 	}
 
 	/**
-	 * Re-authenticate for a sensitive action (e.g. creating agent keys)
-	 * Forces a fresh OAuth2 login to get a new token with a recent iat claim.
+	 * Re-authenticate for a sensitive action (e.g. creating agent keys).
+	 * Uses silent token refresh (refresh token endpoint) to obtain a new access
+	 * token with a recent iat claim — no OAuth popup or external redirect.
 	 */
 	async reAuthForSensitiveAction(serverId: string): Promise<void> {
 		const provider = this.multiServerAuthManager?.getProvider(serverId) ?? this.authProvider;
 		if (!provider) return;
-		await provider.loginWithOAuth2('casdoor');
+		await provider.refreshToken();
 	}
 
 	/**
