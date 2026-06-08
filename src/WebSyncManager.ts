@@ -26,6 +26,9 @@ export class WebSyncManager {
 	private syncDebounceMs = 2000; // Wait 2 seconds after last change
 	private minSyncIntervalMs = 5000; // Minimum 5 seconds between syncs (rate limiting)
 
+	// Set true around outbound uploads; read by InboundFileDownloader to avoid echo loops
+	isOutboundSyncing = false;
+
 	// Debounced sync function per file path
 	private debouncedSyncMap: Map<string, () => void> = new Map();
 

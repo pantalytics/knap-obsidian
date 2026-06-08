@@ -29,3 +29,39 @@ export interface RequestUrlResponse {
 	json: any;
 	text: string;
 }
+
+export const normalizePath = (path: string): string =>
+	path.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\//, "");
+
+export class TFile {
+	path: string;
+	basename: string;
+	extension: string;
+	name: string;
+	stat: { mtime: number; ctime: number; size: number };
+
+	constructor(path: string) {
+		this.path = path;
+		const parts = path.split("/");
+		this.name = parts[parts.length - 1];
+		const extIdx = this.name.lastIndexOf(".");
+		this.basename = extIdx >= 0 ? this.name.substring(0, extIdx) : this.name;
+		this.extension = extIdx >= 0 ? this.name.substring(extIdx + 1) : "";
+		this.stat = { mtime: Date.now(), ctime: Date.now(), size: 0 };
+	}
+}
+
+export class TFolder {
+	path: string;
+	name: string;
+	children: (TFile | TFolder)[];
+
+	constructor(path: string, children: (TFile | TFolder)[] = []) {
+		this.path = path;
+		const parts = path.split("/");
+		this.name = parts[parts.length - 1];
+		this.children = children;
+	}
+}
+
+export class Vault {}

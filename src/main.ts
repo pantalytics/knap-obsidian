@@ -163,6 +163,8 @@ export default class Live extends Plugin {
 	public shareClient?: RelayOnPremShareClient;
 	public shareClientManager?: RelayOnPremShareClientManager;
 	public webSyncManager?: import("./WebSyncManager").WebSyncManager;
+	public inboundFileDownloader?: import("./InboundFileDownloader").InboundFileDownloader;
+	public inboundSyncPoller?: import("./InboundSyncPoller").InboundSyncPoller;
 	debug!: (...args: unknown[]) => void;
 	log!: (...args: unknown[]) => void;
 	warn!: (...args: unknown[]) => void;
@@ -656,6 +658,27 @@ export default class Live extends Plugin {
 			);
 		}
 
+		// Initialize InboundFileDownloader for sync-artifact inbound sync (v1.9)
+		if (this.vault && this.shareClientManager && this.webSyncManager) {
+			const { InboundFileDownloader } = await import("./InboundFileDownloader");
+			this.inboundFileDownloader = new InboundFileDownloader(
+				this.vault,
+				this.shareClientManager,
+				this.webSyncManager,
+			);
+		}
+
+		// Initialize InboundSyncPoller (v1.9)
+		if (this.shareClientManager && this.webSyncManager && this.inboundFileDownloader) {
+			const { InboundSyncPoller } = await import("./InboundSyncPoller");
+			this.inboundSyncPoller = new InboundSyncPoller(
+				this.timeProvider,
+				this.shareClientManager,
+				this.webSyncManager,
+				this.inboundFileDownloader,
+			);
+		}
+
 		// Add status bar item for Relay On-Prem (v1.8.2)
 		if (relayOnPremSettings.enabled) {
 			this.addRelayStatusBarItem();
@@ -1080,6 +1103,12 @@ export default class Live extends Plugin {
 							log(`Registered auto-sync for ${share.kind} ${share.path} on server ${share.serverId}`);
 						}
 					}
+
+					// Register all folder shares for inbound polling (v1.9)
+					if (share.kind === "folder" && this.inboundSyncPoller) {
+						this.inboundSyncPoller.registerShare(share.id, share.serverId);
+						log(`Registered inbound poller for folder ${share.path} on server ${share.serverId}`);
+					}
 				}
 			} else if (this.shareClient) {
 				// Single-server mode (legacy)
@@ -1152,11 +1181,20 @@ export default class Live extends Plugin {
 							log(`Registered auto-sync for ${share.kind} ${share.path}`);
 						}
 					}
+
+					// Register all folder shares for inbound polling (v1.9)
+					if (share.kind === "folder" && this.inboundSyncPoller) {
+						this.inboundSyncPoller.registerShare(share.id, defaultServerId);
+						log(`Registered inbound poller for folder ${share.path}`);
+					}
 				}
 			} else {
 				log("No share client available, skipping share load");
 				return;
 			}
+
+			// Start inbound poller after all shares registered (v1.9)
+			this.inboundSyncPoller?.start();
 
 			// Refresh visual indicators
 			this.folderNavDecorations?.quickRefresh();
@@ -1659,8 +1697,9 @@ export default class Live extends Plugin {
 					}, 500);
 				}
 
-				// Handle auto-sync to web (v1.8.1)
-				if (this.webSyncManager && tfile instanceof TFile) {
+				// Handle auto-sync to web (v1.8.1); skip if InboundFileDownloader is writing (echo-loop guard, v1.9)
+				if (this.webSyncManager && tfile instanceof TFile &&
+					!this.inboundFileDownloader?.isInboundWriting(tfile.path)) {
 					void this.webSyncManager.onFileModified(tfile);
 				}
 			}),
@@ -1860,6 +1899,18 @@ export default class Live extends Plugin {
 
 		this.backgroundSync?.destroy();
 		this.backgroundSync = null as unknown as BackgroundSync;
+
+		// Cleanup InboundSyncPoller (v1.9)
+		if (this.inboundSyncPoller) {
+			this.inboundSyncPoller.destroy();
+			this.inboundSyncPoller = undefined;
+		}
+
+		// Cleanup InboundFileDownloader (v1.9)
+		if (this.inboundFileDownloader) {
+			this.inboundFileDownloader.destroy();
+			this.inboundFileDownloader = undefined;
+		}
 
 		// Cleanup WebSyncManager (v1.8.1)
 		if (this.webSyncManager) {

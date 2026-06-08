@@ -28,6 +28,18 @@ export interface RelayOnPremShare {
 	web_sync_mode?: "manual" | "auto"; // v1.8.1 - Sync mode for web publishing
 	web_url?: string | null;
 	web_doc_id?: string | null; // Y-sweet document ID for real-time sync
+	web_content_updated_at?: string | null; // v1.9 — bumped by sync-upload; polled by InboundSyncPoller
+}
+
+/**
+ * Sync-artifact file item from the share files index (v1.9 inbound sync)
+ */
+export interface SyncArtifactItem {
+	path: string;
+	sha256: string;
+	size: number;
+	updated_at: string;
+	type?: string;
 }
 
 /**
@@ -1038,6 +1050,54 @@ export class RelayOnPremShareClient {
 			log(`Revoked agent key: ${keyId}`);
 		} catch (error: unknown) {
 			log("Error revoking agent key:", error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Get the files index for a share — returns sync-artifact items (Bearer JWT, v1.9)
+	 */
+	async getFilesIndex(shareId: string): Promise<SyncArtifactItem[]> {
+		log(`Fetching files index for share ${shareId}...`);
+		try {
+			const response = await customFetch(
+				`${this.normalizedUrl}/shares/${shareId}/files-index`,
+				{
+					method: "GET",
+					headers: await this.getHeaders(),
+				},
+			);
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(`Failed to get files index: ${response.status} ${errorText}`);
+			}
+			const data = await response.json() as SyncArtifactItem[];
+			log(`Retrieved ${data.length} file index items for share ${shareId}`);
+			return data;
+		} catch (error: unknown) {
+			log("Error getting files index:", error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Download a sync-artifact file by relative path (Bearer JWT, v1.9)
+	 */
+	async downloadFile(shareId: string, filePath: string): Promise<ArrayBuffer> {
+		log(`Downloading file from share ${shareId}: ${filePath}`);
+		try {
+			const url = `${this.normalizedUrl}/shares/${shareId}/download?path=${encodeURIComponent(filePath)}`;
+			const response = await customFetch(url, {
+				method: "GET",
+				headers: await this.getHeaders(),
+			});
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(`Failed to download file: ${response.status} ${errorText}`);
+			}
+			return response.arrayBuffer();
+		} catch (error: unknown) {
+			log("Error downloading file:", error);
 			throw error;
 		}
 	}

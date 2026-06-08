@@ -20,6 +20,7 @@ import {
 	type AgentKey,
 	type CreateAgentKeyRequest,
 	type CreateAgentKeyResponse,
+	type SyncArtifactItem,
 } from "./RelayOnPremShareClient";
 import type { MultiServerAuthManager } from "./auth/MultiServerAuthManager";
 
@@ -552,5 +553,33 @@ export class RelayOnPremShareClientManager {
 		}
 
 		return client.syncFolderFileContent(slug, path, content);
+	}
+
+	/**
+	 * Get the files index for a share (Bearer JWT, v1.9 inbound sync)
+	 */
+	async getFilesIndex(serverId: string, shareId: string): Promise<SyncArtifactItem[]> {
+		const client = this.clients.get(serverId);
+		if (!client) {
+			throw new Error(`Server ${serverId} not found`);
+		}
+		if (!this.authManager.isLoggedInToServer(serverId)) {
+			throw new Error(`Not logged in to server ${serverId}`);
+		}
+		return client.getFilesIndex(shareId);
+	}
+
+	/**
+	 * Download a sync-artifact file by relative path (Bearer JWT, v1.9 inbound sync)
+	 */
+	async downloadFile(serverId: string, shareId: string, filePath: string): Promise<ArrayBuffer> {
+		const client = this.clients.get(serverId);
+		if (!client) {
+			throw new Error(`Server ${serverId} not found`);
+		}
+		if (!this.authManager.isLoggedInToServer(serverId)) {
+			throw new Error(`Not logged in to server ${serverId}`);
+		}
+		return client.downloadFile(shareId, filePath);
 	}
 }
