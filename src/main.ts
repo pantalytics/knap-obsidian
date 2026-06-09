@@ -106,7 +106,7 @@ import {
 import { RelayOnPremTokenProvider } from "./auth/RelayOnPremTokenProvider";
 import type { IAuthProvider } from "./auth/IAuthProvider";
 import { RelayOnPremShareClient, type FolderItem } from "./RelayOnPremShareClient";
-import { RelayOnPremShareClientManager } from "./RelayOnPremShareClientManager";
+import { RelayOnPremShareClientManager, type ShareWithServer } from "./RelayOnPremShareClientManager";
 import { QuickShareModal } from "./ui/QuickShareModal";
 import { confirmDialog } from "./ui/dialogs";
 
@@ -1110,6 +1110,17 @@ export default class Live extends Plugin {
 						log(`Registered inbound poller for folder ${share.path} on server ${share.serverId}`);
 					}
 				}
+
+				// Deferred initial full-sync for stale auto-sync folder shares (v1.1.18)
+				const staleAutoSyncShares = allShares.filter(s => {
+					if (!s.web_published || s.kind !== "folder" || s.web_sync_mode !== "auto") return false;
+					if (!s.web_content_updated_at) return true;
+					return Date.now() - new Date(s.web_content_updated_at).getTime() > 6 * 60 * 60 * 1000;
+				});
+				if (staleAutoSyncShares.length > 0) {
+					log(`Scheduling initial full-sync for ${staleAutoSyncShares.length} stale auto-sync shares`);
+					setTimeout(() => { void this._initialFullSync(staleAutoSyncShares); }, 15_000);
+				}
 			} else if (this.shareClient) {
 				// Single-server mode (legacy)
 				const shares = await this.shareClient.listShares();
@@ -1365,6 +1376,43 @@ export default class Live extends Plugin {
 			new Notice(parts.length > 0 ? `Synced: ${parts.join(", ")}` : "No shares to sync");
 		} catch (error: unknown) {
 			new Notice(`Sync failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+		}
+	}
+
+	private async _initialFullSync(shares: ShareWithServer[]): Promise<void> {
+		if (!this.shareClientManager) return;
+		this.log("Running initial full-sync for stale auto-sync shares", shares.length);
+		for (const share of shares) {
+			try {
+				const folderAbs = this.vault.getAbstractFileByPath(share.path);
+				if (!(folderAbs instanceof TFolder)) {
+					this.log("Folder not in vault, skipping initial full-sync", share.path);
+					continue;
+				}
+				const items = this.getFolderItemsRecursive(folderAbs);
+				await this.shareClientManager.updateShare(share.serverId, share.id, {
+					web_folder_items: items,
+				});
+				if (share.web_slug) {
+					for (const item of items) {
+						if (item.type === "doc" || item.type === "canvas") {
+							try {
+								const f = this.vault.getAbstractFileByPath(`${share.path}/${item.path}`);
+								if (f instanceof TFile) {
+									const content = await this.vault.read(f);
+									await this.shareClientManager.syncFolderFileContent(
+										share.serverId, share.web_slug, item.path, content
+									);
+									await new Promise<void>(r => setTimeout(r, 200));
+								}
+							} catch { /* skip individual file errors */ }
+						}
+					}
+				}
+				this.log("Initial full-sync done for share", share.path, items.length);
+			} catch (e: unknown) {
+				this.log("Initial full-sync failed for share", share.path, String(e));
+			}
 		}
 	}
 
