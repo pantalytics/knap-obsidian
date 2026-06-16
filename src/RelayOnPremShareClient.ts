@@ -100,6 +100,7 @@ export interface UpdateShareRequest {
 	web_content?: string; // Document content for web publishing
 	web_folder_items?: FolderItem[]; // Folder contents for web publishing
 	web_doc_id?: string; // Y-sweet document ID for real-time sync
+	web_content_updated_at?: string; // ISO timestamp — plugin sets after completing initial full-sync to prevent re-trigger
 }
 
 /**
@@ -781,15 +782,30 @@ export class RelayOnPremShareClient {
 	): Promise<void> {
 		log(`Syncing folder file content: ${slug}${path}`);
 
-		try {
-			const response = await customFetch(
-				`${this.normalizedUrl}/v1/web/shares/${slug}/files?path=${encodeURIComponent(path)}`,
-				{
-					method: "POST",
-					headers: await this.getHeaders(),
-					body: JSON.stringify({ content }),
-				},
-			);
+		const maxRetries = 3;
+		for (let attempt = 0; attempt <= maxRetries; attempt++) {
+			let response: Response;
+			try {
+				response = await customFetch(
+					`${this.normalizedUrl}/v1/web/shares/${slug}/files?path=${encodeURIComponent(path)}`,
+					{
+						method: "POST",
+						headers: await this.getHeaders(),
+						body: JSON.stringify({ content }),
+					},
+				);
+			} catch (error: unknown) {
+				log("Error syncing folder file content:", error);
+				throw error;
+			}
+
+			if (response.status === 429 && attempt < maxRetries) {
+				const retryAfter = parseInt(response.headers.get("Retry-After") ?? "60", 10);
+				const delay = Math.min(retryAfter * 1000, 120_000);
+				log(`Rate limited syncing ${path}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+				await new Promise<void>(r => setTimeout(r, delay));
+				continue;
+			}
 
 			if (!response.ok) {
 				const errorText = await response.text();
@@ -799,9 +815,7 @@ export class RelayOnPremShareClient {
 			}
 
 			log(`Successfully synced file content: ${path}`);
-		} catch (error: unknown) {
-			log("Error syncing folder file content:", error);
-			throw error;
+			return;
 		}
 	}
 

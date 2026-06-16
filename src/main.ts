@@ -1394,22 +1394,34 @@ export default class Live extends Plugin {
 					web_folder_items: items,
 				});
 				if (share.web_slug) {
+					let syncedCount = 0;
 					for (const item of items) {
 						if (item.type === "doc" || item.type === "canvas") {
 							try {
 								const f = this.vault.getAbstractFileByPath(`${share.path}/${item.path}`);
 								if (f instanceof TFile) {
 									const content = await this.vault.read(f);
+									if (!content) {
+										this.log("Skipping empty file in initial full-sync", item.path);
+										continue;
+									}
 									await this.shareClientManager.syncFolderFileContent(
 										share.serverId, share.web_slug, item.path, content
 									);
+									syncedCount++;
 									await new Promise<void>(r => setTimeout(r, 200));
 								}
-							} catch { /* skip individual file errors */ }
+							} catch (e: unknown) {
+								this.log("Failed to sync file in initial full-sync", item.path, String(e));
+							}
 						}
 					}
+					this.log("Initial full-sync done for share", share.path, syncedCount, "of", items.length);
 				}
-				this.log("Initial full-sync done for share", share.path, items.length);
+				// Bump web_content_updated_at so the stale check won't re-trigger on next startup
+				await this.shareClientManager.updateShare(share.serverId, share.id, {
+					web_content_updated_at: new Date().toISOString(),
+				});
 			} catch (e: unknown) {
 				this.log("Initial full-sync failed for share", share.path, String(e));
 			}
