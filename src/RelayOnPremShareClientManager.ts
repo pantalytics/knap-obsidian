@@ -178,13 +178,15 @@ export class RelayOnPremShareClientManager {
 	/**
 	 * Get a specific share from a server (with caching)
 	 */
-	async getShare(serverId: string, shareId: string): Promise<RelayOnPremShare> {
-		// Check cache first
+	async getShare(serverId: string, shareId: string, bypassCache = false): Promise<RelayOnPremShare> {
+		// Check cache first (skipped by inbound poller to detect server-side bumps promptly)
 		const cacheKey = `${serverId}:${shareId}`;
-		const cached = this.shareCache.get(cacheKey);
-		if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
-			log(`Cache hit for share ${shareId}`);
-			return cached.share;
+		if (!bypassCache) {
+			const cached = this.shareCache.get(cacheKey);
+			if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+				log(`Cache hit for share ${shareId}`);
+				return cached.share;
+			}
 		}
 
 		const client = this.clients.get(serverId);

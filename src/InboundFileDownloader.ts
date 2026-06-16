@@ -45,11 +45,12 @@ export class InboundFileDownloader {
 	/**
 	 * Main entry point — called by InboundSyncPoller when web_content_updated_at bumps.
 	 * Resolves the share path, fetches the files index, diffs, and writes new/updated items.
+	 * Returns "skipped" when outbound sync is in flight so the poller can retry.
 	 */
-	async downloadShare(shareId: string, serverId: string): Promise<void> {
+	async downloadShare(shareId: string, serverId: string): Promise<"ran" | "skipped"> {
 		if (this.webSyncManager.isOutboundSyncing) {
 			log("Skipping — outbound sync in flight", { shareId });
-			return;
+			return "skipped";
 		}
 
 		// Resolve share path (cached by clientManager for 5 min)
@@ -62,7 +63,7 @@ export class InboundFileDownloader {
 				shareId,
 				error: err instanceof Error ? err.message : String(err),
 			});
-			return;
+			return "ran";
 		}
 
 		let items;
@@ -73,7 +74,7 @@ export class InboundFileDownloader {
 				shareId,
 				error: err instanceof Error ? err.message : String(err),
 			});
-			return;
+			return "ran";
 		}
 
 		// Filter to sync-artifact type only (server may return all types)
@@ -83,7 +84,7 @@ export class InboundFileDownloader {
 
 		if (syncItems.length === 0) {
 			log("No sync-artifact items in files index", { shareId });
-			return;
+			return "ran";
 		}
 
 		const shareManifest = this.lastWrittenHash.get(shareId) ?? new Map<string, string>();
@@ -93,6 +94,7 @@ export class InboundFileDownloader {
 		}
 
 		this.lastWrittenHash.set(shareId, shareManifest);
+		return "ran";
 	}
 
 	private async _downloadItem(

@@ -68,7 +68,8 @@ export class InboundSyncPoller {
 		lastUpdatedAt: string | null,
 	): Promise<void> {
 		try {
-			const share = await this.clientManager.getShare(serverId, shareId);
+			// Bypass the 5-min share cache so server-side bumps are detected within one poll cycle
+			const share = await this.clientManager.getShare(serverId, shareId, true);
 			const newUpdatedAt = share.web_content_updated_at ?? null;
 			if (!newUpdatedAt) return;
 			if (newUpdatedAt === lastUpdatedAt) {
@@ -79,8 +80,12 @@ export class InboundSyncPoller {
 				shareId,
 				newUpdatedAt,
 			});
-			this.watchedShares.set(shareId, { serverId, lastUpdatedAt: newUpdatedAt });
-			await this.fileDownloader.downloadShare(shareId, serverId);
+			// Only advance lastUpdatedAt if the download actually ran (not skipped due to
+			// outbound sync in flight) so a skipped cycle retries on the next poll.
+			const result = await this.fileDownloader.downloadShare(shareId, serverId);
+			if (result !== "skipped") {
+				this.watchedShares.set(shareId, { serverId, lastUpdatedAt: newUpdatedAt });
+			}
 		} catch (err: unknown) {
 			log("Failed to check share", {
 				shareId,
