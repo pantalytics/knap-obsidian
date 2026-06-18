@@ -120,7 +120,7 @@ describe("InboundSyncPoller", () => {
 		timeProvider.setTime(startTime + 30_000);
 		await flushPromises();
 
-		expect(clientManager.getShare).toHaveBeenCalledWith(SERVER_ID, SHARE_ID);
+		expect(clientManager.getShare).toHaveBeenCalledWith(SERVER_ID, SHARE_ID, true);
 		expect(fileDownloader.downloadShare).toHaveBeenCalledWith(SHARE_ID, SERVER_ID);
 	});
 
@@ -393,7 +393,7 @@ describe("InboundFileDownloader", () => {
 	test("handles share path resolution failure gracefully", async () => {
 		(clientManager.getShare as jest.Mock).mockRejectedValue(new Error("Not found"));
 
-		await expect(downloader.downloadShare(SHARE_ID, SERVER_ID)).resolves.toBeUndefined();
+		await expect(downloader.downloadShare(SHARE_ID, SERVER_ID)).resolves.toBe("ran");
 		expect(vault.adapter.writeBinary).not.toHaveBeenCalled();
 	});
 
@@ -401,7 +401,7 @@ describe("InboundFileDownloader", () => {
 		(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare());
 		(clientManager.getFilesIndex as jest.Mock).mockRejectedValue(new Error("Server error"));
 
-		await expect(downloader.downloadShare(SHARE_ID, SERVER_ID)).resolves.toBeUndefined();
+		await expect(downloader.downloadShare(SHARE_ID, SERVER_ID)).resolves.toBe("ran");
 		expect(vault.adapter.writeBinary).not.toHaveBeenCalled();
 	});
 
@@ -416,7 +416,7 @@ describe("InboundFileDownloader", () => {
 			.mockRejectedValueOnce(new Error("Download failed"))
 			.mockResolvedValueOnce(new ArrayBuffer(4));
 
-		await expect(downloader.downloadShare(SHARE_ID, SERVER_ID)).resolves.toBeUndefined();
+		await expect(downloader.downloadShare(SHARE_ID, SERVER_ID)).resolves.toBe("ran");
 		expect(vault.adapter.writeBinary).toHaveBeenCalledTimes(1);
 		expect(vault.adapter.writeBinary).toHaveBeenCalledWith(`${SHARE_PATH}/ok.md`, expect.any(ArrayBuffer));
 	});
