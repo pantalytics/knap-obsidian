@@ -157,6 +157,10 @@
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/></svg>
 				MCP server
 			</a>
+			<a class="evc-prim-btn evc-mesh-btn" href="https://entire.vc/mesh/?utm_source=obsidian-plugin&utm_medium=plugin-header&utm_campaign=teamrelay&utm_content=mesh" target="_blank" rel="noopener">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
+				Mesh
+			</a>
 		</div>
 	</div>
 
@@ -332,6 +336,16 @@
 		width: 16px;
 		height: 16px;
 		flex-shrink: 0;
+	}
+
+	.evc-mesh-btn {
+		background: rgba(0, 105, 106, 0.1);
+		color: #00696a;
+		border-color: rgba(0, 105, 106, 0.2);
+	}
+
+	.evc-mesh-btn:hover {
+		background: rgba(0, 105, 106, 0.18);
 	}
 
 	/* Breadcrumbs */
