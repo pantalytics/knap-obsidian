@@ -7,7 +7,7 @@
 
 import { App, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
 import type Live from "../main";
-import { RelayOnPremShareClient, type RelayOnPremShare, type ShareMember, type Invite, type FolderItem } from "../RelayOnPremShareClient";
+import { RelayOnPremShareClient, type RelayOnPremShare, type ShareMember, type Invite, type FolderItem, type AgentKey, type CreateAgentKeyResponse } from "../RelayOnPremShareClient";
 import { RelayOnPremShareClientManager, type ShareWithServer } from "../RelayOnPremShareClientManager";
 import { FolderSuggestModal } from "./FolderSuggestModal";
 import { getDefaultServer, type RelayOnPremServer } from "../RelayOnPremConfig";
@@ -19,6 +19,7 @@ export class ShareManagementModal extends Modal {
 	private selectedShare: ShareWithServer | null = null;
 	private members: ShareMember[] = [];
 	private invites: Invite[] = [];
+	private agentKeys: AgentKey[] = [];
 	private isOwner = false;
 	private isLoading = false;
 	private serverId?: string;
@@ -233,16 +234,32 @@ export class ShareManagementModal extends Modal {
 				return [] as Invite[];
 			})();
 
-			const [serverInfo, members, invites] = await Promise.all([
+			const agentKeysPromise = (async () => {
+				if (!this.isOwner) return [] as AgentKey[];
+				try {
+					if (this.plugin.shareClientManager) {
+						return await this.plugin.shareClientManager.listAgentKeys(share.serverId, share.id);
+					} else if (this.plugin.shareClient) {
+						return await this.plugin.shareClient.listAgentKeys(share.id);
+					}
+				} catch (e) {
+					console.debug("[ShareManagement] Failed to list agent keys:", e);
+				}
+				return [] as AgentKey[];
+			})();
+
+			const [serverInfo, members, invites, agentKeys] = await Promise.all([
 				serverInfoPromise,
 				membersPromise,
 				invitesPromise,
+				agentKeysPromise,
 			]);
 
 			this.webPublishEnabled = serverInfo?.features?.web_publish_enabled ?? false;
 			this.webPublishDomain = serverInfo?.features?.web_publish_domain ?? null;
 			this.members = members;
 			this.invites = invites;
+			this.agentKeys = agentKeys;
 
 			this.renderContent();
 		} catch (error: unknown) {
@@ -356,7 +373,7 @@ export class ShareManagementModal extends Modal {
 			new Notice("Share ID copied to clipboard");
 		});
 
-		// Section order (v1.9.1): Local Folder → Members → Add Member → Invites → Web Publishing → Actions
+		// Section order (v1.9.2): Local Folder → Members → Add Member → Invites → Agent Keys → Web Publishing → Actions
 
 		// Local folder connection section (folder shares only)
 		if (this.selectedShare.kind === "folder") {
@@ -445,6 +462,11 @@ export class ShareManagementModal extends Modal {
 		// Invites section - only for owners
 		if (this.isOwner) {
 			this.renderInvitesSection();
+		}
+
+		// Agent Keys section - only for owners
+		if (this.isOwner) {
+			this.renderAgentKeysSection();
 		}
 
 		// Web Publishing section - only for owners when server supports it (moved here in v1.8.3)
@@ -1267,6 +1289,190 @@ export class ShareManagementModal extends Modal {
 					}
 				}
 			});
+		}
+	}
+
+	private renderAgentKeysSection() {
+		if (!this.selectedShare) return;
+
+		const { contentEl } = this;
+
+		const headerDiv = contentEl.createDiv({ cls: "relay-onprem-agent-keys-header" });
+		headerDiv.addClass("evc-flex", "evc-justify-between", "evc-align-center", "evc-mt-4");
+		headerDiv.createEl("h4", { text: "Agent keys" });
+
+		const createBtn = headerDiv.createEl("button", {
+			text: "+ Create key",
+			cls: "mod-cta evc-btn-sm",
+		});
+		createBtn.addEventListener("click", () => this.showCreateAgentKeyForm());
+
+		const activeKeys = this.agentKeys.filter((k) => k.is_active && !k.revoked_at);
+
+		if (activeKeys.length === 0) {
+			contentEl.createEl("p", {
+				text: "No agent keys. Create one to allow programmatic access to this share.",
+				cls: "relay-onprem-empty",
+			});
+		} else {
+			const keysDiv = contentEl.createDiv({ cls: "relay-onprem-agent-keys" });
+			activeKeys.forEach((key) => {
+				const desc: string[] = [];
+				if (key.last_used_at) {
+					desc.push(`Last used: ${new Date(key.last_used_at).toLocaleDateString()}`);
+				} else {
+					desc.push("Never used");
+				}
+				if (key.expires_at) {
+					desc.push(`Expires: ${new Date(key.expires_at).toLocaleDateString()}`);
+				}
+				new Setting(keysDiv)
+					.setName(key.label || `Key ${key.id.substring(0, 8)}`)
+					.setDesc(desc.join(" • "))
+					.addButton((button) => {
+						button
+							.setButtonText("Revoke")
+							.setWarning()
+							.onClick(() => void this.revokeShareAgentKey(key.id));
+					});
+			});
+		}
+	}
+
+	private showCreateAgentKeyForm() {
+		if (!this.selectedShare) return;
+
+		const { contentEl } = this;
+		contentEl.empty();
+
+		const backButton = contentEl.createEl("button", {
+			text: "Back to share",
+			cls: "mod-muted evc-mb-3",
+		});
+		backButton.addEventListener("click", () => void this.loadShareDetails(this.selectedShare!));
+
+		contentEl.createEl("h3", { text: "Create agent key" });
+
+		let labelInput: HTMLInputElement;
+		let expiresSelect: HTMLSelectElement;
+
+		new Setting(contentEl)
+			.setName("Label")
+			.setDesc("A name to identify this key")
+			.addText((text) => {
+				labelInput = text.inputEl;
+				text.setPlaceholder("E.g., CI pipeline, Claude agent");
+			});
+
+		new Setting(contentEl)
+			.setName("Expiration")
+			.setDesc("When this key should expire")
+			.addDropdown((dropdown) => {
+				expiresSelect = dropdown.selectEl;
+				dropdown.addOption("30", "30 days");
+				dropdown.addOption("90", "90 days");
+				dropdown.addOption("365", "1 year");
+				dropdown.addOption("0", "No expiration");
+				dropdown.setValue("90");
+			});
+
+		new Setting(contentEl).addButton((button) => {
+			button
+				.setButtonText("Create key")
+				.setCta()
+				.onClick(async () => {
+					const label = labelInput.value.trim();
+					if (!label) {
+						new Notice("Please enter a label for the key");
+						return;
+					}
+					const expiresInDays = parseInt(expiresSelect.value, 10);
+					const expiresAt =
+						expiresInDays > 0
+							? new Date(Date.now() + expiresInDays * 86400000).toISOString()
+							: undefined;
+					await this.doCreateAgentKey(label, expiresAt);
+				});
+		});
+	}
+
+	private async doCreateAgentKey(label: string, expiresAt?: string) {
+		if (!this.selectedShare) return;
+
+		try {
+			let result: CreateAgentKeyResponse;
+			const request = { label, ...(expiresAt && { expires_at: expiresAt }) };
+
+			if (this.plugin.shareClientManager) {
+				result = await this.plugin.shareClientManager.createAgentKey(
+					this.selectedShare.serverId,
+					this.selectedShare.id,
+					request,
+				);
+			} else if (this.plugin.shareClient) {
+				result = await this.plugin.shareClient.createAgentKey(this.selectedShare.id, request);
+			} else {
+				throw new Error("No share client available");
+			}
+
+			// Show the key once — it will not be retrievable again
+			const { contentEl } = this;
+			contentEl.empty();
+
+			contentEl.createEl("h3", { text: "Agent key created" });
+			contentEl.createEl("p", {
+				text: "Copy this key now — it will not be shown again.",
+				cls: "relay-onprem-warning",
+			});
+
+			new Setting(contentEl)
+				.setName(result.label || "Agent key")
+				.setDesc(result.key)
+				.addButton((button) => {
+					button
+						.setButtonText("Copy key")
+						.setCta()
+						.onClick(() => {
+							void navigator.clipboard.writeText(result.key);
+							new Notice("Agent key copied to clipboard!");
+						});
+				});
+
+			contentEl.createEl("button", { text: "Done", cls: "mod-cta evc-mt-4" })
+				.addEventListener("click", () => void this.loadShareDetails(this.selectedShare!));
+		} catch (error: unknown) {
+			new Notice(
+				`Failed to create agent key: ${error instanceof Error ? error.message : "Unknown error"}`,
+			);
+		}
+	}
+
+	private async revokeShareAgentKey(keyId: string) {
+		if (!this.selectedShare) return;
+
+		const confirmed = await confirmDialog(
+			this.app,
+			"Are you sure you want to revoke this agent key? This cannot be undone.",
+		);
+		if (!confirmed) return;
+
+		try {
+			if (this.plugin.shareClientManager) {
+				await this.plugin.shareClientManager.revokeAgentKey(
+					this.selectedShare.serverId,
+					this.selectedShare.id,
+					keyId,
+				);
+			} else if (this.plugin.shareClient) {
+				await this.plugin.shareClient.revokeAgentKey(this.selectedShare.id, keyId);
+			}
+
+			new Notice("Agent key revoked");
+			await this.loadShareDetails(this.selectedShare);
+		} catch (error: unknown) {
+			new Notice(
+				`Failed to revoke agent key: ${error instanceof Error ? error.message : "Unknown error"}`,
+			);
 		}
 	}
 

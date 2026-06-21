@@ -490,7 +490,15 @@ export class SyncStore extends Observable<SyncStore> {
 	}
 
 	migrateFile(guid: string, vpath: string) {
-		this.assertVPath(vpath);
+		try {
+			this.assertVPath(vpath);
+		} catch {
+			// Path from inbound sync may not be a valid virtual path (e.g. full OS path
+			// or a path outside this shared folder's namespace). Skip gracefully so one
+			// bad entry doesn't abort the entire legacyIds migration and wedge the plugin.
+			this.warn(`migrateFile: skipping invalid vpath "${vpath}"`);
+			return;
+		}
 		if (this.meta.get(vpath)?.id === guid) {
 			return;
 		}
