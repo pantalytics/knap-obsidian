@@ -123,45 +123,41 @@
 </script>
 
 <div class="evc-relay-settings">
-	<!-- Static Header -->
+	<!-- Direction B — Native toolbar header -->
 	<div class="evc-settings-header">
-		<div class="evc-header-left">
-			<a href={EVC_URL} class="evc-header-brand" target="_blank" rel="noopener noreferrer">
-				<img src={evcLogo} alt="EVC Logo" class="evc-header-logo" />
-				<div class="evc-header-text">
-					<div class="evc-header-title">EVC Team Relay</div>
-					<div class="evc-header-desc">
-						Self-hosted relay for real-time collaboration
-					</div>
-				</div>
-			</a>
-			<div class="evc-quick-links">
-				<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=bug-report.yml" class="evc-pill-btn" target="_blank" rel="noopener noreferrer">
-					<svg class="evc-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-					Bug report
+		<!-- Top row: logo + title/desc + ghost icon buttons -->
+		<div class="evc-header-top">
+			<img src={evcLogo} alt="EVC Logo" class="evc-header-logo" />
+			<div class="evc-header-text">
+				<div class="evc-header-title">EVC Team Relay</div>
+				<div class="evc-header-desc">Self-hosted relay for real-time collaboration</div>
+			</div>
+			<div class="evc-header-actions">
+				<a class="evc-ghost-btn" href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin?utm_source=obsidian-plugin&utm_medium=plugin-header&utm_campaign=teamrelay&utm_content=github" target="_blank" rel="noopener" title="GitHub">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 4 5 4 5 4c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 11c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
 				</a>
-				<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=feature-request.yml" class="evc-pill-btn" target="_blank" rel="noopener noreferrer">
-					<svg class="evc-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
-					Feature request
+				<a class="evc-ghost-btn" href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=bug-report.yml&utm_source=obsidian-plugin&utm_medium=plugin-header&utm_campaign=teamrelay&utm_content=bug" target="_blank" rel="noopener" title="Bug report">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/></svg>
 				</a>
-				<a href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=web-publish.yml" class="evc-pill-btn" target="_blank" rel="noopener noreferrer">
-					<svg class="evc-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-					Web publish issue
+				<a class="evc-ghost-btn" href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=feature-request.yml&utm_source=obsidian-plugin&utm_medium=plugin-header&utm_campaign=teamrelay&utm_content=feature" target="_blank" rel="noopener" title="Feature request">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+				</a>
+				<a class="evc-ghost-btn" href="https://github.com/entire-vc/evc-team-relay-obsidian-plugin/issues/new?template=web-publish.yml&utm_source=obsidian-plugin&utm_medium=plugin-header&utm_campaign=teamrelay&utm_content=webpublish" target="_blank" rel="noopener" title="Web publish issue">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
 				</a>
 			</div>
 		</div>
-		<a
-			href={EVC_URL}
-			class="evc-github-badge"
-			target="_blank"
-			rel="noopener noreferrer"
-			title="Visit Entire VC on GitHub"
-		>
-			<svg class="evc-github-icon" viewBox="0 0 16 16" fill="currentColor">
-				<path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
-			</svg>
-			<span class="evc-github-text">GitHub</span>
-		</a>
+		<!-- Bottom row: CTA buttons -->
+		<div class="evc-header-ctas">
+			<a class="evc-prim-btn" href="https://entire.vc/team-relay/?utm_source=obsidian-plugin&utm_medium=plugin-header&utm_campaign=teamrelay&utm_content=docs" target="_blank" rel="noopener">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+				Documentation
+			</a>
+			<a class="evc-prim-btn" href="https://spark.entire.vc/mcps/evc-team-relay-mcp?utm_source=obsidian-plugin&utm_medium=plugin-header&utm_campaign=teamrelay&utm_content=mcp" target="_blank" rel="noopener">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/></svg>
+				MCP server
+			</a>
+		</div>
 	</div>
 
 	<!-- Breadcrumb Navigation -->
@@ -233,112 +229,108 @@
 		padding: 0;
 	}
 
-	/* Header */
+	/* Header — Direction B (native toolbar) */
 	.evc-settings-header {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
 		padding: 16px 20px;
 		border-bottom: 1px solid var(--background-modifier-border);
-		margin-bottom: 0;
 	}
 
-	.evc-header-left {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
-	.evc-header-brand {
+	.evc-header-top {
 		display: flex;
 		align-items: center;
-		gap: 12px;
-		text-decoration: none;
-		color: inherit;
-		transition: opacity 0.15s;
-	}
-
-	.evc-header-brand:hover {
-		opacity: 0.85;
+		gap: 14px;
 	}
 
 	.evc-header-logo {
-		width: 44px;
-		height: 44px;
-		border-radius: 10px;
+		width: 32px;
+		height: 32px;
+		border-radius: 7px;
+		flex: none;
 	}
 
 	.evc-header-text {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
+		flex: 1;
+		min-width: 0;
 	}
 
 	.evc-header-title {
+		font-size: 17px;
 		font-weight: 700;
-		font-size: 1.3em;
 		color: var(--text-normal);
+		letter-spacing: -0.2px;
+		line-height: 1.2;
 	}
 
 	.evc-header-desc {
+		font-size: 13px;
 		color: var(--text-muted);
-		font-size: 0.85em;
+		margin-top: 1px;
 	}
 
-	.evc-github-badge {
+	.evc-header-actions {
 		display: flex;
 		align-items: center;
-		gap: 6px;
-		padding: 6px 12px;
-		border: 1px solid var(--background-modifier-border);
-		border-radius: 16px;
+		gap: 2px;
+		flex: none;
+	}
+
+	.evc-ghost-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 30px;
+		height: 30px;
+		border-radius: var(--radius-s, 6px);
+		color: var(--text-faint);
 		text-decoration: none;
-		color: var(--text-normal);
-		font-size: 0.85em;
-		font-weight: 500;
-		transition: all 0.15s;
+		transition: background 0.15s, color 0.15s;
 	}
 
-	.evc-github-badge:hover {
-		border-color: var(--text-muted);
+	.evc-ghost-btn:hover {
 		background: var(--background-modifier-hover);
+		color: var(--text-normal);
 	}
 
-	.evc-github-icon {
+	.evc-ghost-btn svg {
 		width: 16px;
 		height: 16px;
 	}
 
-	/* Quick Links (pill buttons) */
-	.evc-quick-links {
+	/* CTA row */
+	.evc-header-ctas {
 		display: flex;
-		gap: 8px;
-		padding-left: 56px;
+		align-items: center;
+		gap: 10px;
+		margin-top: 16px;
+		padding-top: 16px;
+		border-top: 1px solid var(--background-modifier-border);
 		flex-wrap: wrap;
 	}
 
-	.evc-pill-btn {
+	.evc-prim-btn {
 		display: inline-flex;
 		align-items: center;
-		gap: 5px;
-		padding: 4px 12px;
-		border: 1px solid var(--background-modifier-border);
-		border-radius: 16px;
-		font-size: 0.8em;
-		color: var(--text-normal);
+		gap: 8px;
+		height: 34px;
+		padding: 0 14px;
+		border-radius: var(--radius-s, 6px);
+		background: rgba(124, 92, 255, 0.1);
+		color: var(--interactive-accent);
+		border: 1px solid rgba(124, 92, 255, 0.2);
+		font-size: 13px;
+		font-weight: 600;
 		text-decoration: none;
-		transition: all 0.15s;
 		white-space: nowrap;
+		transition: background 0.15s;
 	}
 
-	.evc-pill-btn:hover {
-		border-color: var(--text-muted);
-		background: var(--background-modifier-hover);
+	.evc-prim-btn:hover {
+		background: rgba(124, 92, 255, 0.18);
 	}
 
-	.evc-pill-icon {
-		width: 14px;
-		height: 14px;
+	.evc-prim-btn svg {
+		width: 16px;
+		height: 16px;
 		flex-shrink: 0;
 	}
 
