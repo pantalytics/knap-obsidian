@@ -90,6 +90,10 @@
 	import { moment } from "obsidian";
 	import AccountSettingItem from "./AccountSettingItem.svelte";
 	import { minimark } from "src/minimark";
+
+	function stripHtml(s: string): string {
+		return s.replace(/<[^>]+>/g, "");
+	}
 	import { handleServerError } from "../utils/toastStore";
 
 	plugin.relayManager.refreshRelay(relay);
@@ -907,12 +911,12 @@
 				{#if response.level === "warning"}
 					<SettingItem name="Status" description="">
 						<p class="mod-warning relay-host-check">
-							{@html minimark(response.status)}
+							{stripHtml(minimark(response.status))}
 
 							{#if response.link}
 								<br />
 								<a href={response.link.url}>
-									{@html minimark(response.link.text)}
+									{stripHtml(minimark(response.link.text))}
 								</a>
 							{/if}
 						</p>

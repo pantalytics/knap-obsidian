@@ -9,6 +9,10 @@
 	import ManageSharedFolder from "./ManageSharedFolder.svelte";
 	import ManageRemoteFolder from "./ManageRemoteFolder.svelte";
 	import { minimark } from "src/minimark";
+
+	function stripHtml(s: string): string {
+		return s.replace(/<[^>]+>/g, "");
+	}
 	import type { RemoteSharedFolder } from "src/Relay";
 	import ToastManager from "./ToastManager.svelte";
 	import { handleServerError } from "../utils/toastStore";
@@ -305,7 +309,7 @@
 				: 'var(--text-on-accent)'} !important"
 		>
 			{#if plugin.networkStatus.status}
-				{@html minimark(plugin.networkStatus.status.status)}
+				{stripHtml(minimark(plugin.networkStatus.status.status))}
 			{/if}
 		</span>
 	</div>

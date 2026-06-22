@@ -1,6 +1,6 @@
 {
 	"name": "evc-team-relay",
-	"version": "1.1.27",
+	"version": "1.1.28",
 	"description": "Enterprise collaboration with self-hosted relay infrastructure for Obsidian.",
 	"main": "main.js",
 	"scripts": {

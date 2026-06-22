@@ -124,8 +124,8 @@
 			.join("\n");
 	}
 
-	// Generate syntax highlighted HTML
-	$: highlightedHtml = toml ? renderTokens(tokenizeToml(toml)) : "";
+	// Syntax highlighting removed: {@html} is blocked by Obsidian community scorecard.
+	// Plain toml text is rendered directly in the template.
 
 	async function copyToClipboard() {
 		try {
@@ -150,7 +150,7 @@
 {#if toml}
 	<div class="el-pre">
 		<pre class="language-toml"><code class="language-toml is-loaded"
-				>{@html highlightedHtml}</code
+				>{toml}</code
 			><button
 				class="copy-code-button"
 				aria-label={copied ? "Copied to clipboard" : "Copy"}
