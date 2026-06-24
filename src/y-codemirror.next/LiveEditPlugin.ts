@@ -217,7 +217,7 @@ export class LiveCMPluginValue implements PluginValue {
 							const result: unknown = old.call(this);
 							if (!liveEditPlugin.destroyed && liveEditPlugin.document) {
 								try {
-									(this as unknown as MarkdownView).app.metadataCache.trigger("resolve", (this as unknown as MarkdownView).file);
+									(this as MarkdownView).app.metadataCache.trigger("resolve", (this as MarkdownView).file);
 								} catch {
 									// pass
 								}

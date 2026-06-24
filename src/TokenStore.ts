@@ -218,7 +218,7 @@ export class TokenStore<TokenType extends HasToken> {
 				...existing,
 				token,
 				expiryTime,
-			} as TokenInfo<TokenType>);
+			});
 			callback(token);
 			this.log(`Token refreshed for ${existing.friendlyName} (${documentId})`);
 		}
@@ -307,7 +307,7 @@ export class TokenStore<TokenType extends HasToken> {
 			friendlyName: friendlyName,
 			expiryTime: 0,
 			attempts: existing?.attempts ?? 0,
-		} as TokenInfo<TokenType>);
+		});
 		this.callbacks.set(documentId, callback);
 		const sharedPromise = this._onRefreshWithRetry(documentId)
 			.then((newToken: TokenType) => {

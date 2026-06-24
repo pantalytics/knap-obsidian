@@ -141,10 +141,10 @@ function serializeArg(arg: unknown): string {
 				arg,
 				(key, value: unknown) => {
 					if (typeof value === "object" && value !== null) {
-						if (seen.has(value as object)) {
+						if (seen.has(value)) {
 							return "[Circular]";
 						}
-						seen.add(value as object);
+						seen.add(value);
 					}
 					// Filter out sensitive information
 					if (

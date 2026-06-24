@@ -251,7 +251,7 @@ export class ContentAddressedFile extends HasLogging {
 
 	destroy() {
 		this.vault = null as unknown as Vault;
-		this._tfile = null as unknown as TFile | null;
+		this._tfile = null;
 		// Don't destroy store as it might be shared
 	}
 }

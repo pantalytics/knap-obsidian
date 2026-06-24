@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.34
+- Community review: removed unnecessary type assertions and switched `document` → `activeDocument` for popout-window compatibility (auto-fixed via eslint-plugin-obsidianmd typed lint)
+- `SharedFolder`: bound the debounced `notifyListeners` to fix the unbound-method warning
+- Replaced the `builtin-modules` package with Node's built-in `node:module` builtins (esbuild config)
+- Marked the vendored `y-indexeddb` adapter's `no-unsafe-*` / unbound-method as intentional with a described eslint-disable
+
 ## 1.1.33
 - Fix ESLint issues in test files and build scripts (no-restricted-imports, unused vars, empty blocks)
 - Replace deprecated setWarning() with setDestructive() in ShareManagementModal

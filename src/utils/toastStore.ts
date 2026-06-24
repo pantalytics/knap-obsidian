@@ -66,7 +66,7 @@ interface ServerError {
 
 function toServerError(error: unknown): ServerError {
 	if (typeof error === "object" && error !== null) {
-		return error as ServerError;
+		return error;
 	}
 	return {};
 }

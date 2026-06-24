@@ -447,7 +447,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 		}
 		this._diskBufferStore = null as unknown as DiskBufferStore | undefined;
 		this.whenSyncedPromise?.destroy();
-		this.whenSyncedPromise = null as unknown as Dependency<void> | null;
+		this.whenSyncedPromise = null;
 		this.readyPromise?.destroy();
 		this.readyPromise = null as unknown as Dependency<Document> | undefined;
 		this._parent = null as unknown as SharedFolder;

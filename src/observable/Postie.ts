@@ -70,7 +70,7 @@ export class PostOffice {
 		if (!this.mailboxes.has(recipientUnknown)) {
 			this.mailboxes.set(recipientUnknown, new Set());
 		}
-		this.mailboxes.get(recipientUnknown)!.add(sender as unknown as IObservable<unknown>);
+		this.mailboxes.get(recipientUnknown)!.add(sender);
 
 		if (immediate) {
 			this.deliverImmediate(sender, recipient);

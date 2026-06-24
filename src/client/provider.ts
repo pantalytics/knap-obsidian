@@ -412,7 +412,7 @@ export class YSweetProvider extends Observable<string> {
 			}
 		};
 
-		this.doc.on("update", this._updateHandler as (arg0: Uint8Array, arg1: unknown, arg2: Y.Doc, arg3: Y.Transaction) => void);
+		this.doc.on("update", this._updateHandler);
 
 		// TODO: I think we can get more specific with the array types.
 		// They are not documented here so we need to do some digging.
@@ -544,7 +544,7 @@ export class YSweetProvider extends Observable<string> {
 			process.off("exit", this._unloadHandler);
 		}
 		this.awareness.off("update", this._awarenessUpdateHandler);
-		this.doc.off("update", this._updateHandler as (arg0: Uint8Array, arg1: unknown, arg2: Y.Doc, arg3: Y.Transaction) => void);
+		this.doc.off("update", this._updateHandler);
 		super.destroy();
 	}
 

@@ -1854,7 +1854,7 @@ export class RelayManager extends HasLogging {
 				return Promise.resolve([]);
 			}
 			if (typeof options === "function") {
-				options = options(this.pb.authStore.model!.id as string);
+				options = options(this.pb.authStore.model.id as string);
 			}
 			return this.pb.collection(collection).getFullList<RecordModel>(options);
 		};
@@ -1912,7 +1912,7 @@ export class RelayManager extends HasLogging {
 				throw response;
 			});
 		this.debug("[InviteAccept]", response);
-		const relay = this.store?.ingest<Relay>(response as RecordModel);
+		const relay = this.store?.ingest<Relay>(response);
 		if (!relay) {
 			throw new Error("Failed to accept invitation");
 		}
@@ -1983,7 +1983,7 @@ export class RelayManager extends HasLogging {
 		});
 
 		// Ingest the response into the store
-		const relay = this.store?.ingest<Relay>(response as RecordModel);
+		const relay = this.store?.ingest<Relay>(response);
 		if (!relay) {
 			throw new Error("Failed to create self-hosted relay");
 		}
@@ -2216,7 +2216,7 @@ export class RelayManager extends HasLogging {
 		this.pb?.cancelAllRequests();
 		this.loginManager = null as unknown as LoginManager;
 		this.store?.destroy();
-		this.pb = null as unknown as PocketBase | null;
+		this.pb = null;
 		this.authUser = null;
 		this.store = null as unknown as Store | undefined;
 		this.policyManager = undefined;

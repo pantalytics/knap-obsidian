@@ -586,7 +586,7 @@ export class LoginManager extends Observable<LoginManager> {
 			.collection("users")
 			.listAuthMethods({ fetch: whichFetch })
 			.catch((e: unknown) => {
-				throw e instanceof Error ? e : (e && typeof e === "object" && "originalError" in e) ? (e as { originalError: unknown }).originalError : e;
+				throw e instanceof Error ? e : (e && typeof e === "object" && "originalError" in e) ? (e).originalError : e;
 			});
 
 		const redirectUrl = this.pb!.buildUrl("/api/oauth2-redirect");

@@ -112,7 +112,7 @@ export class ViewHookPlugin extends HasLogging {
 		// Hook 3: Preview mode direct edits (if enablePreviewViewHooks)
 		if (flags().enablePreviewViewHooks) {
 			this.unsubscribes.push(
-				getPatcher().patch(view.previewMode as unknown as object, {
+				getPatcher().patch(view.previewMode, {
 					edit(old: unknown) {
 						return function (this: unknown, data: string) {
 							that.debug("Preview edit hook triggered");

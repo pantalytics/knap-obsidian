@@ -111,7 +111,7 @@ type OperationType = Create | Rename | Delete | Update | Upgrade | Noop;
 
 class Files extends ObservableSet<IFile> {
 	// Startup performance optimization: debounce to batch rapid file-tree updates
-	notifyListeners = debounce(super.notifyListeners, 100);
+	notifyListeners = debounce(super.notifyListeners.bind(this), 100);
 
 	update() {
 		this.notifyListeners();
@@ -1873,11 +1873,11 @@ export class SharedFolder extends HasProvider {
 		this.syncStore = null as unknown as SyncStore;
 		this.syncSettingsManager = null as unknown as SyncSettingsManager;
 		this.whenSyncedPromise?.destroy();
-		this.whenSyncedPromise = null as unknown as Dependency<void> | null;
+		this.whenSyncedPromise = null;
 		this.readyPromise?.destroy();
-		this.readyPromise = null as unknown as Dependency<SharedFolder> | null;
+		this.readyPromise = null;
 		this.syncFileTreePromise?.destroy();
-		this.syncFileTreePromise = null as unknown as SharedPromise<void> | null;
+		this.syncFileTreePromise = null;
 	}
 }
 

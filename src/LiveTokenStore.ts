@@ -151,7 +151,7 @@ export class LiveTokenStore extends TokenStore<ClientToken> {
 					...existing,
 					token: newToken,
 					expiryTime,
-				} as TokenInfo<FileToken>);
+				});
 				this._activePromises.delete(key);
 				return newToken;
 			})

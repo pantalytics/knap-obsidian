@@ -1556,7 +1556,7 @@ export default class Live extends Plugin {
 			// without relying on the deprecated window.event global
 			let capturedOpenUrlEvent: { type?: string; detail?: { url?: string } } | undefined;
 			const openUrlListener = (e: Event) => {
-				capturedOpenUrlEvent = e as unknown as { type?: string; detail?: { url?: string } };
+				capturedOpenUrlEvent = e;
 			};
 			activeWindow.addEventListener("open-url", openUrlListener, true);
 
