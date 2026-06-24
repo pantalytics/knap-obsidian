@@ -1302,7 +1302,7 @@ export class ShareManagementModal extends Modal {
 		headerDiv.createEl("h4", { text: "Agent keys" });
 
 		const createBtn = headerDiv.createEl("button", {
-			text: "+ Create key",  // eslint-disable-line obsidianmd/ui/sentence-case
+			text: "+ create key",
 			cls: "mod-cta evc-btn-sm",
 		});
 		createBtn.addEventListener("click", () => this.showCreateAgentKeyForm());
@@ -1361,7 +1361,7 @@ export class ShareManagementModal extends Modal {
 			.setDesc("A name to identify this key")
 			.addText((text) => {
 				labelInput = text.inputEl;
-				text.setPlaceholder("E.g., CI pipeline, Claude agent"); // eslint-disable-line obsidianmd/ui/sentence-case
+				text.setPlaceholder("Key label");
 			});
 
 		new Setting(contentEl)
