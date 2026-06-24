@@ -53,7 +53,6 @@ export class MockTimeProvider implements TimeProvider {
 				this.setTimeout(callback, ms, true); // Reschedule next execution
 			};
 		}
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		return <any>timerId;
 	}
 
@@ -102,7 +101,6 @@ export class MockTimeProvider implements TimeProvider {
 			if (this.currentTime >= timer.triggerTime) {
 				console.log("timer triggered");
 				timer.callback();
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				const id = <any>timer.id;
 				this.clearInterval(id);
 			}
