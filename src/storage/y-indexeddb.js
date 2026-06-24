@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/unbound-method, @typescript-eslint/no-deprecated -- vendored yjs y-indexeddb adapter (upstream code, intentionally untyped; tracked at https://github.com/yjs/y-indexeddb) */
 import * as Y from 'yjs'
 import * as idb from 'lib0/indexeddb'
 import * as promise from 'lib0/promise'
