@@ -280,13 +280,6 @@
 	gap: 0.25rem; /* 4px */
 }
 
-.no-decoration {
-	text-decoration-line: none;
-}
-
-.no-decoration:hover {
-	text-decoration-line: none;
-}
 
 .text-xxs {
 	font-size: 0.65rem;
