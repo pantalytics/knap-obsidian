@@ -1,0 +1,56 @@
+name: Release
+# Obsidian plugin release: build → attest provenance → publish a release tagged EXACTLY =
+# manifest.version (BARE semver, no 'v'), with main.js/manifest.json/styles.css as assets.
+# Closes the two recurring gaps (Pavel 2026-06-24): (1) no/v-prefixed release → not distributed,
+# (2) "assets missing GitHub artifact attestation" scorecard recommendation.
+on:
+  push:
+    tags: ['[0-9]*.[0-9]*.[0-9]*']        # bare semver only — a 'v'-prefixed tag won't trigger
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'version tag to (re)build, attest and release (bare semver, e.g. 1.2.5)'
+        required: true
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci || npm install
+      - run: npm run build
+      - name: Resolve + verify version (bare, tag == manifest)
+        id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then TAG="${{ inputs.version }}"; else TAG="${GITHUB_REF_NAME}"; fi
+          VER=$(node -p "require('./manifest.json').version")
+          case "$TAG" in v*) echo "::error::tag '$TAG' has a 'v' prefix — Obsidian needs bare semver"; exit 1;; esac
+          if [ "$TAG" != "$VER" ]; then echo "::error::tag '$TAG' != manifest.version '$VER'"; exit 1; fi
+          [ -f main.js ] || { echo "::error::main.js not built"; exit 1; }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - name: Attest build provenance (main.js, styles.css)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            main.js
+            styles.css
+      - name: Create / update release with assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.v.outputs.tag }}"
+          ASSETS="main.js manifest.json"
+          [ -f styles.css ] && ASSETS="$ASSETS styles.css"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" $ASSETS --clobber
+          else
+            gh release create "$TAG" $ASSETS --title "$TAG" --notes "Release $TAG"
+          fi
