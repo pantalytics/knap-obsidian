@@ -284,7 +284,7 @@ export class TokenStore<TokenType extends HasToken> {
 					console.warn(
 						`[DIAG][TokenStore] 429 rate limit for ${documentId}. attempt=${attempt}/${maxRetries} retrying in ${delay}ms`
 					);
-					await new Promise<void>((resolve) => setTimeout(resolve, delay));
+					await new Promise<void>((resolve) => window.setTimeout(resolve, delay));
 					continue;
 				}
 				throw err;
@@ -400,7 +400,7 @@ export class TokenStore<TokenType extends HasToken> {
 
 	async waitForQueue(): Promise<void> {
 		return new Promise((resolve) => {
-			setInterval(() => {
+			window.setInterval(() => {
 				if (this.refreshQueue.size == 0) {
 					return resolve();
 				}

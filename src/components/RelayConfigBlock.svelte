@@ -131,7 +131,7 @@
 		try {
 			await navigator.clipboard.writeText(toml);
 			copied = true;
-			setTimeout(() => {
+			window.setTimeout(() => {
 				copied = false;
 			}, 2000);
 		} catch (err: unknown) {

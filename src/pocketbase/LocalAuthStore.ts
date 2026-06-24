@@ -135,21 +135,21 @@ export class LocalAuthStore extends BaseAuthStore {
 		if (
 			typeof window === "undefined" ||
 			!window?.localStorage ||
-			!window.addEventListener
+			!("addEventListener" in window)
 		) {
 			return () => {};
 		}
-		window.addEventListener("storage", this._storageChangeHandler);
+		activeWindow.addEventListener("storage", this._storageChangeHandler);
 	}
 
 	private _unbindStorageEvent() {
 		if (
 			typeof window === "undefined" ||
 			!window?.localStorage ||
-			!window.addEventListener
+			!("addEventListener" in window)
 		) {
 			return () => {};
 		}
-		window.removeEventListener("storage", this._storageChangeHandler);
+		activeWindow.removeEventListener("storage", this._storageChangeHandler);
 	}
 }

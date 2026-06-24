@@ -4,7 +4,7 @@
  * https://raw.githubusercontent.com/yjs/y-websocket/master/src/y-websocket.js
  */
 
-import * as Y from "yjs";  
+import * as Y from "yjs";
 import * as bc from "lib0/broadcastchannel";
 import * as time from "lib0/time";
 import * as encoding from "lib0/encoding";
@@ -166,7 +166,7 @@ const setupWS = (provider: YSweetProvider) => {
 			// Start with no reconnect timeout and increase timeout by
 			// using exponential backoff starting with 100ms
 			if (provider.canReconnect()) {
-				setTimeout(
+				window.setTimeout(
 					setupWS,
 					math.min(
 						math.pow(2, provider.wsUnsuccessfulReconnects) * 100,
@@ -206,7 +206,7 @@ const setupWS = (provider: YSweetProvider) => {
 
 				// Re-send awareness after delay for relay room warm-up
 				// First awareness message can be dropped while relay initializes the doc room
-				setTimeout(() => {
+				window.setTimeout(() => {
 					if (provider.wsconnected && provider.ws === websocket) {
 						const retryEncoder = encoding.createEncoder();
 						encoding.writeVarUint(retryEncoder, messageAwareness);
@@ -276,8 +276,8 @@ export interface ConnectionState {
 }
 
 /**
- * Websocket Provider for Yjs. Creates a websocket connection to sync the shared document.
- * The document name is attached to the provided url. I.e. the following example
+ * Websocket Provider for Yjs. Creates a websocket connection to sync the shared doc.
+ * The doc name is attached to the provided url. I.e. the following example
  * creates a websocket connection to http://localhost:1234/my-document-name
  *
  * @example
@@ -380,7 +380,7 @@ export class YSweetProvider extends Observable<string> {
 
 		this._resyncInterval = 0;
 		if (resyncInterval > 0) {
-			this._resyncInterval = setInterval(() => {
+			this._resyncInterval = window.setInterval(() => {
 				if (this.ws && this.ws.readyState === WebSocket.OPEN) {
 					// resend sync step 1
 					const encoder = encoding.createEncoder();
@@ -444,13 +444,13 @@ export class YSweetProvider extends Observable<string> {
 		};
 
 		if (typeof window !== "undefined") {
-			window.addEventListener("unload", this._unloadHandler);
+			activeWindow.addEventListener("unload", this._unloadHandler);
 		} else if (typeof process !== "undefined") {
 			process.on("exit", this._unloadHandler);
 		}
 
 		awareness.on("update", this._awarenessUpdateHandler);
-		this._checkInterval = setInterval(() => {
+		this._checkInterval = window.setInterval(() => {
 			if (
 				this.wsconnected &&
 				messageReconnectTimeout <
@@ -515,9 +515,9 @@ export class YSweetProvider extends Observable<string> {
 
 	destroy() {
 		if (this._resyncInterval !== 0) {
-			clearInterval(this._resyncInterval);
+			window.clearInterval(this._resyncInterval);
 		}
-		clearInterval(this._checkInterval);
+		window.clearInterval(this._checkInterval);
 
 		if (this.ws) {
 			this.ws.onopen = null;
@@ -538,7 +538,7 @@ export class YSweetProvider extends Observable<string> {
 		this._observers.clear();
 
 		if (typeof window !== "undefined") {
-			window.removeEventListener("unload", this._unloadHandler);
+			activeWindow.removeEventListener("unload", this._unloadHandler);
 			window.clearInterval(this.awareness._checkInterval as number | undefined);
 		} else if (typeof process !== "undefined") {
 			process.off("exit", this._unloadHandler);

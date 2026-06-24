@@ -446,7 +446,7 @@ export class LiveCMPluginValue implements PluginValue {
 					// Double-check after registration
 					if (provider.synced) resolve();
 				}),
-				new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+				new Promise<void>((resolve) => window.setTimeout(resolve, 5000)),
 			]);
 		} catch {
 			// timeout or error — proceed with current Y.Text state

@@ -19,7 +19,7 @@ export class PreviewRenderer extends HasLogging implements ViewRenderer {
 		this.debug("created");
 	}
 
-	render(document: Document, viewMode: string): void {
+	render(doc: Document, viewMode: string): void {
 		if (this.destroyed) {
 			this.debug("Skipping render - renderer destroyed");
 			return;
@@ -37,7 +37,7 @@ export class PreviewRenderer extends HasLogging implements ViewRenderer {
 
 		try {
 			this.debug("Rendering preview from document");
-			
+
 			type ObsidianMarkdownViewInternal = {
 				text?: string;
 				previewMode?: { renderer?: { set: (text: string) => void } };
@@ -46,10 +46,10 @@ export class PreviewRenderer extends HasLogging implements ViewRenderer {
 			const internalView = this.view as unknown as ObsidianMarkdownViewInternal;
 
 			// Update the view's internal text state
-			internalView.text = document.text;
+			internalView.text = doc.text;
 
 			// Update the preview renderer
-			internalView.previewMode?.renderer?.set(document.text);
+			internalView.previewMode?.renderer?.set(doc.text);
 
 			// Trigger internal data change handler if available
 			internalView.onInternalDataChange?.();

@@ -29,12 +29,12 @@
 }
 
 .system3-pill {
-	padding-inline-end: 0px !important;
+	padding-inline-end: 0px;
 }
 
 .system3-pill:hover > .system3-folder-icons {
 	background-color: var(--color-base-05);
-	width: auto !important;
+	width: auto;
 }
 
 .system3-pill:hover > .system3-folder-icons > .system3-icon {
@@ -81,10 +81,8 @@
 
 .workspace-split.mod-root
 	.workspace-leaf:nth-child(n)
-	.workspace-leaf-content[data-type="markdown"]:has(
-		.system3-banner-box
-	)::before {
-	top: 4em !important;
+	.workspace-leaf-content[data-type="markdown"].has-system3-banner::before {
+	top: 4em;
 }
 
 .obsidian-live-banner {
@@ -134,9 +132,9 @@
 
 .system3-login-button,
 .system3-merge-button {
-	background: var(--interactive-accent) !important;
-	color: var(--text-on-accent) !important;
-	border: var(--modal-border-width) solid var(--pill-border-color-hover) !important;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border: var(--modal-border-width) solid var(--pill-border-color-hover);
 	cursor: pointer;
 	font-weight: bold;
 	font-size: var(--font-ui-medium);
@@ -185,7 +183,7 @@
 
 .nav-folder > .nav-folder-children.system3-live {
 	border-inline-start: var(--nav-indentation-guide-width) solid
-		var(--color-accent) !important;
+		var(--color-accent);
 }
 
 .nav-file.system3-connected {
@@ -310,7 +308,7 @@
 
 /* Fix button width on mobile in setting items for our components */
 .is-phone .modal .setting-item-control button.system3-button {
-	width: auto !important;
+	width: auto;
 }
 
 /* Layout utility classes (replacing inline styles per Obsidian guidelines) */

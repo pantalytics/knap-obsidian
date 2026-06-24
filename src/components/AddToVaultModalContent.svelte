@@ -46,7 +46,7 @@
 	onMount(() => {
 		// Auto-open folder selection prompt if no folder is selected
 		if (!remoteFolder && availableFolders.length > 0) {
-			setTimeout(() => {
+			window.setTimeout(() => {
 				suggestModal.open();
 			}, 100);
 		}

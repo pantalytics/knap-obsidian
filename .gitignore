@@ -10,6 +10,7 @@ node_modules
 
 *.js
 !src/storage/y-indexeddb.js
+!__tests__/jest.setup.js
 
 # Exclude sourcemaps
 *.map

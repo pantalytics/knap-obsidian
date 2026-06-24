@@ -792,7 +792,7 @@ export class BackgroundSync extends HasLogging {
 			// Add timeout to prevent infinite hang if provider never syncs
 			// (e.g., document disconnected by parent during connection)
 			const timeout = new Promise<void>((_, reject) =>
-				setTimeout(() => reject(new Error("WS sync timeout")), 30000),
+				window.setTimeout(() => reject(new Error("WS sync timeout")), 30000),
 			);
 			try {
 				await Promise.race([promise, timeout]);
@@ -827,7 +827,7 @@ export class BackgroundSync extends HasLogging {
 				diffMatchPatch(doc.ydoc, currentFileContents);
 			}
 			// Allow the update to propagate to the relay before disconnecting
-			await new Promise((resolve) => setTimeout(resolve, 1000));
+			await new Promise((resolve) => window.setTimeout(resolve, 1000));
 		}
 
 		// promise can take some time
@@ -926,7 +926,7 @@ export class BackgroundSync extends HasLogging {
 				if (users.size === 0) {
 					// Hack for better compat with < 0.4.2.
 					this.log(
-						"[getDocument] Server contains uninitialized document. Waiting for peer to upload.",
+						"[getDocument] Server contains uninitialized doc — waiting for peer to upload.",
 						users.size,
 						retry,
 						wait,

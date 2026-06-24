@@ -68,7 +68,7 @@
 			.then(() => {
 				new Notice(successMessage);
 				showClipboardIcon.set(true);
-				setTimeout(() => {
+				window.setTimeout(() => {
 					showClipboardIcon.set(false);
 				}, 800);
 			})

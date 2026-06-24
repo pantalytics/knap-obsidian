@@ -40,11 +40,11 @@ export class ViewHookPlugin extends HasLogging {
 	private destroyed = false;
 	private saving = false;
 
-	constructor(view: MarkdownView, document: Document) {
+	constructor(view: MarkdownView, doc: Document) {
 		super();
 		this.view = view;
-		this.document = document;
-		this.setLoggers(`[ViewHookPlugin][${document.path}]`);
+		this.document = doc;
+		this.setLoggers(`[ViewHookPlugin][${doc.path}]`);
 		this.debug("created");
 
 		// Initialize renderers

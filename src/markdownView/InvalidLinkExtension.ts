@@ -20,7 +20,7 @@ export const invalidLinkSyncAnnotation = Annotation.define();
 
 class FileWarningWidget extends WidgetType {
 	toDOM() {
-		const span = document.createElement("span");
+		const span = activeDocument.createElement("span");
 		span.addClass("evc-inline-flex");
 		span.addClass("invalid-link");
 		// Use Obsidian's setIcon API instead of innerHTML for security
@@ -206,8 +206,8 @@ export class InvalidLinkPluginValue {
 	}
 
 	updateFromEditor(update: ViewUpdate) {
-		// The metadata cache is slower to update than the document.
-		// We use the cache to get link information, but rely on the document links for
+		// The metadata cache is slower to update than the shared doc.
+		// We use the cache to get link information, but rely on the doc links for
 		// position information to avoid any delays or positioning bugs.
 		if (this.connectionManager) {
 			this.view = this.connectionManager.findView(this.editor);

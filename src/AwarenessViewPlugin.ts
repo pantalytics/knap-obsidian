@@ -51,13 +51,13 @@ export class AwarenessViewPlugin extends HasLogging {
 		}
 
 		// Create a wrapper div to contain both title and avatars
-		const titleWrapper = document.createElement("div");
+		const titleWrapper = activeDocument.createElement("div");
 		titleWrapper.className = "title-with-awareness";
 		titleWrapper.addClass("evc-flex", "evc-align-center", "evc-justify-between");
 		titleWrapper.addClass("evc-w-full");
 
 		// Create container for the awareness component
-		this.awarenessElement = document.createElement("div");
+		this.awarenessElement = activeDocument.createElement("div");
 		this.awarenessElement.className = "user-awareness-container";
 
 		// Wrap the inline title and add the awareness container

@@ -1,13 +1,18 @@
 import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
 import globals from "globals";
+import obsidianPlugin from "eslint-plugin-obsidianmd";
 
 export default tseslint.config(
     eslint.configs.recommended,
     ...tseslint.configs.recommended,
     {
+        plugins: {
+            obsidianmd: obsidianPlugin,
+        },
         languageOptions: {
             globals: {
+                ...globals.browser,
                 ...globals.node,
             },
             parserOptions: {
@@ -15,6 +20,11 @@ export default tseslint.config(
             },
         },
         rules: {
+            ...obsidianPlugin.configs.recommended,
+            // These rules require parserOptions.project (typed linting) — not enabled in this config
+            "obsidianmd/no-plugin-as-component": "off",
+            "obsidianmd/no-view-references-in-plugin": "off",
+            "obsidianmd/prefer-file-manager-trash-file": "off",
             "no-unused-vars": "off",
             "@typescript-eslint/no-unused-vars": ["error", { args: "none", caughtErrorsIgnorePattern: "^_" }],
             "@typescript-eslint/ban-ts-comment": "off",

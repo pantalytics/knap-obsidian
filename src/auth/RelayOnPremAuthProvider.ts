@@ -223,7 +223,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 		for (let attempt = 0; attempt < delays.length; attempt++) {
 			if (attempt > 0) {
 				this.log(`Token refresh retry ${attempt}/${delays.length - 1} after ${delays[attempt]}ms`);
-				await new Promise(r => setTimeout(r, delays[attempt]));
+				await new Promise(r => window.setTimeout(r, delays[attempt]));
 			}
 			try {
 				await this.refreshToken();

@@ -17,7 +17,7 @@
 
 	onMount(() => {
 		Object.keys(settings).forEach((flagName) => {
-			const toggleEl = document.getElementById(`toggle-${flagName}`);
+			const toggleEl = activeDocument.getElementById(`toggle-${flagName}`);
 			if (toggleEl) {
 				setIcon(toggleEl, "check");
 			}

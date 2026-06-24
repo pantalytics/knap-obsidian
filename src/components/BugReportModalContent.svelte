@@ -41,7 +41,7 @@
 
 	function getUsingBlink() {
 		try {
-			return (globalThis as any)?.blinkfetch !== undefined ? "Yes" : "No";
+			return (window as unknown as Record<string, unknown>)?.blinkfetch !== undefined ? "Yes" : "No";
 		} catch (e: unknown) {
 			return "No";
 		}

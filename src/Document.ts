@@ -166,7 +166,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 	}
 
 	/**
-	 * Get the full vault path for this document.
+	 * Get the full vault path for this document (shared folder path + relative path).
 	 * Combines the shared folder path with the document's relative path.
 	 * Used for relay-onprem token requests that need full vault paths.
 	 */

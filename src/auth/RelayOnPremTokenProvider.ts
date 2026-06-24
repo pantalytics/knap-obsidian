@@ -57,7 +57,7 @@ class TokenRequestThrottle {
 	private lastDispatchAt = 0;
 	/** Queue of pending resolvers waiting for their turn */
 	private queue: Array<() => void> = [];
-	private timer: ReturnType<typeof setTimeout> | null = null;
+	private timer: number | null = null;
 	private log = curryLog("[TokenRequestThrottle]", "debug");
 
 	constructor(maxPerMinute = 25) {
@@ -85,7 +85,7 @@ class TokenRequestThrottle {
 		const elapsed = now - this.lastDispatchAt;
 		const delay = Math.max(0, this.minIntervalMs - elapsed);
 
-		this.timer = setTimeout(() => {
+		this.timer = window.setTimeout(() => {
 			this.timer = null;
 			const next = this.queue.shift();
 			if (next) {
@@ -99,7 +99,7 @@ class TokenRequestThrottle {
 
 	destroy() {
 		if (this.timer !== null) {
-			clearTimeout(this.timer);
+			window.clearTimeout(this.timer);
 			this.timer = null;
 		}
 		// Drain any waiters so they are not leaked

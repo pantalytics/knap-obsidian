@@ -25,14 +25,14 @@
 
 		return () => {
 			if (timeoutId) {
-				clearTimeout(timeoutId);
+				window.clearTimeout(timeoutId);
 			}
 		};
 	});
 
 	function handleDismiss() {
 		if (timeoutId) {
-			clearTimeout(timeoutId);
+			window.clearTimeout(timeoutId);
 		}
 		dispatch("dismiss");
 	}

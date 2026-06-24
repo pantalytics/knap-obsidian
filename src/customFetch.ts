@@ -7,19 +7,19 @@ import { flags } from "./flagManager";
 
 declare const GIT_TAG: string;
 
-if (globalThis.Response === undefined || globalThis.Headers === undefined) {
+if (window.Response === undefined || window.Headers === undefined) {
 	// Fetch API is broken for some versions of Electron
 	// https://github.com/electron/electron/pull/42419
 	try {
 		console.warn(
 			"[Relay] Polyfilling Fetch API (Electron Bug: https://github.com/electron/electron/pull/42419)",
 		);
-		const globalRecord = globalThis as unknown as Record<string, unknown>;
-		if (globalRecord["blinkfetch"]) {
-			globalThis.fetch = globalRecord["blinkfetch"] as typeof globalThis.fetch;
+		const windowRecord = window as unknown as Record<string, unknown>;
+		if (windowRecord["blinkfetch"]) {
+			window.fetch = windowRecord["blinkfetch"] as typeof window.fetch;
 			const keys = ["fetch", "Response", "FormData", "Request", "Headers"];
 			for (const key of keys) {
-				globalRecord[key] = globalRecord[`blink${key}`];
+				windowRecord[key] = windowRecord[`blink${key}`];
 			}
 		}
 	} catch (e: unknown) {
@@ -27,7 +27,7 @@ if (globalThis.Response === undefined || globalThis.Headers === undefined) {
 	}
 }
 
-if (globalThis.EventSource === undefined) {
+if ((window as unknown as Record<string, unknown>)["EventSource"] === undefined) {
 	if (Platform.isMobile) {
 		console.warn(
 			"[Relay] Polyfilling EventSource API required, but unable to polyfill on Mobile",
@@ -35,7 +35,7 @@ if (globalThis.EventSource === undefined) {
 	} else {
 		console.warn("[Relay] Polyfilling EventSource API");
 		// eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for optional polyfill
-		globalThis.EventSource = require("eventsource") as typeof EventSource;
+		(window as unknown as Record<string, unknown>)["EventSource"] = require("eventsource") as typeof EventSource;
 	}
 }
 

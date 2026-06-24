@@ -147,7 +147,7 @@ export class OAuthCallbackServer {
 				return;
 			}
 
-			const timeout = setTimeout(() => {
+			const timeout = window.setTimeout(() => {
 				log("OAuth callback timeout");
 				reject(new Error("OAuth callback timeout - no response received"));
 			}, timeoutMs);
@@ -224,7 +224,7 @@ export class OAuthCallbackServer {
 						</html>
 					`);
 
-					clearTimeout(timeout);
+					window.clearTimeout(timeout);
 					resolve({ code, state });
 				} else {
 					log("Invalid callback - missing code or state");
@@ -276,7 +276,7 @@ export class OAuthCallbackServer {
 						</html>
 					`);
 
-					clearTimeout(timeout);
+					window.clearTimeout(timeout);
 					reject(new Error("Invalid OAuth callback - missing code or state"));
 				}
 			});

@@ -5,7 +5,7 @@
 	function clickOutside(node) {
 		const handleClick = (event) => {
 			// Check if the click target is NOT the button and NOT inside the dropdown
-			const menuButton = document.querySelector(".menu-button");
+			const menuButton = activeDocument.querySelector(".menu-button");
 			if (
 				!node.contains(event.target) &&
 				event.target !== menuButton &&
@@ -16,13 +16,13 @@
 		};
 
 		// Use setTimeout to add the listener on the next tick
-		setTimeout(() => {
-			document.addEventListener("click", handleClick);
+		window.setTimeout(() => {
+			activeDocument.addEventListener("click", handleClick);
 		}, 0);
 
 		return {
 			destroy() {
-				document.removeEventListener("click", handleClick);
+				activeDocument.removeEventListener("click", handleClick);
 			},
 		};
 	}

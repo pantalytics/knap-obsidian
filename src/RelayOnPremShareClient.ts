@@ -803,7 +803,7 @@ export class RelayOnPremShareClient {
 				const retryAfter = parseInt(response.headers.get("Retry-After") ?? "60", 10);
 				const delay = Math.min(retryAfter * 1000, 120_000);
 				log(`Rate limited syncing ${path}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
-				await new Promise<void>(r => setTimeout(r, delay));
+				await new Promise<void>(r => window.setTimeout(r, delay));
 				continue;
 			}
 

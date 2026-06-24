@@ -1119,7 +1119,7 @@ export default class Live extends Plugin {
 				});
 				if (staleAutoSyncShares.length > 0) {
 					log(`Scheduling initial full-sync for ${staleAutoSyncShares.length} stale auto-sync shares`);
-					setTimeout(() => { void this._initialFullSync(staleAutoSyncShares); }, 15_000);
+					window.setTimeout(() => { void this._initialFullSync(staleAutoSyncShares); }, 15_000);
 				}
 			} else if (this.shareClient) {
 				// Single-server mode (legacy)
@@ -1409,7 +1409,7 @@ export default class Live extends Plugin {
 										share.serverId, share.web_slug, item.path, content
 									);
 									syncedCount++;
-									await new Promise<void>(r => setTimeout(r, 200));
+									await new Promise<void>(r => window.setTimeout(r, 200));
 								}
 							} catch (e: unknown) {
 								this.log("Failed to sync file in initial full-sync", item.path, String(e));
@@ -1558,7 +1558,7 @@ export default class Live extends Plugin {
 			const openUrlListener = (e: Event) => {
 				capturedOpenUrlEvent = e as unknown as { type?: string; detail?: { url?: string } };
 			};
-			window.addEventListener("open-url", openUrlListener, true);
+			activeWindow.addEventListener("open-url", openUrlListener, true);
 
 			Object.defineProperty(options, "openExternalURLs", {
 				get(): boolean | undefined {
@@ -1648,9 +1648,9 @@ export default class Live extends Plugin {
 		};
 		const rejectionListener = (event: PromiseRejectionEvent) =>
 			handlePromiseRejection(event);
-		window.addEventListener("unhandledrejection", rejectionListener, true);
+		activeWindow.addEventListener("unhandledrejection", rejectionListener, true);
 		this.register(() =>
-			window.removeEventListener("unhandledrejection", rejectionListener, true),
+			activeWindow.removeEventListener("unhandledrejection", rejectionListener, true),
 		);
 
 		this.registerEvent(

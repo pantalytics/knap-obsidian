@@ -4,7 +4,7 @@
 
 	// Portal action to render content at body level
 	function portal(node: HTMLElement) {
-		document.body.appendChild(node);
+		activeDocument.body.appendChild(node);
 		return {
 			destroy() {
 				node.remove();
@@ -15,7 +15,7 @@
 	// Action to position the element once it's in the portal
 	function positionWhenReady(node: HTMLElement) {
 		// Wait for the element to be moved to body by the portal action
-		setTimeout(() => {
+		window.setTimeout(() => {
 			suggestEl = node;
 			positionSuggest();
 		}, 0);
@@ -263,8 +263,8 @@
 
 	function handleBlur(e: FocusEvent) {
 		// Delay close to allow click events on suggestions
-		setTimeout(() => {
-			if (!suggestEl?.contains(document.activeElement)) {
+		window.setTimeout(() => {
+			if (!suggestEl?.contains(activeDocument.activeElement)) {
 				closeSuggestions();
 			}
 		}, 200);
@@ -290,12 +290,12 @@
 	}
 
 	onMount(() => {
-		document.addEventListener("click", handleDocumentClick);
-		window.addEventListener("resize", handleWindowResize);
+		activeDocument.addEventListener("click", handleDocumentClick);
+		activeWindow.addEventListener("resize", handleWindowResize);
 	});
 
 	onDestroy(() => {
-		document.removeEventListener("click", handleDocumentClick);
+		activeDocument.removeEventListener("click", handleDocumentClick);
 		window.removeEventListener("resize", handleWindowResize);
 	});
 </script>

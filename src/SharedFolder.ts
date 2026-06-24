@@ -291,7 +291,7 @@ export class SharedFolder extends HasProvider {
 						await Promise.race([
 							this.onceProviderSynced(),
 							new Promise<void>((_, reject) =>
-								setTimeout(() => reject(new Error("provider sync timeout")), 30000)
+								window.setTimeout(() => reject(new Error("provider sync timeout")), 30000)
 							)
 						]);
 					} catch (e: unknown) {
@@ -639,7 +639,7 @@ export class SharedFolder extends HasProvider {
 
 				// Timeout after 30s to prevent silent hangs
 				const timeout = new Promise<never>((_, reject) =>
-					setTimeout(() => reject(new Error("whenReady timeout: server sync took too long")), 30000)
+					window.setTimeout(() => reject(new Error("whenReady timeout: server sync took too long")), 30000)
 				);
 
 				try {

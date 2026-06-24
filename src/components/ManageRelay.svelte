@@ -471,7 +471,7 @@
 
 		if (userIds && userIds.length > 0) {
 			// Navigate to the remote folder after successful creation
-			setTimeout(() => {
+			window.setTimeout(() => {
 				dispatch("manageRemoteFolder", {
 					remoteFolder: remote,
 				});

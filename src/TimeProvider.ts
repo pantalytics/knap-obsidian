@@ -12,28 +12,28 @@ export class DefaultTimeProvider implements TimeProvider {
 		return Date.now();
 	}
 
-	setInterval(callback: () => void, ms: number): number {
+	setInterval = (callback: () => void, ms: number): number => {
 		const timer = window.setInterval(callback, ms);
 		this.intervals.push(timer);
 		return timer;
-	}
+	};
 
-	clearInterval(timerId: number): void {
+	clearInterval = (timerId: number): void => {
 		window.clearInterval(timerId);
-	}
+	};
 
-	setTimeout(callback: () => void, ms: number): number {
+	setTimeout = (callback: () => void, ms: number): number => {
 		const timer = window.setTimeout(() => {
 			this.timeouts.remove(timer);
 			callback();
 		}, ms);
 		this.timeouts.push(timer);
 		return timer;
-	}
+	};
 
-	clearTimeout(timerId: number): void {
+	clearTimeout = (timerId: number): void => {
 		window.clearTimeout(timerId);
-	}
+	};
 
 	destroy(): void {
 		for (const timer of this.timeouts) {
@@ -50,12 +50,12 @@ export class DefaultTimeProvider implements TimeProvider {
 		func: T,
 		delay: number = 500,
 	): (...args: Parameters<T>) => void {
-		let timer: ReturnType<typeof setTimeout>;
+		let timer: number;
 		return (...args: Parameters<T>) => {
 			if (timer) {
-				clearTimeout(timer);
+				window.clearTimeout(timer);
 			}
-			timer = setTimeout(() => {
+			timer = window.setTimeout(() => {
 				func(...args);
 			}, delay);
 		};

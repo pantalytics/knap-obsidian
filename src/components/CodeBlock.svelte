@@ -17,7 +17,7 @@
 		try {
 			await navigator.clipboard.writeText(value);
 			copied = true;
-			setTimeout(() => {
+			window.setTimeout(() => {
 				copied = false;
 			}, 2000);
 			dispatch("copy", { value });

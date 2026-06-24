@@ -149,9 +149,9 @@
 	}
 
 	onMount(() => {
-		document.addEventListener("click", handleClickOutside);
+		activeDocument.addEventListener("click", handleClickOutside);
 		return () => {
-			document.removeEventListener("click", handleClickOutside);
+			activeDocument.removeEventListener("click", handleClickOutside);
 		};
 	});
 
@@ -160,7 +160,7 @@
 		if (cleanupFunction) {
 			cleanupFunction();
 		}
-		document.removeEventListener("click", handleClickOutside);
+		activeDocument.removeEventListener("click", handleClickOutside);
 	});
 </script>
 

@@ -9,7 +9,7 @@
 	}
 
 	onMount(() => {
-			const toggleEl = document.getElementById(`toggle-${name}`);
+			const toggleEl = activeDocument.getElementById(`toggle-${name}`);
 			if (toggleEl) {
 				setIcon(toggleEl, "check");
 			}

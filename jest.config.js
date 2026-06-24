@@ -7,13 +7,15 @@
 module.exports = {
 	// [...]
 	preset: "ts-jest/presets/default-esm", // or other ESM presets
+	// polyfill window.* browser APIs in Node.js test environment
+	setupFiles: ["<rootDir>/__tests__/jest.setup.js"],
 	forceExit: true,
 	moduleNameMapper: {
 		"^(\\.{1,2}/.*)\\.js$": "$1",
 		"^src/(.*)$": "<rootDir>/src/$1",
 		"^obsidian$": "<rootDir>/__tests__/mocks/obsidian.ts",
 	},
-	testPathIgnorePatterns: ["/__tests__/mocks/"],
+	testPathIgnorePatterns: ["/__tests__/mocks/", "/__tests__/jest.setup.js"],
     globals: {
         "BUILD_TYPE": "production",
     },

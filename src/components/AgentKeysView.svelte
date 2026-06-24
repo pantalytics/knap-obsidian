@@ -76,12 +76,12 @@
 		].join("\n");
 		const blob = new Blob([content], { type: "text/plain" });
 		const url = URL.createObjectURL(blob);
-		const a = document.createElement("a");
+		const a = activeDocument.createElement("a");
 		a.href = url;
 		a.download = `agent-key-${displayLabel.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.txt`;
-		document.body.appendChild(a);
+		activeDocument.body.appendChild(a);
 		a.click();
-		document.body.removeChild(a);
+		activeDocument.body.removeChild(a);
 		URL.revokeObjectURL(url);
 	}
 
@@ -248,7 +248,7 @@
 		if (!revealedKey) return;
 		navigator.clipboard.writeText(revealedKey.key).then(() => {
 			revealCopied = true;
-			setTimeout(() => { revealCopied = false; }, 2000);
+			window.setTimeout(() => { revealCopied = false; }, 2000);
 		}).catch(() => {
 			new Notice("Failed to copy key");
 		});
@@ -261,14 +261,14 @@
 	onMount(async () => {
 		await loadSharesAndKeys();
 		visibilityHandler = () => {
-			if (!document.hidden) loadSharesAndKeys();
+			if (!activeDocument.hidden) loadSharesAndKeys();
 		};
-		document.addEventListener("visibilitychange", visibilityHandler);
+		activeDocument.addEventListener("visibilitychange", visibilityHandler);
 	});
 
 	onDestroy(() => {
 		if (visibilityHandler) {
-			document.removeEventListener("visibilitychange", visibilityHandler);
+			activeDocument.removeEventListener("visibilitychange", visibilityHandler);
 		}
 	});
 </script>

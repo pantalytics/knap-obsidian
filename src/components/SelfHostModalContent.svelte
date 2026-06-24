@@ -55,11 +55,11 @@
 
 			// Clear any existing timeout
 			if (urlValidationTimeout) {
-				clearTimeout(urlValidationTimeout);
+				window.clearTimeout(urlValidationTimeout);
 			}
 
 			// Set a new timeout to validate after user stops typing
-			urlValidationTimeout = setTimeout(() => {
+			urlValidationTimeout = window.setTimeout(() => {
 				const urlError = validateUrl(url);
 				if (urlError) {
 					errors.url = urlError;

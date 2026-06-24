@@ -141,7 +141,7 @@ export class RelayOnPremLoginModal extends Modal {
 		}
 
 		// Focus email input
-		setTimeout(() => this.emailInput.focus(), 100);
+		window.setTimeout(() => this.emailInput.focus(), 100);
 	}
 
 	private async handleLogin() {

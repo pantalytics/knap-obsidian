@@ -192,17 +192,17 @@
 
 	// Focus trap functionality
 	onMount(() => {
-		document.addEventListener("keydown", handleGlobalKeyDown);
+		activeDocument.addEventListener("keydown", handleGlobalKeyDown);
 
 		// Auto-open folder selection prompt if no folder is selected
 		if (!acceptedFolder) {
-			setTimeout(() => {
+			window.setTimeout(() => {
 				openFolderSuggest();
 			}, 100);
 		}
 
 		return () => {
-			document.removeEventListener("keydown", handleGlobalKeyDown);
+			activeDocument.removeEventListener("keydown", handleGlobalKeyDown);
 		};
 	});
 
@@ -219,13 +219,13 @@
 
 		if (e.shiftKey) {
 			// Shift + Tab
-			if (document.activeElement === firstFocusable) {
+			if (activeDocument.activeElement === firstFocusable) {
 				e.preventDefault();
 				lastFocusable.focus();
 			}
 		} else {
 			// Tab
-			if (document.activeElement === lastFocusable) {
+			if (activeDocument.activeElement === lastFocusable) {
 				e.preventDefault();
 				firstFocusable.focus();
 			}

@@ -29,7 +29,7 @@ export class MetadataRenderer extends HasLogging implements ViewRenderer {
 		this.debug("created");
 	}
 
-	render(document: Document, viewMode: string): void {
+	render(doc: Document, viewMode: string): void {
 		if (this.destroyed) {
 			this.debug("Skipping render - renderer destroyed");
 			return;
@@ -50,8 +50,8 @@ export class MetadataRenderer extends HasLogging implements ViewRenderer {
 				return;
 			}
 
-			// Parse frontmatter from document text
-			const fmi = getFrontMatterInfo(document.text);
+			// Parse frontmatter from doc text
+			const fmi = getFrontMatterInfo(doc.text);
 			const fm = fmi.frontmatter;
 			
 			if (fm) {
@@ -61,7 +61,7 @@ export class MetadataRenderer extends HasLogging implements ViewRenderer {
 					prop.renderProperty(prop.entry, true); // true = force
 				}
 			} else {
-				this.debug("No frontmatter found in document");
+				this.debug("No frontmatter found in doc");
 			}
 		} catch (error: unknown) {
 			this.error("Error rendering metadata:", error);

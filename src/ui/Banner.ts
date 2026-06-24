@@ -28,16 +28,17 @@ export class Banner {
 		}
 
 		// container to enable easy removal of the banner
-		let bannerBox = leafContentEl.querySelector(".system3-banner-box");
+		let bannerBox = leafContentEl.querySelector(".system3-banner-box") as HTMLElement | null;
 		if (!bannerBox) {
-			bannerBox = document.createElement("div");
+			bannerBox = activeDocument.createElement("div") as HTMLElement;
 			bannerBox.classList.add("system3-banner-box");
-			leafContentEl.insertBefore(bannerBox, contentEl);
+			leafContentEl.insertBefore(bannerBox, contentEl as Node | null);
+			leafContentEl.classList.add("has-system3-banner");
 		}
 
-		let banner = leafContentEl.querySelector(".system3-banner");
+		let banner = leafContentEl.querySelector(".system3-banner") as HTMLElement | null;
 		if (!banner) {
-			banner = document.createElement("div");
+			banner = activeDocument.createElement("div") as HTMLElement;
 			banner.classList.add("system3-banner");
 			const span = banner.createSpan();
 			span.setText(this.text);
@@ -62,6 +63,7 @@ export class Banner {
 		const bannerBox = leafContentEl.querySelector(".system3-banner-box");
 		if (bannerBox) {
 			bannerBox.replaceChildren();
+			leafContentEl.classList.remove("has-system3-banner");
 		}
 		this.onClick = () => Promise.resolve(true);
 		return true;

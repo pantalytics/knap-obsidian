@@ -71,7 +71,7 @@
 
 	onMount(() => {
 		if (autofocus && inputEl) {
-			setTimeout(() => {
+			window.setTimeout(() => {
 				inputEl.focus();
 			}, 10);
 		}

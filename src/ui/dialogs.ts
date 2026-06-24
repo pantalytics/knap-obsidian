@@ -65,7 +65,7 @@ export function promptDialog(
 				inputValue = v;
 			});
 			// Focus the input when modal opens
-			setTimeout(() => text.inputEl.focus(), 50);
+			window.setTimeout(() => text.inputEl.focus(), 50);
 		});
 
 		new Setting(modal.contentEl)

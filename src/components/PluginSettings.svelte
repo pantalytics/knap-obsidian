@@ -264,10 +264,10 @@
 	}
 
 	$: if (currentComponent || currentRelay || sharedFolder || remoteFolder) {
-		setTimeout(() => {
-			const content = document.querySelector(".vertical-tab-content");
+		window.setTimeout(() => {
+			const content = activeDocument.querySelector(".vertical-tab-content");
 			if (content) {
-				content.scrollTop = 0;
+				(content as HTMLElement).scrollTop = 0;
 			}
 		}, 0);
 	}
