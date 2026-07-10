@@ -499,4 +499,81 @@ describe("InboundFileDownloader", () => {
 		// After destroy, no in-flight paths remain
 		expect(downloader.isInboundWriting("any/path.md")).toBe(false);
 	});
+
+	describe("path-traversal guard", () => {
+		test("rejects relativePath that escapes sharePath (../../etc/passwd)", async () => {
+			(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare());
+			(clientManager.getFilesIndex as jest.Mock).mockResolvedValue([
+				{ path: "../../etc/passwd", sha256: "sha-evil", size: 4, updated_at: "2026-01-01T00:00:00Z", type: "sync-artifact" },
+			]);
+			(vault.getAbstractFileByPath as jest.Mock).mockReturnValue(null);
+
+			await downloader.downloadShare(SHARE_ID, SERVER_ID);
+
+			expect(clientManager.downloadFile).not.toHaveBeenCalled();
+			expect(vault.adapter.writeBinary).not.toHaveBeenCalled();
+		});
+
+		test("rejects relativePath targeting .obsidian/plugins", async () => {
+			(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare());
+			(clientManager.getFilesIndex as jest.Mock).mockResolvedValue([
+				{ path: "../../.obsidian/plugins/evil.js", sha256: "sha-evil2", size: 4, updated_at: "2026-01-01T00:00:00Z", type: "sync-artifact" },
+			]);
+			(vault.getAbstractFileByPath as jest.Mock).mockReturnValue(null);
+
+			await downloader.downloadShare(SHARE_ID, SERVER_ID);
+
+			expect(clientManager.downloadFile).not.toHaveBeenCalled();
+			expect(vault.adapter.writeBinary).not.toHaveBeenCalled();
+		});
+
+		test("allows valid relative paths inside sharePath", async () => {
+			const content = new ArrayBuffer(4);
+			(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare());
+			(clientManager.getFilesIndex as jest.Mock).mockResolvedValue([
+				{ path: "subdir/note.md", sha256: "sha-ok", size: 4, updated_at: "2026-01-01T00:00:00Z", type: "sync-artifact" },
+			]);
+			(clientManager.downloadFile as jest.Mock).mockResolvedValue(content);
+			(vault.getAbstractFileByPath as jest.Mock).mockReturnValue(null);
+
+			await downloader.downloadShare(SHARE_ID, SERVER_ID);
+
+			expect(vault.adapter.writeBinary).toHaveBeenCalledWith(
+				`${SHARE_PATH}/subdir/note.md`,
+				content,
+			);
+		});
+
+		test("rejects traversal but still processes safe files in same batch", async () => {
+			const content = new ArrayBuffer(4);
+			(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare());
+			(clientManager.getFilesIndex as jest.Mock).mockResolvedValue([
+				{ path: "../../etc/passwd", sha256: "sha-evil", size: 4, updated_at: "2026-01-01T00:00:00Z", type: "sync-artifact" },
+				{ path: "safe.md", sha256: "sha-safe", size: 4, updated_at: "2026-01-01T00:00:00Z", type: "sync-artifact" },
+			]);
+			(clientManager.downloadFile as jest.Mock).mockResolvedValue(content);
+			(vault.getAbstractFileByPath as jest.Mock).mockReturnValue(null);
+
+			await downloader.downloadShare(SHARE_ID, SERVER_ID);
+
+			// Only the safe file should be written
+			expect(vault.adapter.writeBinary).toHaveBeenCalledTimes(1);
+			expect(vault.adapter.writeBinary).toHaveBeenCalledWith(`${SHARE_PATH}/safe.md`, content);
+		});
+
+		test("fails closed when server-supplied sharePath is empty", async () => {
+			(clientManager.getShare as jest.Mock).mockResolvedValue({ ...makeShare(), path: "" });
+			(clientManager.getFilesIndex as jest.Mock).mockResolvedValue([
+				{ path: "../../etc/passwd", sha256: "sha-evil", size: 4, updated_at: "2026-01-01T00:00:00Z", type: "sync-artifact" },
+				{ path: "note.md", sha256: "sha-ok", size: 4, updated_at: "2026-01-01T00:00:00Z", type: "sync-artifact" },
+			]);
+			(vault.getAbstractFileByPath as jest.Mock).mockReturnValue(null);
+
+			await downloader.downloadShare(SHARE_ID, SERVER_ID);
+
+			// An empty sharePath must reject everything, not implicitly allow root-relative paths.
+			expect(clientManager.downloadFile).not.toHaveBeenCalled();
+			expect(vault.adapter.writeBinary).not.toHaveBeenCalled();
+		});
+	});
 });

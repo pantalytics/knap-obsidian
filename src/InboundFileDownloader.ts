@@ -106,6 +106,24 @@ export class InboundFileDownloader {
 		shareManifest: Map<string, string>,
 	): Promise<void> {
 		const vaultPath = normalizePath(join(sharePath, relativePath));
+
+		// Guard against path traversal: the resolved vault path must stay inside sharePath.
+		// A server-supplied relativePath like "../../.obsidian/plugins/evil.js" would resolve
+		// outside the share directory after join+normalize — reject it before any I/O.
+		const normalizedShare = normalizePath(sharePath);
+		if (normalizedShare.length === 0) {
+			// sharePath is server-supplied (share.path from clientManager.getShare()); an empty
+			// value would otherwise disable the containment check entirely. Fail closed.
+			log("Path traversal rejected: empty sharePath", { relativePath, shareId });
+			return;
+		}
+		const withinShare =
+			vaultPath === normalizedShare || vaultPath.startsWith(normalizedShare + "/");
+		if (!withinShare) {
+			log("Path traversal rejected", { relativePath, vaultPath, sharePath });
+			return;
+		}
+
 		const lastHash = shareManifest.get(relativePath);
 
 		// Skip if sha256 unchanged since last download
