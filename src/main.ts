@@ -109,6 +109,7 @@ import { RelayOnPremShareClient, type FolderItem } from "./RelayOnPremShareClien
 import { RelayOnPremShareClientManager, type ShareWithServer } from "./RelayOnPremShareClientManager";
 import { QuickShareModal } from "./ui/QuickShareModal";
 import { confirmDialog } from "./ui/dialogs";
+import { LocalStorage } from "./LocalStorage";
 
 interface DebugSettings {
 	debugging: boolean;
@@ -661,21 +662,36 @@ export default class Live extends Plugin {
 		// Initialize InboundFileDownloader for sync-artifact inbound sync (v1.9)
 		if (this.vault && this.shareClientManager && this.webSyncManager) {
 			const { InboundFileDownloader } = await import("./InboundFileDownloader");
+			// Persisted across restarts (TR-02, #307f52bf) — see InboundFileDownloader's
+			// constructor doc for why an in-memory-only manifest is unsafe.
+			const hashManifestStore = new LocalStorage<Record<string, string>>(
+				"InboundSyncHashManifest/" + vaultName,
+				this.app,
+			);
 			this.inboundFileDownloader = new InboundFileDownloader(
 				this.vault,
 				this.shareClientManager,
 				this.webSyncManager,
+				hashManifestStore,
 			);
 		}
 
 		// Initialize InboundSyncPoller (v1.9)
 		if (this.shareClientManager && this.webSyncManager && this.inboundFileDownloader) {
 			const { InboundSyncPoller } = await import("./InboundSyncPoller");
+			// Persisted across restarts (TR-02, #307f52bf) — see InboundSyncPoller's
+			// constructor doc for why an in-memory-only watermark is unsafe.
+			const lastUpdatedAtStore = new LocalStorage<string>(
+				"InboundSyncLastUpdatedAt/" + vaultName,
+				this.app,
+			);
 			this.inboundSyncPoller = new InboundSyncPoller(
 				this.timeProvider,
 				this.shareClientManager,
 				this.webSyncManager,
 				this.inboundFileDownloader,
+				undefined,
+				lastUpdatedAtStore,
 			);
 		}
 

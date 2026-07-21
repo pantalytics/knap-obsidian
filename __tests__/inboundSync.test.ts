@@ -10,7 +10,7 @@
 import { describe, test, expect, beforeEach, jest } from "@jest/globals";
 
 // ─── Import from obsidian (moduleNameMapper → __tests__/mocks/obsidian.ts) ────
-import { TFile } from "obsidian";
+import { TFile, noticeMock } from "obsidian";
 
 // ─── Mock hashing so tests don't need WebCrypto ───────────────────────────────
 const mockGenerateHash = jest.fn<() => Promise<string>>();
@@ -575,5 +575,256 @@ describe("InboundFileDownloader", () => {
 			expect(clientManager.downloadFile).not.toHaveBeenCalled();
 			expect(vault.adapter.writeBinary).not.toHaveBeenCalled();
 		});
+	});
+
+	// ─── TR-02 (#307f52bf): persisted hash manifest survives a "restart" ────────
+	describe("persisted hash manifest (TR-02)", () => {
+		test("REGRESSION: a user edit is still detected after the manifest is reloaded from a persisted store (simulated restart)", async () => {
+			// A plain Map here stands in for LocalStorage — the point under test is
+			// that the manifest OUTLIVES the InboundFileDownloader instance, not the
+			// specific persistence backend.
+			const persistedStore = new Map<string, Record<string, string>>();
+
+			const firstSession = new InboundFileDownloader(
+				vault,
+				clientManager as any,
+				webSyncManager as any,
+				persistedStore,
+			);
+			(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare());
+			(clientManager.getFilesIndex as jest.Mock).mockResolvedValue([
+				{ path: "note.md", sha256: "sha-001", size: 8, updated_at: "2026-01-01T00:00:00Z", type: "sync-artifact" },
+			]);
+			(clientManager.downloadFile as jest.Mock).mockResolvedValue(new ArrayBuffer(4));
+			(vault.getAbstractFileByPath as jest.Mock).mockReturnValue(null);
+			await firstSession.downloadShare(SHARE_ID, SERVER_ID);
+			expect(persistedStore.get(SHARE_ID)).toEqual({ "note.md": "sha-001" });
+
+			jest.clearAllMocks();
+			noticeMock.mockClear();
+
+			// "Restart": brand-new InboundFileDownloader instance (in-memory state
+			// gone, exactly like a plugin reload), but wired to the SAME persisted
+			// store — this is what main.ts does via LocalStorage across a real restart.
+			const secondSession = new InboundFileDownloader(
+				vault,
+				clientManager as any,
+				webSyncManager as any,
+				persistedStore,
+			);
+			(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare());
+			(clientManager.getFilesIndex as jest.Mock).mockResolvedValue([
+				{ path: "note.md", sha256: "sha-002", size: 12, updated_at: "2026-01-02T00:00:00Z", type: "sync-artifact" },
+			]);
+			const existingFile = new TFile(`${SHARE_PATH}/note.md`);
+			(vault.getAbstractFileByPath as jest.Mock).mockReturnValue(existingFile);
+			// The user edited the file locally while Obsidian was closed.
+			mockGenerateHash.mockResolvedValue("user-edited-hash");
+
+			await secondSession.downloadShare(SHARE_ID, SERVER_ID);
+
+			// The pre-fix bug: a fresh in-memory manifest reads as "no history", the
+			// `if (lastHash)` guard never fires, and this call overwrites the user's
+			// edit unconditionally. Fixed: the persisted manifest survives the
+			// "restart" so the edit is still detected and the file is left alone.
+			expect(clientManager.downloadFile).not.toHaveBeenCalled();
+			expect(vault.adapter.writeBinary).not.toHaveBeenCalled();
+			expect(noticeMock).toHaveBeenCalledTimes(1);
+			expect(noticeMock.mock.calls[0][0]).toContain("note.md");
+		});
+
+		test("shows a Notice when skipping a user-edited (or unknown-provenance) file", async () => {
+			(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare());
+			(clientManager.getFilesIndex as jest.Mock).mockResolvedValue([
+				{ path: "note.md", sha256: "sha-002", size: 12, updated_at: "2026-01-02T00:00:00Z", type: "sync-artifact" },
+			]);
+			const existingFile = new TFile(`${SHARE_PATH}/note.md`);
+			(vault.getAbstractFileByPath as jest.Mock).mockReturnValue(existingFile);
+			mockGenerateHash.mockResolvedValue("some-other-hash");
+
+			await downloader.downloadShare(SHARE_ID, SERVER_ID);
+
+			expect(noticeMock).toHaveBeenCalledTimes(1);
+			const [message] = noticeMock.mock.calls[0];
+			expect(message).toContain("note.md");
+			expect(message.toLowerCase()).toContain("skipped");
+		});
+
+		test("REGRESSION: a local file with NO recorded history is no longer silently overwritten if it differs from the server", async () => {
+			// Fresh manifest (no prior download at all — not just a restart), and a
+			// local file that already exists with content the downloader has never
+			// seen. The old `if (lastHash)` guard skipped the whole safety check in
+			// this case and downloaded straight over it.
+			(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare());
+			(clientManager.getFilesIndex as jest.Mock).mockResolvedValue([
+				{ path: "preexisting.md", sha256: "sha-server", size: 8, updated_at: "2026-01-01T00:00:00Z", type: "sync-artifact" },
+			]);
+			const existingFile = new TFile(`${SHARE_PATH}/preexisting.md`);
+			(vault.getAbstractFileByPath as jest.Mock).mockReturnValue(existingFile);
+			mockGenerateHash.mockResolvedValue("hash-of-unrelated-local-content");
+
+			await downloader.downloadShare(SHARE_ID, SERVER_ID);
+
+			expect(clientManager.downloadFile).not.toHaveBeenCalled();
+			expect(vault.adapter.writeBinary).not.toHaveBeenCalled();
+			expect(noticeMock).toHaveBeenCalledTimes(1);
+		});
+
+		test("a local file with no history that ALREADY matches the server content is accepted (no false-positive skip)", async () => {
+			const content = new ArrayBuffer(4);
+			(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare());
+			(clientManager.getFilesIndex as jest.Mock).mockResolvedValue([
+				{ path: "preexisting.md", sha256: "sha-server", size: 8, updated_at: "2026-01-01T00:00:00Z", type: "sync-artifact" },
+			]);
+			const existingFile = new TFile(`${SHARE_PATH}/preexisting.md`);
+			(vault.getAbstractFileByPath as jest.Mock).mockReturnValue(existingFile);
+			(clientManager.downloadFile as jest.Mock).mockResolvedValue(content);
+			// Local content happens to already match what the server has.
+			mockGenerateHash.mockResolvedValue("sha-server");
+
+			await downloader.downloadShare(SHARE_ID, SERVER_ID);
+
+			expect(noticeMock).not.toHaveBeenCalled();
+		});
+
+		test("destroy() does NOT clear an injected (persisted) hash manifest", async () => {
+			const persistedStore = new Map<string, Record<string, string>>();
+			const persistentDownloader = new InboundFileDownloader(
+				vault,
+				clientManager as any,
+				webSyncManager as any,
+				persistedStore,
+			);
+			(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare());
+			(clientManager.getFilesIndex as jest.Mock).mockResolvedValue([
+				{ path: "note.md", sha256: "sha-001", size: 8, updated_at: "2026-01-01T00:00:00Z", type: "sync-artifact" },
+			]);
+			(clientManager.downloadFile as jest.Mock).mockResolvedValue(new ArrayBuffer(4));
+			(vault.getAbstractFileByPath as jest.Mock).mockReturnValue(null);
+			await persistentDownloader.downloadShare(SHARE_ID, SERVER_ID);
+			expect(persistedStore.size).toBe(1);
+
+			persistentDownloader.destroy();
+
+			// The whole point of injecting a persisted store is that plugin
+			// unload/reload does not wipe it — only in-memory-only state does.
+			expect(persistedStore.size).toBe(1);
+			expect(persistedStore.get(SHARE_ID)).toEqual({ "note.md": "sha-001" });
+		});
+	});
+});
+
+// ─── TR-02 (#307f52bf): persisted lastUpdatedAt survives a "restart" ──────────
+describe("InboundSyncPoller persisted lastUpdatedAt (TR-02)", () => {
+	let timeProvider: MockTimeProvider;
+	let clientManager: ReturnType<typeof makeMockClientManager>;
+	let webSyncManager: ReturnType<typeof makeMockWebSyncManager>;
+	let fileDownloader: jest.Mocked<Pick<InboundFileDownloader, "downloadShare" | "isInboundWriting">>;
+	let startTime: number;
+
+	beforeEach(() => {
+		jest.clearAllMocks();
+		timeProvider = new MockTimeProvider();
+		startTime = timeProvider.getTime();
+		clientManager = makeMockClientManager();
+		webSyncManager = makeMockWebSyncManager();
+		fileDownloader = {
+			downloadShare: jest.fn<() => Promise<"ran" | "skipped">>().mockResolvedValue("ran"),
+			isInboundWriting: jest.fn<() => boolean>().mockReturnValue(false),
+		};
+	});
+
+	test("REGRESSION: registerShare seeds lastUpdatedAt from the persisted store instead of always null, so an unchanged share does not re-download on restart", async () => {
+		const ts = "2026-06-08T10:00:00Z";
+		const persistedStore = new Map<string, string>([[SHARE_ID, ts]]);
+		const poller = new InboundSyncPoller(
+			timeProvider,
+			clientManager as any,
+			webSyncManager as any,
+			fileDownloader as any,
+			30_000,
+			persistedStore,
+		);
+		// Server content is unchanged since the persisted watermark.
+		(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare(ts));
+
+		poller.registerShare(SHARE_ID, SERVER_ID);
+		poller.start();
+
+		timeProvider.setTime(startTime + 30_000);
+		await flushPromises();
+
+		// Pre-fix bug: registerShare always started at lastUpdatedAt=null, so this
+		// first poll would read as "bumped" and trigger a full re-download even
+		// though nothing changed server-side. Fixed: seeded from the persisted
+		// watermark, so an unchanged share stays skipped.
+		expect(fileDownloader.downloadShare).not.toHaveBeenCalled();
+	});
+
+	test("a genuinely new share (not in the persisted store) still downloads on first poll", async () => {
+		const persistedStore = new Map<string, string>();
+		const poller = new InboundSyncPoller(
+			timeProvider,
+			clientManager as any,
+			webSyncManager as any,
+			fileDownloader as any,
+			30_000,
+			persistedStore,
+		);
+		(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare("2026-06-08T10:00:00Z"));
+
+		poller.registerShare(SHARE_ID, SERVER_ID);
+		poller.start();
+
+		timeProvider.setTime(startTime + 30_000);
+		await flushPromises();
+
+		expect(fileDownloader.downloadShare).toHaveBeenCalledWith(SHARE_ID, SERVER_ID);
+	});
+
+	test("advancing lastUpdatedAt writes through to the persisted store, not just the in-memory copy", async () => {
+		const persistedStore = new Map<string, string>();
+		const poller = new InboundSyncPoller(
+			timeProvider,
+			clientManager as any,
+			webSyncManager as any,
+			fileDownloader as any,
+			30_000,
+			persistedStore,
+		);
+		const ts = "2026-06-08T10:00:00Z";
+		(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare(ts));
+
+		poller.registerShare(SHARE_ID, SERVER_ID);
+		poller.start();
+
+		timeProvider.setTime(startTime + 30_000);
+		await flushPromises();
+
+		expect(persistedStore.get(SHARE_ID)).toBe(ts);
+	});
+
+	test("a skipped download (outbound sync in flight) does NOT advance the persisted watermark", async () => {
+		const persistedStore = new Map<string, string>();
+		fileDownloader.downloadShare = jest
+			.fn<() => Promise<"ran" | "skipped">>()
+			.mockResolvedValue("skipped");
+		const poller = new InboundSyncPoller(
+			timeProvider,
+			clientManager as any,
+			webSyncManager as any,
+			fileDownloader as any,
+			30_000,
+			persistedStore,
+		);
+		(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare("2026-06-08T10:00:00Z"));
+
+		poller.registerShare(SHARE_ID, SERVER_ID);
+		poller.start();
+
+		timeProvider.setTime(startTime + 30_000);
+		await flushPromises();
+
+		expect(persistedStore.has(SHARE_ID)).toBe(false);
 	});
 });

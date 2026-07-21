@@ -31,11 +31,20 @@ export class InboundSyncPoller {
 		private readonly webSyncManager: WebSyncManager,
 		private readonly fileDownloader: InboundFileDownloader,
 		private readonly pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
+		// Persisted shareId -> last-seen web_content_updated_at (TR-02, #307f52bf).
+		// Injectable so callers can back it with LocalStorage instead of a bare
+		// in-memory Map — without persistence, every plugin restart re-registers
+		// every share at lastUpdatedAt=null, which reads as "content changed"
+		// unconditionally and triggers a full re-download on every open even when
+		// nothing changed server-side. Defaults to a plain Map for callers
+		// (incl. tests) that don't need persistence.
+		private readonly persistedUpdatedAt: Map<string, string> = new Map(),
 	) {}
 
 	registerShare(shareId: string, serverId: string): void {
-		this.watchedShares.set(shareId, { serverId, lastUpdatedAt: null });
-		log("Registered share for polling", { shareId, serverId });
+		const lastUpdatedAt = this.persistedUpdatedAt.get(shareId) ?? null;
+		this.watchedShares.set(shareId, { serverId, lastUpdatedAt });
+		log("Registered share for polling", { shareId, serverId, lastUpdatedAt });
 	}
 
 	unregisterShare(shareId: string): void {
@@ -85,6 +94,9 @@ export class InboundSyncPoller {
 			const result = await this.fileDownloader.downloadShare(shareId, serverId);
 			if (result !== "skipped") {
 				this.watchedShares.set(shareId, { serverId, lastUpdatedAt: newUpdatedAt });
+				// Persist the watermark too, not just the in-memory copy (TR-02) —
+				// otherwise the very next restart is back to lastUpdatedAt=null.
+				this.persistedUpdatedAt.set(shareId, newUpdatedAt);
 			}
 		} catch (err: unknown) {
 			log("Failed to check share", {

@@ -65,3 +65,17 @@ export class TFolder {
 }
 
 export class Vault {}
+
+/** Records every Notice construction so tests can assert on it. Reset with noticeMock.mockClear(). */
+export const noticeMock = jest.fn<(message: string, timeout?: number) => void>();
+
+export class Notice {
+	message: string;
+	timeout?: number;
+
+	constructor(message: string, timeout?: number) {
+		this.message = message;
+		this.timeout = timeout;
+		noticeMock(message, timeout);
+	}
+}

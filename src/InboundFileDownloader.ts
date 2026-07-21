@@ -5,7 +5,7 @@
  * to the local vault. Called by InboundSyncPoller when web_content_updated_at bumps.
  */
 
-import { normalizePath, TFile, Vault } from "obsidian";
+import { normalizePath, Notice, TFile, Vault } from "obsidian";
 import { dirname, join } from "path-browserify";
 import { curryLog } from "./debug";
 import { generateHash } from "./hashing";
@@ -19,8 +19,13 @@ export class InboundFileDownloader {
 	private clientManager: RelayOnPremShareClientManager;
 	private webSyncManager: WebSyncManager;
 
-	// Map<shareId, Map<relativePath, sha256>> — last sha256 we wrote per file
-	private lastWrittenHash: Map<string, Map<string, string>> = new Map();
+	// Map<shareId, Record<relativePath, sha256>> — last sha256 we wrote per file.
+	// Injectable (TR-02, #307f52bf) so callers can back it with LocalStorage
+	// (vault-scoped, persisted) instead of a bare in-memory Map — an in-memory-only
+	// manifest resets to empty on every plugin reload, which made the "is this a
+	// user edit?" guard below never fire right after a restart. Defaults to a plain
+	// Map for callers (incl. tests) that don't need persistence.
+	private lastWrittenHash: Map<string, Record<string, string>>;
 	// Vault paths currently being written — echo-loop guard for vault "modify" events
 	private writingPaths: Set<string> = new Set();
 
@@ -28,10 +33,12 @@ export class InboundFileDownloader {
 		vault: Vault,
 		clientManager: RelayOnPremShareClientManager,
 		webSyncManager: WebSyncManager,
+		hashManifestStore: Map<string, Record<string, string>> = new Map(),
 	) {
 		this.vault = vault;
 		this.clientManager = clientManager;
 		this.webSyncManager = webSyncManager;
+		this.lastWrittenHash = hashManifestStore;
 	}
 
 	/**
@@ -87,7 +94,7 @@ export class InboundFileDownloader {
 			return "ran";
 		}
 
-		const shareManifest = this.lastWrittenHash.get(shareId) ?? new Map<string, string>();
+		const shareManifest = { ...(this.lastWrittenHash.get(shareId) ?? {}) };
 
 		for (const item of syncItems) {
 			await this._downloadItem(item.path, item.sha256, shareId, serverId, sharePath, shareManifest);
@@ -103,7 +110,7 @@ export class InboundFileDownloader {
 		shareId: string,
 		serverId: string,
 		sharePath: string,
-		shareManifest: Map<string, string>,
+		shareManifest: Record<string, string>,
 	): Promise<void> {
 		const vaultPath = normalizePath(join(sharePath, relativePath));
 
@@ -124,35 +131,53 @@ export class InboundFileDownloader {
 			return;
 		}
 
-		const lastHash = shareManifest.get(relativePath);
+		const lastHash = shareManifest[relativePath];
 
 		// Skip if sha256 unchanged since last download
 		if (lastHash === serverSha256) {
 			return;
 		}
 
-		// Guard against overwriting user edits:
-		// If the file exists locally and its current hash differs from what we last wrote,
-		// the user edited it — skip.
+		// Guard against overwriting user edits (TR-02, #307f52bf):
+		// If the file exists locally, check it against `lastHash` — what we last
+		// wrote for this path — regardless of whether `lastHash` is defined. It
+		// used to only check `if (lastHash)`, so a manifest with no recorded
+		// history for this path (in-memory manifest wiped on every plugin
+		// reload, or genuinely never synced before) skipped the check entirely
+		// and downloaded straight over whatever was on disk. Now: known history
+		// that doesn't match local content -> user edit, skip. No history at all
+		// but the local file doesn't match what we're about to write -> unknown
+		// provenance, ALSO skip rather than assume it's safe to overwrite.
 		const abstractFile = this.vault.getAbstractFileByPath(vaultPath);
-		if (abstractFile instanceof TFile && lastHash) {
+		if (abstractFile instanceof TFile) {
+			// Only the read + hash computation is I/O that can legitimately fail;
+			// the notify-and-skip decision below is not wrapped, so a bug there
+			// surfaces as itself instead of being mislabeled a read failure.
+			let localHash: string;
 			try {
 				const localBytes = await this.vault.readBinary(abstractFile);
-				const localHash = await generateHash(localBytes);
-				if (localHash !== lastHash) {
-					log("Skipping user-edited file", {
-						vaultPath,
-						localHash,
-						lastWritten: lastHash,
-						serverHash: serverSha256,
-					});
-					return;
-				}
+				localHash = await generateHash(localBytes);
 			} catch (err: unknown) {
 				log("Could not read existing file, skipping to avoid data loss", {
 					vaultPath,
 					error: err instanceof Error ? err.message : String(err),
 				});
+				return;
+			}
+			const expectedHash = lastHash ?? serverSha256;
+			if (localHash !== expectedHash) {
+				log("Skipping user-edited (or unknown-provenance) file", {
+					vaultPath,
+					localHash,
+					lastWritten: lastHash ?? "(none recorded)",
+					serverHash: serverSha256,
+				});
+				new Notice(
+					`Team Relay: skipped syncing "${relativePath}" — local changes ` +
+						`would have been overwritten by the relay version. Resolve ` +
+						`manually, then it will sync normally.`,
+					0,
+				);
 				return;
 			}
 		}
@@ -183,7 +208,7 @@ export class InboundFileDownloader {
 		this.writingPaths.add(vaultPath);
 		try {
 			await this.vault.adapter.writeBinary(vaultPath, content);
-			shareManifest.set(relativePath, serverSha256);
+			shareManifest[relativePath] = serverSha256;
 			log("Wrote sync-artifact to vault", { vaultPath, sha256: serverSha256 });
 		} catch (err: unknown) {
 			log("Failed to write file to vault", {
@@ -196,7 +221,10 @@ export class InboundFileDownloader {
 	}
 
 	destroy(): void {
-		this.lastWrittenHash.clear();
+		// Deliberately does NOT clear lastWrittenHash (TR-02, #307f52bf): when
+		// backed by a persisted store, wiping it here on every plugin
+		// unload/reload would defeat the entire point of persisting it. Only
+		// transient in-flight-write tracking is reset.
 		this.writingPaths.clear();
 		log("InboundFileDownloader destroyed");
 	}
