@@ -11,6 +11,7 @@ import {
 } from "obsidian";
 import { IndexeddbPersistence } from "./storage/y-indexeddb";
 import { dirname, join, sep } from "path-browserify";
+import { buildConflictCopyPath } from "./conflictCopyPath";
 import { HasProvider, type ConnectionIntent } from "./HasProvider";
 import { Document } from "./Document";
 import { ObservableSet } from "./observable/ObservableSet";
@@ -1079,6 +1080,25 @@ export class SharedFolder extends HasProvider {
 		const vaultPath = join(this.path, doc.path);
 		this.log("writing to ", normalizePath(vaultPath));
 		return this.vault.adapter.write(normalizePath(vaultPath), content);
+	}
+
+	/**
+	 * Write `content` to a new file next to `doc.path`, never overwriting the
+	 * original. Used to preserve content that a reconciliation is about to
+	 * discard (TR-01, #814d6d9b) so nothing is silently lost — the file is
+	 * left for the user to inspect/merge manually.
+	 *
+	 * Returns the doc-relative path (same shape as `doc.path`) it wrote to.
+	 */
+	async writeConflictCopy(
+		doc: IFile,
+		content: string,
+		label: string,
+	): Promise<string> {
+		const conflictDocPath = buildConflictCopyPath(doc.path, label);
+		const vaultPath = join(this.path, conflictDocPath);
+		await this.vault.adapter.write(normalizePath(vaultPath), content);
+		return conflictDocPath;
 	}
 
 	getPath(path: string): string {

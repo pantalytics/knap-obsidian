@@ -66,3 +66,57 @@ export function diffMatchPatch(
 	// Log the final state
 	log("Update complete. New content length:", ytext.toJSON().length);
 }
+
+/**
+ * Persists `content` somewhere the user can find it and returns the path it
+ * was written to. Injected by the caller so this module stays independent of
+ * the vault/file API (and directly unit-testable without mocking it).
+ */
+export type ConflictCopyWriter = (content: string) => Promise<string>;
+
+export interface ReconcileResult {
+	/** True if the Y.Doc was rewritten to match `vaultContent`. */
+	reconciled: boolean;
+	/** Path the pre-reconciliation content was preserved at, if it diverged. */
+	conflictPath?: string;
+}
+
+/**
+ * Reconcile a Y.Doc's "contents" text to match `vaultContent`, WITHOUT
+ * silently discarding whatever the Y.Doc currently holds (TR-01, #814d6d9b).
+ *
+ * `diffMatchPatch` computes a plain-text diff against whatever is CURRENTLY
+ * in the Y.Doc and applies it as real delete/insert CRDT ops — indistinguishable
+ * from any other edit once broadcast, and unrecoverable after GC. If the Y.Doc's
+ * content differs from `vaultContent` at all, the losing (pre-reconciliation)
+ * content is preserved via `writeConflictCopy` FIRST. If that write fails, the
+ * reconciliation is skipped entirely (fail closed) rather than risk a silent loss.
+ */
+export async function reconcileWithConflictCopy(
+	ydoc: Y.Doc,
+	vaultContent: string,
+	writeConflictCopy: ConflictCopyWriter,
+	origin?: unknown,
+	log: (...args: unknown[]) => void = () => {},
+): Promise<ReconcileResult> {
+	const ytext = ydoc.getText("contents");
+	const currentContent = ytext.toJSON();
+
+	if (currentContent === vaultContent) {
+		return { reconciled: false };
+	}
+
+	let conflictPath: string;
+	try {
+		conflictPath = await writeConflictCopy(currentContent);
+	} catch (e) {
+		log(
+			"Failed to write conflict copy — skipping reconciliation to avoid silent data loss:",
+			e,
+		);
+		return { reconciled: false };
+	}
+
+	diffMatchPatch(ydoc, vaultContent, origin);
+	return { reconciled: true, conflictPath };
+}

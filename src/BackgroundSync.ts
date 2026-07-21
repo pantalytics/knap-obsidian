@@ -16,7 +16,7 @@ import { Canvas } from "./Canvas";
 import { areObjectsEqual } from "./areObjectsEqual";
 import type { CanvasData } from "./CanvasView";
 import { SyncFile, isSyncFile } from "./SyncFile";
-import { diffMatchPatch } from "./y-diffMatchPatch";
+import { reconcileWithConflictCopy } from "./y-diffMatchPatch";
 
 export interface QueueItem {
 	guid: string;
@@ -766,6 +766,10 @@ export class BackgroundSync extends HasLogging {
 			contentsMatch = currentTextStr === currentFileContents;
 		}
 
+		// NB: despite the name, this is true for ANY doc in a Team-Relay-linked
+		// SharedFolder (hosted tr.entire.vc relays included, not just self-hosted
+		// on-prem ones) — `relayId` is set whenever a folder belongs to a Relay,
+		// full stop. Non-relay Local Sync folders are the `false` case below.
 		const isRelayOnPrem = !!doc.sharedFolder.relayId;
 
 		if (!contentsMatch && currentFileContents) {
@@ -775,10 +779,10 @@ export class BackgroundSync extends HasLogging {
 				);
 				return false;
 			}
-			// For relay-onprem: Y.Text is likely empty (new Document) while the file
-			// has content. We need to connect to the relay to get the authoritative
-			// server state first, then reconcile. Skipping would leave Documents
-			// permanently unsynced.
+			// For relay-linked folders: Y.Text is likely empty (new Document) while
+			// the file has content. We need to connect to the relay to get the
+			// authoritative server state first, then reconcile. Skipping would leave
+			// Documents permanently unsynced.
 		}
 
 		const promise = doc.onceProviderSynced();
@@ -805,9 +809,12 @@ export class BackgroundSync extends HasLogging {
 			}
 		}
 
-		// For relay-onprem: after syncing with the relay, reconcile content.
-		// The vault file is the source of truth for edits that weren't committed
-		// to Y.Doc (e.g., file was modified without an active editor binding).
+		// For relay-linked folders (hosted or on-prem, see note above): after
+		// syncing with the relay, reconcile content. The vault file is treated as
+		// the source of truth for edits that weren't committed to Y.Doc (e.g. the
+		// file was modified without an active editor binding) — but see
+		// reconcileWithConflictCopy: it never discards divergent Y.Doc content
+		// without preserving it first.
 		if (isRelayOnPrem && !contentsMatch && currentFileContents && isDocument(doc)) {
 			const syncedText = doc.text;
 			if (!syncedText) {
@@ -818,13 +825,41 @@ export class BackgroundSync extends HasLogging {
 				doc.ydoc.getText("contents").insert(0, currentFileContents);
 			} else if (syncedText !== currentFileContents) {
 				// Relay has stale/different content — reconcile with vault file.
-				// Use diffMatchPatch to produce minimal Y.Text operations instead
-				// of delete-all + insert-all, preserving CRDT history better.
-				this.log(
-					`[syncDocumentWebsocket] Reconciling stale content for ${doc.path} ` +
-						`(relay=${syncedText.length}, vault=${currentFileContents.length})`,
+				// `syncedText` at this point may include edits from OTHER clients
+				// that just merged in via the connect()/onceProviderSynced() above;
+				// a plain text diff can't tell those apart from this device's own
+				// unsynced edits, so before rewriting the Y.Doc to match the vault
+				// file we preserve whatever it currently holds as a conflict-copy
+				// file (TR-01, #814d6d9b) — nothing is silently discarded, and if
+				// the preserve step itself fails we skip reconciling rather than
+				// risk it.
+				const timestamp = new Date()
+					.toISOString()
+					.replace(/[:.]/g, "-");
+				const result = await reconcileWithConflictCopy(
+					doc.ydoc,
+					currentFileContents,
+					(relayContent) =>
+						doc.sharedFolder.writeConflictCopy(
+							doc,
+							relayContent,
+							`relay conflict ${timestamp}`,
+						),
+					undefined,
+					(...args) => this.log("[syncDocumentWebsocket]", ...args),
 				);
-				diffMatchPatch(doc.ydoc, currentFileContents);
+				if (result.reconciled) {
+					this.log(
+						`[syncDocumentWebsocket] Reconciled ${doc.path} with vault file ` +
+							`(relay=${syncedText.length}, vault=${currentFileContents.length}); ` +
+							`prior relay content preserved at ${result.conflictPath}`,
+					);
+				} else {
+					this.warn(
+						`[syncDocumentWebsocket] Skipped reconciliation for ${doc.path} — ` +
+							`could not safely preserve relay content before overwriting`,
+					);
+				}
 			}
 			// Allow the update to propagate to the relay before disconnecting
 			await new Promise((resolve) => window.setTimeout(resolve, 1000));
