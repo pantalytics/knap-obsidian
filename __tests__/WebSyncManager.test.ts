@@ -363,3 +363,115 @@ describe("WebSyncManager — doc share rename/delete (TR-24, #5aef2c1d)", () => 
 		expect(noticeMock).not.toHaveBeenCalled();
 	});
 });
+
+/** Resolves/rejects on demand — lets a test observe state while the mocked call is still pending. */
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((res) => {
+		resolve = res;
+	});
+	return { promise, resolve };
+}
+
+describe("WebSyncManager — isOutboundSyncing echo-guard (TR-25, #652db7ce)", () => {
+	// The flag was declared and read by InboundSyncPoller/InboundFileDownloader
+	// but never written anywhere — grep confirmed 3 reads, 0 writes. These
+	// tests observe it mid-flight (the network call deferred, not yet
+	// resolved) since a naive "await the whole sync" leaves no window to see
+	// it ever having been true.
+	beforeEach(() => {
+		jest.useFakeTimers();
+	});
+
+	afterEach(() => {
+		jest.useRealTimers();
+	});
+
+	test("is true while a folder-share sync is in flight, false once it settles", async () => {
+		const vault = makeVault({ "notes/note.md": "content" });
+		const clientManager = makeClientManager();
+		const pending = deferred<void>();
+		(clientManager.syncFolderFileContent as jest.Mock).mockReturnValue(pending.promise);
+		const manager = new WebSyncManager(vault, clientManager);
+		registerFolderShare(manager, "notes");
+
+		const modifyPromise = manager.onFileModified(new TFile("notes/note.md"));
+
+		// Flush microtasks up to (but not past) the pending network call.
+		await Promise.resolve();
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(manager.isOutboundSyncing).toBe(true);
+
+		pending.resolve();
+		await modifyPromise;
+
+		expect(manager.isOutboundSyncing).toBe(false);
+	});
+
+	test("is true while a doc-share sync is in flight, false once it settles", async () => {
+		const vault = makeVault({ "notes/note.md": "content" });
+		const client = makeDocClient();
+		const pending = deferred<void>();
+		(client.updateShare as jest.Mock).mockReturnValue(pending.promise);
+		const clientManager = makeClientManagerWithClient(client);
+		const manager = new WebSyncManager(vault, clientManager);
+		manager.registerAutoSyncShare("notes/note.md", "share1", "srv1", "doc");
+
+		void manager.onFileModified(new TFile("notes/note.md"));
+		// Doc-share syncs always go through the debounce — fire it.
+		await jest.advanceTimersByTimeAsync(2100);
+
+		expect(manager.isOutboundSyncing).toBe(true);
+
+		pending.resolve();
+		await jest.advanceTimersByTimeAsync(0);
+
+		expect(manager.isOutboundSyncing).toBe(false);
+	});
+
+	test("stays true while ONE of two concurrent outbound syncs is still in flight (ref-counted, not a plain flag)", async () => {
+		const vault = makeVault({ "notes/a.md": "a", "notes/b.md": "b" });
+		const clientManager = makeClientManager();
+		const pendingA = deferred<void>();
+		const pendingB = deferred<void>();
+		(clientManager.syncFolderFileContent as jest.Mock)
+			.mockReturnValueOnce(pendingA.promise)
+			.mockReturnValueOnce(pendingB.promise);
+		const manager = new WebSyncManager(vault, clientManager);
+		registerFolderShare(manager, "notes");
+
+		const syncA = manager.onFileModified(new TFile("notes/a.md"));
+		const syncB = manager.onFileModified(new TFile("notes/b.md"));
+
+		await Promise.resolve();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(manager.isOutboundSyncing).toBe(true);
+
+		// A finishes; B is still in flight. A naive boolean flag would clear
+		// here and let InboundSyncPoller/InboundFileDownloader run right
+		// through B's still-uploading content — the actual echo-loop risk
+		// this task exists to close.
+		pendingA.resolve();
+		await syncA;
+		expect(manager.isOutboundSyncing).toBe(true);
+
+		pendingB.resolve();
+		await syncB;
+		expect(manager.isOutboundSyncing).toBe(false);
+	});
+
+	test("resets to false even when the outbound sync throws", async () => {
+		const vault = makeVault({ "notes/note.md": "content" });
+		const clientManager = makeClientManager();
+		(clientManager.syncFolderFileContent as jest.Mock).mockRejectedValue(new Error("network error"));
+		const manager = new WebSyncManager(vault, clientManager);
+		registerFolderShare(manager, "notes");
+
+		await manager.onFileModified(new TFile("notes/note.md"));
+
+		expect(manager.isOutboundSyncing).toBe(false);
+	});
+});

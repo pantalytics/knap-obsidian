@@ -33,8 +33,24 @@ export class WebSyncManager {
 	private syncDebounceMs = 2000; // Wait 2 seconds after last change
 	private minSyncIntervalMs = 5000; // Minimum 5 seconds between syncs (rate limiting)
 
-	// Set true around outbound uploads; read by InboundFileDownloader to avoid echo loops
-	isOutboundSyncing = false;
+	// True while ANY outbound push is in flight; read by InboundSyncPoller /
+	// InboundFileDownloader to avoid echo loops (TR-25). Ref-counted rather
+	// than a plain flag — two outbound pushes for different shares can race
+	// each other, and a naive boolean would be cleared by whichever finishes
+	// first while the other is still uploading, defeating the guard. Set via
+	// _beginOutboundSync()/_endOutboundSync(); never write it directly.
+	private _outboundSyncCount = 0;
+	get isOutboundSyncing(): boolean {
+		return this._outboundSyncCount > 0;
+	}
+
+	private _beginOutboundSync(): void {
+		this._outboundSyncCount++;
+	}
+
+	private _endOutboundSync(): void {
+		this._outboundSyncCount = Math.max(0, this._outboundSyncCount - 1);
+	}
 
 	// Debounced sync function per file path (doc shares — keyed by the doc's own path)
 	private debouncedSyncMap: Map<string, () => void> = new Map();
@@ -225,6 +241,7 @@ export class WebSyncManager {
 			}
 		}
 
+		this._beginOutboundSync();
 		try {
 			const content = await this.vault.read(file);
 
@@ -263,6 +280,8 @@ export class WebSyncManager {
 				filePath: file.path,
 				error: error instanceof Error ? error.message : String(error),
 			});
+		} finally {
+			this._endOutboundSync();
 		}
 	}
 
@@ -286,6 +305,7 @@ export class WebSyncManager {
 			return;
 		}
 
+		this._beginOutboundSync();
 		try {
 			const file = this.vault.getAbstractFileByPath(filePath);
 			if (!(file instanceof TFile)) {
@@ -326,6 +346,8 @@ export class WebSyncManager {
 				filePath,
 				error: error instanceof Error ? error.message : String(error),
 			});
+		} finally {
+			this._endOutboundSync();
 		}
 	}
 
