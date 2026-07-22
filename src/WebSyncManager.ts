@@ -36,8 +36,16 @@ export class WebSyncManager {
 	// Set true around outbound uploads; read by InboundFileDownloader to avoid echo loops
 	isOutboundSyncing = false;
 
-	// Debounced sync function per file path
+	// Debounced sync function per file path (doc shares — keyed by the doc's own path)
 	private debouncedSyncMap: Map<string, () => void> = new Map();
+
+	// Debounced sync function per individual file inside a folder share (TR-23).
+	// Keyed by the file's path, NOT the folder's — folder shares don't have a
+	// pre-registered debouncer per file (files aren't known at registration
+	// time), and re-using the folder-keyed debouncedSyncMap here would resync
+	// the folder itself (getAbstractFileByPath on a folder path returns a
+	// TFolder, which syncFile() rejects — the rate-limited edit is silently lost).
+	private debouncedFolderFileSyncMap: Map<string, () => void> = new Map();
 
 	constructor(
 		vault: Vault,
@@ -86,6 +94,11 @@ export class WebSyncManager {
 		log("Unregistering auto-sync share", { filePath });
 		this.autoSyncShares.delete(filePath);
 		this.debouncedSyncMap.delete(filePath);
+		for (const key of Array.from(this.debouncedFolderFileSyncMap.keys())) {
+			if (key === filePath || key.startsWith(filePath + "/")) {
+				this.debouncedFolderFileSyncMap.delete(key);
+			}
+		}
 	}
 
 	/**
@@ -110,6 +123,16 @@ export class WebSyncManager {
 
 		if (!shareInfo) return;
 
+		// For folder shares, non-text files never sync (TR-31) — bail before any
+		// rate-limit bookkeeping or debounce scheduling happens for them.
+		if (shareInfo.kind === "folder" && !SYNCABLE_FOLDER_FILE_EXTENSIONS.has(file.extension)) {
+			log("Skipping non-text file in auto-sync folder (unsupported extension)", {
+				path: file.path,
+				extension: file.extension,
+			});
+			return;
+		}
+
 		// Rate limiting check
 		const now = Date.now();
 		if (now - shareInfo.lastSync < this.minSyncIntervalMs) {
@@ -117,9 +140,17 @@ export class WebSyncManager {
 				path: file.path,
 				timeSinceLastSync: now - shareInfo.lastSync,
 			});
-			// Schedule sync after rate limit expires
-			const debouncedSync = this.debouncedSyncMap.get(matchedPath);
-			if (debouncedSync) debouncedSync();
+			// Schedule sync after rate limit expires. Folder shares debounce the
+			// specific FILE that was rate-limited (TR-23) — debouncedSyncMap is
+			// keyed by the folder path and drives syncFile(), which expects a
+			// TFile at that path and silently no-ops on the folder itself.
+			if (shareInfo.kind === "folder") {
+				const debouncedSync = this.getOrCreateFolderFileDebounce(file.path, shareInfo);
+				debouncedSync();
+			} else {
+				const debouncedSync = this.debouncedSyncMap.get(matchedPath);
+				if (debouncedSync) debouncedSync();
+			}
 			return;
 		}
 
@@ -127,18 +158,52 @@ export class WebSyncManager {
 
 		// For folder shares, sync just the modified file
 		if (shareInfo.kind === "folder") {
-			if (!SYNCABLE_FOLDER_FILE_EXTENSIONS.has(file.extension)) {
-				log("Skipping non-text file in auto-sync folder (unsupported extension)", {
-					path: file.path,
-					extension: file.extension,
-				});
-				return;
-			}
 			await this.syncFolderFile(file, shareInfo);
 		} else {
 			const debouncedSync = this.debouncedSyncMap.get(matchedPath);
 			if (debouncedSync) debouncedSync();
 		}
+	}
+
+	/**
+	 * Get (or lazily create) the debounced resync for one file inside a folder
+	 * share. Re-resolves the TFile by path at fire time rather than closing
+	 * over the TFile passed in now, so a debounce created by an earlier edit
+	 * still syncs current content if it fires after further edits.
+	 */
+	private getOrCreateFolderFileDebounce(filePath: string, shareInfo: ShareInfo): () => void {
+		let fn = this.debouncedFolderFileSyncMap.get(filePath);
+		if (!fn) {
+			fn = debounce(
+				() => {
+					void this.syncFolderFileByPath(filePath, shareInfo);
+				},
+				this.syncDebounceMs,
+				true
+			);
+			this.debouncedFolderFileSyncMap.set(filePath, fn);
+		}
+		return fn;
+	}
+
+	/**
+	 * Resolve filePath to a live TFile and sync it as a folder-share file.
+	 * Used by the debounced folder-file retry, where the original TFile
+	 * reference may be stale by the time the debounce fires.
+	 */
+	private async syncFolderFileByPath(filePath: string, shareInfo: ShareInfo): Promise<void> {
+		// No rate-limit re-check here (unlike syncFile()'s doc-share equivalent):
+		// syncDebounceMs (2s) < minSyncIntervalMs (5s), so a strict re-check would
+		// often still be inside the rate-limit window when this fires — and since
+		// nothing reschedules after a drop here, that would silently re-lose the
+		// exact edit TR-23 is fixing. This debounce firing IS the delivery
+		// mechanism for a rate-limited edit; let it always go out.
+		const file = this.vault.getAbstractFileByPath(filePath);
+		if (!(file instanceof TFile)) {
+			log("Folder-share file not found or not a TFile at debounced sync time", { filePath });
+			return;
+		}
+		await this.syncFolderFile(file, shareInfo);
 	}
 
 	/**
@@ -439,5 +504,6 @@ export class WebSyncManager {
 		log("Destroying WebSyncManager");
 		this.autoSyncShares.clear();
 		this.debouncedSyncMap.clear();
+		this.debouncedFolderFileSyncMap.clear();
 	}
 }

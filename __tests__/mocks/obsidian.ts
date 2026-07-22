@@ -4,6 +4,48 @@
 
 export const requestUrl = jest.fn();
 
+/**
+ * Minimal standin for Obsidian's `debounce()` (real signature: cb, timeout,
+ * resetTimer). Trailing-edge only (fires `cb` once `timeout` ms after the
+ * last call when resetTimer=true, which is the only mode this repo uses).
+ * Real `setTimeout` under the hood so callers can drive it with Jest fake
+ * timers (`jest.useFakeTimers()` + `jest.advanceTimersByTime()`).
+ */
+export function debounce<T extends unknown[], V>(
+	cb: (...args: T) => V,
+	timeout = 0,
+	resetTimer = false
+): ((...args: T) => void) & { cancel: () => void } {
+	let timer: ReturnType<typeof setTimeout> | null = null;
+	let pendingArgs: T | null = null;
+
+	const debounced = ((...args: T): void => {
+		pendingArgs = args;
+		if (timer && resetTimer) {
+			clearTimeout(timer);
+			timer = null;
+		}
+		if (!timer) {
+			timer = setTimeout(() => {
+				timer = null;
+				const args2 = pendingArgs;
+				pendingArgs = null;
+				if (args2) cb(...args2);
+			}, timeout);
+		}
+	}) as ((...args: T) => void) & { cancel: () => void };
+
+	debounced.cancel = (): void => {
+		if (timer) {
+			clearTimeout(timer);
+			timer = null;
+		}
+		pendingArgs = null;
+	};
+
+	return debounced;
+}
+
 export const Platform = {
 	isMobile: false,
 	isDesktop: true,
