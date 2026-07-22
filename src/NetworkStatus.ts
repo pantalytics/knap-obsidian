@@ -53,6 +53,18 @@ class NetworkStatus {
 		}
 	}
 
+	/**
+	 * Re-point health checks at a new URL (e.g. the relay-onprem default
+	 * server's controlPlaneUrl changed). Starts polling if it wasn't
+	 * already running — mirrors the deferred-start behavior of start().
+	 */
+	public updateUrl(url: string) {
+		this.url = url;
+		if (this.url) {
+			this.start();
+		}
+	}
+
 	public stop() {
 		if (this.timer) {
 			window.clearInterval(this.timer);

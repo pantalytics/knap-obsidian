@@ -29,14 +29,13 @@ const tld = staging ? "dev" : "md";
 const obsidianPluginDir = process.env.OBSIDIAN_PLUGIN_DIR ||
 	path.join(process.env.HOME, "Obsidian/Rogozhin/.obsidian/plugins/evc-team-relay");
 
-// EVC Team Relay uses relay-onprem mode, no default System 3 URLs
+// EVC Team Relay uses relay-onprem mode, no default System 3 URLs.
+// (Relay health-check URL is NOT build-time config — it's derived at runtime
+// from the relay-onprem settings' per-server controlPlaneUrl; see
+// healthUrlForServer() in src/main.ts, TR-26.)
 const apiUrl = "";
 const authUrl = "";
-const healthUrl = apiUrl ? `${apiUrl}/health?version=${gitTag}` : "";
 console.log("git tag:", gitTag);
-if (healthUrl) {
-	console.log("health URL", healthUrl);
-}
 
 const NotifyPlugin = {
 	name: "on-end",
@@ -97,7 +96,6 @@ const context = await esbuild.context({
 	define: {
 		BUILD_TYPE: debug ? '"debug"' : '"prod"',
 		GIT_TAG: `"${gitTag}"`,
-		HEALTH_URL: `"${healthUrl}"`,
 		API_URL: `"${apiUrl}"`,
 		AUTH_URL: `"${authUrl}"`,
 		REPOSITORY: `"entire-vc/evc-team-relay-obsidian-plugin"`,

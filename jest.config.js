@@ -18,6 +18,7 @@ module.exports = {
 	testPathIgnorePatterns: ["/__tests__/mocks/", "/__tests__/jest.setup.js"],
     globals: {
         "BUILD_TYPE": "production",
+        "GIT_TAG": "test",
     },
 	transform: {
 		".ts": [

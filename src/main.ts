@@ -133,8 +133,17 @@ const DEFAULT_SETTINGS: RelaySettings = {
 	...DEFAULT_DEBUG_SETTINGS,
 };
 
-declare const HEALTH_URL: string;
 declare const GIT_TAG: string;
+
+// relay-onprem control-plane URLs are runtime/per-server config (multi-server,
+// user-editable), not a build-time constant — unlike the EndpointManager's
+// System-3 API_URL/AUTH_URL, there is no fixed default to bake in at build time.
+function healthUrlForServer(server?: RelayOnPremServer): string {
+	if (!server?.controlPlaneUrl) {
+		return "";
+	}
+	return `${server.controlPlaneUrl.replace(/\/+$/, "")}/v1/health?version=${GIT_TAG}`;
+}
 
 export default class Live extends Plugin {
 	appId!: string;
@@ -714,7 +723,10 @@ export default class Live extends Plugin {
 			this.app,
 		);
 
-		this.networkStatus = new NetworkStatus(this.timeProvider, HEALTH_URL);
+		this.networkStatus = new NetworkStatus(
+			this.timeProvider,
+			healthUrlForServer(defaultServer),
+		);
 
 		this.backgroundSync = new BackgroundSync(
 			this.loginManager,
@@ -800,11 +812,17 @@ export default class Live extends Plugin {
 					// server's URL changes.
 					const newDefaultServer = getDefaultServer(settings);
 					if (
-						relayOnPremTokenProvider &&
 						newDefaultServer &&
 						newDefaultServer.controlPlaneUrl !== tokenProviderControlPlaneUrl
 					) {
-						relayOnPremTokenProvider.updateControlPlaneUrl(newDefaultServer.controlPlaneUrl);
+						if (relayOnPremTokenProvider) {
+							relayOnPremTokenProvider.updateControlPlaneUrl(newDefaultServer.controlPlaneUrl);
+						}
+						// TR-26: networkStatus's health-check URL is derived from the
+						// same default-server controlPlaneUrl — re-point it too, or a
+						// server-URL edit leaves offline/online detection pointed at
+						// the old (or no) host until Obsidian restarts.
+						this.networkStatus.updateUrl(healthUrlForServer(newDefaultServer));
 						tokenProviderControlPlaneUrl = newDefaultServer.controlPlaneUrl;
 					}
 				})
