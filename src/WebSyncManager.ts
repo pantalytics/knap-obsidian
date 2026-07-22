@@ -11,6 +11,13 @@ import { curryLog } from "./debug";
 
 const log = curryLog("[WebSyncManager]");
 
+// Auto-sync folder shares only publish text content via the /files JSON
+// endpoint (TR-31). Any other extension (images, PDFs, etc.) read as text
+// via vault.read() corrupts binary data as UTF-8 and POSTs garbage — skip
+// them instead. Matches the extension set getFolderItems() already tracks
+// in the folder's web index below.
+const SYNCABLE_FOLDER_FILE_EXTENSIONS = new Set(["md", "canvas"]);
+
 interface ShareInfo {
 	shareId: string;
 	serverId: string;
@@ -120,6 +127,13 @@ export class WebSyncManager {
 
 		// For folder shares, sync just the modified file
 		if (shareInfo.kind === "folder") {
+			if (!SYNCABLE_FOLDER_FILE_EXTENSIONS.has(file.extension)) {
+				log("Skipping non-text file in auto-sync folder (unsupported extension)", {
+					path: file.path,
+					extension: file.extension,
+				});
+				return;
+			}
 			await this.syncFolderFile(file, shareInfo);
 		} else {
 			const debouncedSync = this.debouncedSyncMap.get(matchedPath);
