@@ -24,7 +24,14 @@ export class MultiServerAuthManager {
 	private vaultName: string;
 	private authStore: RelayOnPremAuthStore;
 
-	constructor(vaultName: string, servers: RelayOnPremServer[] = []) {
+	constructor(
+		vaultName: string,
+		servers: RelayOnPremServer[] = [],
+		// TR-28: forwarded to every provider this manager creates, so the
+		// owner (LoginManager) learns exactly which server's session died
+		// instead of the death staying invisible outside this class's map.
+		private onSessionExpired?: (serverId: string) => void,
+	) {
 		this.vaultName = vaultName;
 		this.authStore = new RelayOnPremAuthStore(vaultName);
 
@@ -48,6 +55,7 @@ export class MultiServerAuthManager {
 			controlPlaneUrl: server.controlPlaneUrl,
 			vaultName: this.vaultName,
 			serverId: server.id,
+			onSessionExpired: () => this.onSessionExpired?.(server.id),
 		});
 
 		this.providers.set(server.id, provider);

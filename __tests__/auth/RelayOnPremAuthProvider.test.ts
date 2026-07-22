@@ -396,6 +396,66 @@ describe("RelayOnPremAuthProvider", () => {
 			expect(provider.getCurrentUser()).toBeUndefined();
 		});
 
+		test("TR-28: calls onSessionExpired when the refresh token is rejected (401/403)", async () => {
+			mockStorage.set(
+				`evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`,
+				JSON.stringify({
+					user: { id: "user-123", email: "test@example.com" },
+					token: "token",
+					expiresAt: Date.now() + 3600000,
+					refreshToken: "refresh_token",
+				}),
+			);
+
+			const onSessionExpired = jest.fn();
+			provider = new RelayOnPremAuthProvider({
+				controlPlaneUrl: CONTROL_PLANE_URL,
+				vaultName: VAULT_NAME,
+				serverId: SERVER_ID,
+				onSessionExpired,
+			});
+			await provider.waitForRestore();
+
+			mockFetch.mockResolvedValue(
+				await mockFetchResponse(401, { error: "Invalid refresh token" }, false),
+			);
+
+			await expect(provider.refreshToken()).rejects.toThrow("Token refresh failed");
+
+			expect(onSessionExpired).toHaveBeenCalledTimes(1);
+		});
+
+		test("TR-28: does NOT call onSessionExpired on a network/server error (auth stays valid for retry)", async () => {
+			mockStorage.set(
+				`evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`,
+				JSON.stringify({
+					user: { id: "user-123", email: "test@example.com" },
+					token: "token",
+					expiresAt: Date.now() + 3600000,
+					refreshToken: "refresh_token",
+				}),
+			);
+
+			const onSessionExpired = jest.fn();
+			provider = new RelayOnPremAuthProvider({
+				controlPlaneUrl: CONTROL_PLANE_URL,
+				vaultName: VAULT_NAME,
+				serverId: SERVER_ID,
+				onSessionExpired,
+			});
+			await provider.waitForRestore();
+
+			mockFetch.mockResolvedValue(
+				await mockFetchResponse(500, { error: "Internal server error" }, false),
+			);
+
+			await expect(provider.refreshToken()).rejects.toThrow();
+
+			expect(onSessionExpired).not.toHaveBeenCalled();
+			// Auth kept for retry — the whole point of the network/server-error branch.
+			expect(provider.getCurrentUser()).toBeDefined();
+		});
+
 		test("Throws if no active session", async () => {
 			await expect(provider.refreshToken()).rejects.toThrow(
 				"No active session to refresh",

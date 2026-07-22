@@ -1,6 +1,6 @@
 "use strict";
 
-import { requestUrl, type RequestUrlResponsePromise } from "obsidian";
+import { Notice, requestUrl, type RequestUrlResponsePromise } from "obsidian";
 import { User } from "./User";
 import PocketBase, {
 	BaseAuthStore,
@@ -220,7 +220,8 @@ export class LoginManager extends Observable<LoginManager> {
 				// Initialize multi-server auth manager
 				this.multiServerAuthManager = new MultiServerAuthManager(
 					vaultName,
-					relayOnPremSettings.servers
+					relayOnPremSettings.servers,
+					(serverId) => this.handleSessionExpired(serverId),
 				);
 
 				// Set active server to default
@@ -825,6 +826,41 @@ export class LoginManager extends Observable<LoginManager> {
 			this.log(`Logout from server ${serverId} failed:`, error);
 			throw error;
 		}
+	}
+
+	/**
+	 * TR-28: a server's refresh token was rejected by the control plane
+	 * (401/403) — that provider already cleared its own internal auth state
+	 * and has no way to reach `this.user`/`notifyListeners` itself, so it
+	 * calls back here. Multi-server sync runs against ALL configured
+	 * servers concurrently, not just the active one (RelayOnPremShareClientManager
+	 * wires every server independently of activeServerId) — so a background
+	 * server's expiry is a live, in-use failure mode, not a cosmetic one,
+	 * and must still surface a Notice + notifyListeners() for anything
+	 * reading per-server status (e.g. the server list UI). Only the visible
+	 * `this.user`/`loggedIn` state is scoped to the active server, since
+	 * that's the single-user surface the rest of the plugin reads.
+	 */
+	private handleSessionExpired(serverId: string): void {
+		this.log(`Session expired for server ${serverId}`);
+
+		const serverName = this.relayOnPremSettings
+			? getServerById(this.relayOnPremSettings, serverId)?.name
+			: undefined;
+		const label = serverName ?? serverId;
+
+		if (serverId === this.activeServerId) {
+			this.user = undefined;
+			new Notice(`Your session for ${label} has expired. Please log in again.`);
+		} else {
+			new Notice(`Session for ${label} expired in the background. Reconnect when you're ready.`);
+		}
+
+		// notifyListeners() delivers asynchronously (Observable -> PostOffice,
+		// ~20ms deferred, not synchronous) — matches every other notifyListeners()
+		// call in this class, so existing subscribers (main.ts's login/logout
+		// listener) already tolerate the delay.
+		this.notifyListeners();
 	}
 
 	/**

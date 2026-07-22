@@ -41,6 +41,16 @@ export interface RelayOnPremAuthConfig {
 	controlPlaneUrl: string;
 	vaultName: string;
 	serverId: string;
+	/**
+	 * TR-28: called when a background token refresh discovers the refresh
+	 * token itself was rejected (401/403) — the session is truly dead, not
+	 * just momentarily network-flaky. This provider only owns its own
+	 * internal auth state; it has no visibility into LoginManager's
+	 * separate `user` field or its listeners, so the owner (LoginManager,
+	 * via MultiServerAuthManager) must be told explicitly to reset and
+	 * surface a re-login prompt instead of silently going stale.
+	 */
+	onSessionExpired?: () => void;
 }
 
 export class RelayOnPremAuthProvider implements IAuthProvider {
@@ -496,6 +506,11 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 				this.tokenExpiresAt = 0;
 				this.storedRefreshToken = undefined;
 				this.authStore.clear(this.serverId);
+				// TR-28: this class's own state is now cleared, but the owner
+				// (LoginManager) has a separate `user` field that only this
+				// callback can reach — without it, LoginManager keeps reporting
+				// loggedIn=true forever while every request silently 401s.
+				this.config.onSessionExpired?.();
 			} else {
 				this.log("Refresh failed (network/server error), keeping auth for retry");
 			}
