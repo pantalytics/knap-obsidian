@@ -124,6 +124,17 @@ export class RelayOnPremTokenProvider {
 	}
 
 	/**
+	 * Repoint this provider at a new control-plane URL (TR-32) — e.g. when the
+	 * user edits the default server's URL in settings. The provider is
+	 * otherwise long-lived (held by LiveTokenStore for the plugin's lifetime),
+	 * so without this the old URL stays baked into `normalizedUrl` until reload.
+	 */
+	updateControlPlaneUrl(controlPlaneUrl: string): void {
+		this.config.controlPlaneUrl = controlPlaneUrl;
+		this.normalizedUrl = controlPlaneUrl.replace(/\/+$/, "");
+	}
+
+	/**
 	 * Request a relay token for document access.
 	 * Requests are throttled to ≤25/min and throw RateLimitError on HTTP 429.
 	 */

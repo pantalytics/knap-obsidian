@@ -598,6 +598,11 @@ export default class Live extends Plugin {
 		const relayOnPremSettings = this.relayOnPremSettings.get();
 		let relayOnPremTokenProvider: RelayOnPremTokenProvider | undefined;
 		const defaultServer = getDefaultServer(relayOnPremSettings);
+		// TR-32: tracks which URL relayOnPremTokenProvider is currently pointed
+		// at, so the settings subscription below can detect when the default
+		// server's controlPlaneUrl changes (the provider is otherwise long-lived
+		// and never re-reads settings on its own).
+		let tokenProviderControlPlaneUrl = defaultServer?.controlPlaneUrl;
 
 		if (relayOnPremSettings.enabled && defaultServer) {
 			// Lazy auth provider — defers to loginManager at call time.
@@ -786,6 +791,22 @@ export default class Live extends Plugin {
 						}
 					}
 					prevServerIds = currentIds;
+
+					// TR-32: relayOnPremTokenProvider is created once at load and
+					// held for the plugin's lifetime by tokenStore — the loop above
+					// only keeps shareClientManager in sync, so a default-server URL
+					// edit left /tokens/relay requests going to the old host until
+					// Obsidian restarted. Re-point it whenever the resolved default
+					// server's URL changes.
+					const newDefaultServer = getDefaultServer(settings);
+					if (
+						relayOnPremTokenProvider &&
+						newDefaultServer &&
+						newDefaultServer.controlPlaneUrl !== tokenProviderControlPlaneUrl
+					) {
+						relayOnPremTokenProvider.updateControlPlaneUrl(newDefaultServer.controlPlaneUrl);
+						tokenProviderControlPlaneUrl = newDefaultServer.controlPlaneUrl;
+					}
 				})
 			);
 
