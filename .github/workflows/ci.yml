@@ -124,6 +124,19 @@ jobs:
           fi
           echo "OK: manifest.json, package.json, versions.json all agree on $PKG_VER"
 
+          # TR-40: manifest-beta.json is what BRAT reads directly off the default
+          # branch for beta-channel installs — it's not a release asset and nothing
+          # else keeps it in sync, so it silently rotted 7 releases behind (1.1.28
+          # while manifest.json reached 1.1.35) with no CI signal. Require it to
+          # track manifest.json on every version bump, same as versions.json above.
+          MFB_VER=$(node -p "require('./manifest-beta.json').version")
+          echo "manifest-beta.json: $MFB_VER"
+          if [ "$MFB_VER" != "$MFT_VER" ]; then
+            echo "::error::manifest-beta.json version ($MFB_VER) != manifest.json version ($MFT_VER). BRAT beta-channel users won't see this release until manifest-beta.json is bumped too."
+            exit 1
+          fi
+          echo "OK: manifest-beta.json also agrees on $PKG_VER"
+
       - name: Monotonicity guard — version must be strictly greater than latest release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
