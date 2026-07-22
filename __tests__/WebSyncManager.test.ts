@@ -18,7 +18,7 @@
  */
 
 import { describe, test, expect, jest, beforeEach, afterEach } from "@jest/globals";
-import { TFile, Vault } from "obsidian";
+import { TFile, Vault, noticeMock } from "obsidian";
 import { WebSyncManager } from "../src/WebSyncManager";
 import type { RelayOnPremShareClientManager } from "../src/RelayOnPremShareClientManager";
 
@@ -42,6 +42,23 @@ function makeClientManager(): RelayOnPremShareClientManager {
 	return {
 		syncFolderFileContent: jest.fn(async () => undefined),
 		getClient: jest.fn(),
+	} as unknown as RelayOnPremShareClientManager;
+}
+
+/** Doc-share sync (syncFile()) goes through clientManager.getClient(serverId).{getShare,updateShare}. */
+function makeDocClient(webSlug = "doc-slug") {
+	return {
+		getShare: jest.fn(async () => ({ web_slug: webSlug })),
+		updateShare: jest.fn(async () => undefined),
+	};
+}
+
+function makeClientManagerWithClient(
+	client: ReturnType<typeof makeDocClient>,
+): RelayOnPremShareClientManager {
+	return {
+		syncFolderFileContent: jest.fn(async () => undefined),
+		getClient: jest.fn(() => client),
 	} as unknown as RelayOnPremShareClientManager;
 }
 
@@ -237,5 +254,112 @@ describe("WebSyncManager.onFileModified — folder-share rate-limited edit retry
 		await jest.advanceTimersByTimeAsync(2100);
 
 		expect(clientManager.syncFolderFileContent).not.toHaveBeenCalled();
+	});
+});
+
+describe("WebSyncManager — doc share rename/delete (TR-24, #5aef2c1d)", () => {
+	// doc shares are keyed by the file's own path, and onFileModified() reads
+	// a debounce closed over that path — real obsidian debounce() is needed
+	// here (not the map-bypass registerFolderShare() helper) so a rename
+	// actually exercises the re-keyed debounce, not a stub.
+	beforeEach(() => {
+		jest.useFakeTimers();
+	});
+
+	afterEach(() => {
+		jest.useRealTimers();
+		noticeMock.mockClear();
+	});
+
+	test("a renamed doc share keeps syncing under its new path", async () => {
+		const vault = makeVault({ "notes/new-name.md": "renamed content" });
+		const client = makeDocClient();
+		const clientManager = makeClientManagerWithClient(client);
+		const manager = new WebSyncManager(vault, clientManager);
+
+		manager.registerAutoSyncShare("notes/old-name.md", "share1", "srv1", "doc");
+
+		await manager.onFileRenamed("notes/new-name.md", "notes/old-name.md");
+
+		// Registration follows the file — old key gone, new key present.
+		expect(manager.isAutoSync("notes/old-name.md")).toBe(false);
+		expect(manager.isAutoSync("notes/new-name.md")).toBe(true);
+
+		// This is the actual regression: pre-fix, the registration stayed
+		// keyed to the old path, onFileModified()'s lookup by the new path
+		// missed, and this edit would vanish silently — no error, no Notice.
+		// Doc-share syncs always go through the debounce (unlike folder
+		// shares, which sync immediately when not rate limited), so the
+		// debounce window has to elapse before it fires.
+		await manager.onFileModified(new TFile("notes/new-name.md"));
+		await jest.advanceTimersByTimeAsync(2100);
+
+		expect(client.updateShare).toHaveBeenCalledWith("share1", {
+			web_content: "renamed content",
+		});
+	});
+
+	test("a debounce scheduled just before rename fires harmlessly afterward (no stale sync, no crash)", async () => {
+		const vault = makeVault({
+			"notes/old-name.md": "v1",
+			"notes/new-name.md": "v2",
+		});
+		const client = makeDocClient();
+		const clientManager = makeClientManagerWithClient(client);
+		const manager = new WebSyncManager(vault, clientManager);
+
+		manager.registerAutoSyncShare("notes/old-name.md", "share1", "srv1", "doc");
+
+		// Edit lands and schedules the (not-yet-fired) debounce under the old key.
+		await manager.onFileModified(new TFile("notes/old-name.md"));
+
+		// Rename arrives before that debounce fires — re-keys the registration
+		// and creates a fresh debounce bound to the new path. The debounce
+		// scheduled above is still ticking (deleting a map entry doesn't
+		// cancel its pending timer) and will fire independently, still bound
+		// to syncFile(oldPath) via its closure.
+		await manager.onFileRenamed("notes/new-name.md", "notes/old-name.md");
+
+		await jest.advanceTimersByTimeAsync(2100);
+
+		// syncFile(oldPath) resolves to a share-info lookup miss (the old key
+		// is gone) and no-ops — it must not sync under the stale old path.
+		expect(client.updateShare).not.toHaveBeenCalledWith("share1", {
+			web_content: "v1",
+		});
+	});
+
+	test("a deleted doc share is unregistered and the user is notified", async () => {
+		const vault = makeVault({ "notes/note.md": "content" });
+		const clientManager = makeClientManagerWithClient(makeDocClient());
+		const manager = new WebSyncManager(vault, clientManager);
+
+		manager.registerAutoSyncShare("notes/note.md", "share1", "srv1", "doc");
+		expect(manager.isAutoSync("notes/note.md")).toBe(true);
+
+		await manager.onFileDeleted("notes/note.md");
+
+		expect(manager.isAutoSync("notes/note.md")).toBe(false);
+		expect(noticeMock).toHaveBeenCalledWith(
+			expect.stringContaining("notes/note.md"),
+			0,
+		);
+
+		// Confirms unregistration is real, not just isAutoSync() lying: a
+		// later edit at the same path (e.g. a new unrelated file created at
+		// the identical vault path) must not silently piggyback on the old
+		// share's sync state.
+		await manager.onFileModified(new TFile("notes/note.md"));
+		expect(clientManager.getClient).not.toHaveBeenCalled();
+	});
+
+	test("deleting a file that is not a registered doc share is a no-op (no Notice)", async () => {
+		const vault = makeVault({ "notes/note.md": "content" });
+		const clientManager = makeClientManagerWithClient(makeDocClient());
+		const manager = new WebSyncManager(vault, clientManager);
+
+		await manager.onFileDeleted("notes/unrelated.md");
+
+		expect(noticeMock).not.toHaveBeenCalled();
 	});
 });

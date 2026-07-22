@@ -4,7 +4,7 @@
  * Handles automatic synchronization of documents to web when shares have auto-sync enabled.
  */
 
-import { TFile, TFolder, Vault, debounce } from "obsidian";
+import { Notice, TFile, TFolder, Vault, debounce } from "obsidian";
 import { RelayOnPremShareClientManager } from "./RelayOnPremShareClientManager";
 import type { FolderItem } from "./RelayOnPremShareClient";
 import { curryLog } from "./debug";
@@ -403,6 +403,27 @@ export class WebSyncManager {
 			}
 			// Don't return early — file could affect multiple folder shares (moved between)
 		}
+
+		// Doc shares are keyed by the file's own path (TR-24). A rename leaves
+		// the registration under the old key, so onFileModified()'s lookup by
+		// the new path always misses — editing the renamed note silently stops
+		// syncing, with no error or Notice. Re-key the registration, and the
+		// debounce (which closes over the old path), to follow the file.
+		const docShareInfo = this.autoSyncShares.get(oldPath);
+		if (docShareInfo && docShareInfo.kind === "doc") {
+			log("Doc share renamed, re-keying auto-sync registration", {
+				oldPath,
+				newPath,
+				shareId: docShareInfo.shareId,
+			});
+			this.autoSyncShares.delete(oldPath);
+			this.autoSyncShares.set(newPath, docShareInfo);
+			this.debouncedSyncMap.delete(oldPath);
+			this.debouncedSyncMap.set(
+				newPath,
+				debounce(() => this.syncFile(newPath), this.syncDebounceMs, true)
+			);
+		}
 	}
 
 	/**
@@ -437,6 +458,24 @@ export class WebSyncManager {
 				});
 			}
 			return;
+		}
+
+		// Doc shares are keyed by their own path (TR-24). Once the file is
+		// gone, syncFile() would keep silently no-op'ing ("File not found")
+		// forever on a lingering registration. Unregister it, and tell the
+		// user the web share is still published even though the note is gone.
+		const docShareInfo = this.autoSyncShares.get(filePath);
+		if (docShareInfo && docShareInfo.kind === "doc") {
+			log("Doc share file deleted, unregistering auto-sync", {
+				filePath,
+				shareId: docShareInfo.shareId,
+			});
+			this.unregisterAutoSyncShare(filePath);
+			new Notice(
+				`Team Relay: "${filePath}" was deleted, but its web share is still ` +
+					`published. Unpublish it manually if it should no longer be public.`,
+				0,
+			);
 		}
 	}
 
