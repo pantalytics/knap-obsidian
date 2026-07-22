@@ -5,7 +5,7 @@
  * Supports multi-server mode with optional serverId parameter
  */
 
-import { App, Modal, Notice } from "obsidian";
+import { App, Modal, Notice, Platform } from "obsidian";
 import type { LoginManager } from "../LoginManager";
 import type { RelayOnPremShareClient, OAuthProvider } from "../RelayOnPremShareClient";
 
@@ -117,25 +117,37 @@ export class RelayOnPremLoginModal extends Modal {
 		if (this.oauthProviders.length > 0) {
 			const oauthSection = form.createDiv({ cls: "relay-onprem-oauth-section evc-oauth-section" });
 
-			oauthSection.createDiv({
-				text: "Or sign in with:",
-				cls: "setting-item-name evc-oauth-label",
-			});
-
-			const oauthButtons = oauthSection.createDiv({ cls: "relay-onprem-oauth-buttons" });
-			oauthButtons.addClass("evc-flex");
-			oauthButtons.addClass("evc-flex-col");
-			oauthButtons.addClass("evc-gap-2");
-
-			for (const provider of this.oauthProviders) {
-				const oauthButton = oauthButtons.createEl("button", {
-					text: provider.display_name,
-					cls: "mod-cta",
+			// TR-27: OAuthCallbackServer needs Node's http module to receive the
+			// redirect (Electron-only) — on mobile/browser it just throws "only
+			// supported on desktop" the moment a button is clicked. Hide the
+			// buttons with an explanation instead of letting the user hit that
+			// raw error after already trying.
+			if (Platform.isDesktopApp) {
+				oauthSection.createDiv({
+					text: "Or sign in with:",
+					cls: "setting-item-name evc-oauth-label",
 				});
-				oauthButton.addClass("evc-w-full");
-				oauthButton.addEventListener("click", (e) => {
-					e.preventDefault();
-					void this.handleOAuthLogin(provider.name);
+
+				const oauthButtons = oauthSection.createDiv({ cls: "relay-onprem-oauth-buttons" });
+				oauthButtons.addClass("evc-flex");
+				oauthButtons.addClass("evc-flex-col");
+				oauthButtons.addClass("evc-gap-2");
+
+				for (const provider of this.oauthProviders) {
+					const oauthButton = oauthButtons.createEl("button", {
+						text: provider.display_name,
+						cls: "mod-cta",
+					});
+					oauthButton.addClass("evc-w-full");
+					oauthButton.addEventListener("click", (e) => {
+						e.preventDefault();
+						void this.handleOAuthLogin(provider.name);
+					});
+				}
+			} else {
+				oauthSection.createDiv({
+					text: "SSO sign-in isn't available on mobile yet — use the desktop app, or sign in with email and password if your account has one.",
+					cls: "evc-text-muted evc-text-sm",
 				});
 			}
 		}

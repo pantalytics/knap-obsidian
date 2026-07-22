@@ -7,6 +7,7 @@
 
 import { describe, test, expect, beforeEach, afterEach, jest } from "@jest/globals";
 import * as http from "http";
+import { Platform } from "obsidian";
 import { OAuthCallbackServer } from "../../src/auth/OAuthCallbackServer";
 
 // Mock curryLog to avoid debug output during tests
@@ -268,6 +269,32 @@ describe("OAuthCallbackServer", () => {
 				// Expected - either timeout or callback error
 				expect(error).toBeDefined();
 			}
+		});
+	});
+
+	// TR-27: the real constraint is Node's http module (Electron-only).
+	// Platform.isDesktop also covers a desktop-mode BROWSER session (no
+	// Node.js) — gating on isDesktopApp instead means start() actually
+	// throws in every environment where require("http") would otherwise
+	// crash, and RelayOnPremLoginModal hides the OAuth buttons on the same
+	// flag so this throw shouldn't normally be reachable from the UI.
+	describe("desktop-app gating (TR-27)", () => {
+		afterEach(() => {
+			Platform.isDesktopApp = true;
+		});
+
+		test("start() throws when Platform.isDesktopApp is false", async () => {
+			Platform.isDesktopApp = false;
+
+			await expect(server.start()).rejects.toThrow(
+				"OAuth callback server is only supported on the desktop app",
+			);
+		});
+
+		test("start() succeeds when Platform.isDesktopApp is true", async () => {
+			Platform.isDesktopApp = true;
+
+			await expect(server.start()).resolves.toEqual(expect.any(Number));
 		});
 	});
 });

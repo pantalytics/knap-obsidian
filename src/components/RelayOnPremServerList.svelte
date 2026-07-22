@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Notice } from "obsidian";
+	import { Notice, Platform } from "obsidian";
 	import { createEventDispatcher } from "svelte";
 	import type Live from "../main";
 	import type { RelayOnPremServer } from "../RelayOnPremConfig";
@@ -283,8 +283,17 @@
 			serverBillingSupport[server.id] = serverInfo.edition === "enterprise" && serverInfo.features?.billing_enabled === true;
 		}
 
-		// If OAuth is enabled, try OAuth-first flow
-		if (serverInfo?.features?.oauth_enabled && serverInfo.features.oauth_provider) {
+		// If OAuth is enabled, try OAuth-first flow. TR-27: OAuthCallbackServer
+		// needs the Electron desktop app (Node's http module) — on mobile this
+		// attempt is doomed before it starts, and would flash a technical
+		// "OAuth failed: ... only supported on the desktop app" Notice before
+		// falling back. Skip straight to the password modal instead, which
+		// already explains SSO isn't available on mobile.
+		if (
+			Platform.isDesktopApp &&
+			serverInfo?.features?.oauth_enabled &&
+			serverInfo.features.oauth_provider
+		) {
 			console.log("[RelayOnPrem] OAuth enabled, provider:", serverInfo.features.oauth_provider);
 
 			const authProvider = plugin.loginManager.getAuthProviderForServer(server.id);

@@ -45,8 +45,14 @@ export class OAuthCallbackServer {
 	 * @returns The port number the server is listening on
 	 */
 	async start(): Promise<number> {
-		if (!Platform.isDesktop) {
-			throw new Error("OAuth callback server is only supported on desktop");
+		// TR-27: the real constraint is Node's http module, which only exists
+		// in the Electron desktop app — Platform.isDesktop also covers a
+		// desktop-mode BROWSER session (no Node.js), which would pass this
+		// check and then crash on the require() below instead. isDesktopApp
+		// is the accurate flag; RelayOnPremLoginModal now gates on the same
+		// flag so a caller never reaches this throw in normal use.
+		if (!Platform.isDesktopApp) {
+			throw new Error("OAuth callback server is only supported on the desktop app");
 		}
 		// Dynamic require — only available in Node.js (Electron desktop)
 		// eslint-disable-next-line @typescript-eslint/no-require-imports -- Node.js http needed for OAuth callback in Electron

@@ -49,6 +49,8 @@ export function debounce<T extends unknown[], V>(
 export const Platform = {
 	isMobile: false,
 	isDesktop: true,
+	isDesktopApp: true,
+	isMobileApp: false,
 	isIosApp: false,
 	isAndroidApp: false,
 	isMacOS: true,
