@@ -12,6 +12,7 @@ import type { AuthResponse } from "./IAuthProvider";
 
 interface OAuthAuthorizeApiResponse {
 	authorize_url: string;
+	state: string;
 }
 
 interface OAuthCallbackApiResponse {
@@ -34,6 +35,10 @@ export interface OAuthStartResult {
 export class OAuthHandler {
 	private callbackServer: OAuthCallbackServer | null = null;
 	private normalizedUrl: string;
+	/** The state token issued by the control plane for the in-flight flow — verified against
+	 *  the loopback callback to reject any code/state a local process didn't legitimately
+	 *  receive from our own authorize request (session fixation, TR-21). */
+	private expectedState: string | null = null;
 
 	constructor(
 		controlPlaneUrl: string,
@@ -84,6 +89,13 @@ export class OAuthHandler {
 				throw new Error("No authorize URL returned from control plane");
 			}
 
+			if (!data.state) {
+				this.stopCallbackServer();
+				throw new Error("No state token returned from control plane");
+			}
+
+			this.expectedState = data.state;
+
 			log(`Got authorize URL: ${authorizeUrl}`);
 
 			return {
@@ -107,15 +119,16 @@ export class OAuthHandler {
 		provider: string,
 		timeoutMs: number = 300000,
 	): Promise<AuthResponse> {
-		if (!this.callbackServer) {
+		if (!this.callbackServer || !this.expectedState) {
 			throw new Error("Callback server not started - call prepareOAuthFlow first");
 		}
 
 		try {
 			log("Waiting for OAuth callback...");
 
-			// Wait for callback with code and state
-			const { code, state } = await this.callbackServer.waitForCallback(timeoutMs);
+			// Wait for callback with code and state, rejecting anything that doesn't carry
+			// the state token we were issued for this flow (TR-21)
+			const { code, state } = await this.callbackServer.waitForCallback(this.expectedState, timeoutMs);
 
 			log(`Received callback with code and state`);
 
@@ -191,6 +204,7 @@ export class OAuthHandler {
 			this.callbackServer.stop();
 			this.callbackServer = null;
 		}
+		this.expectedState = null;
 	}
 
 	/**

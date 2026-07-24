@@ -143,10 +143,14 @@ export class OAuthCallbackServer {
 
 	/**
 	 * Wait for OAuth callback with code and state
+	 * @param expectedState - The state value issued for this flow (from the control plane's
+	 *   authorize response). A callback whose state does not match is rejected — without this,
+	 *   any local process can feed its own valid code+state into our open loopback port during
+	 *   the login window and get the plugin to log in as the attacker (session fixation, TR-21).
 	 * @param timeoutMs - Maximum time to wait for callback (default 5 minutes)
 	 * @returns OAuth callback result with code and state
 	 */
-	async waitForCallback(timeoutMs: number = 300000): Promise<OAuthCallbackResult> {
+	async waitForCallback(expectedState: string, timeoutMs: number = 300000): Promise<OAuthCallbackResult> {
 		return new Promise((resolve, reject) => {
 			if (!this.server) {
 				reject(new Error("Server not started"));
@@ -169,6 +173,17 @@ export class OAuthCallbackServer {
 				const url = new URL(req.url || "", `http://127.0.0.1:${this.port}`);
 				const code = url.searchParams.get("code");
 				const state = url.searchParams.get("state");
+
+				if (code && state && state !== expectedState) {
+					log("OAuth callback rejected - state mismatch (possible session fixation attempt)");
+
+					res.writeHead(400, { "Content-Type": "text/html" });
+					res.end(this.renderErrorPage());
+
+					window.clearTimeout(timeout);
+					reject(new Error("OAuth callback rejected - state mismatch"));
+					return;
+				}
 
 				if (code && state) {
 					log("OAuth callback received successfully");
@@ -235,52 +250,7 @@ export class OAuthCallbackServer {
 				} else {
 					log("Invalid callback - missing code or state");
 					res.writeHead(400, { "Content-Type": "text/html" });
-					res.end(`
-						<!DOCTYPE html>
-						<html>
-						<head>
-							<title>Authentication Error</title>
-							<style>
-								body {
-									font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-									display: flex;
-									justify-content: center;
-									align-items: center;
-									height: 100vh;
-									margin: 0;
-									background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-								}
-								.container {
-									background: white;
-									padding: 3rem;
-									border-radius: 10px;
-									box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-									text-align: center;
-									max-width: 400px;
-								}
-								h1 {
-									color: #f5576c;
-									margin-bottom: 1rem;
-								}
-								p {
-									color: #666;
-									line-height: 1.6;
-								}
-								.error-icon {
-									width: 80px; height: 80px;
-									margin-bottom: 1rem;
-								}
-							</style>
-						</head>
-						<body>
-							<div class="container">
-								<div class="error-icon">✗</div>
-								<h1>Authentication Error</h1>
-								<p>Invalid callback received. Please try again.</p>
-							</div>
-						</body>
-						</html>
-					`);
+					res.end(this.renderErrorPage());
 
 					window.clearTimeout(timeout);
 					reject(new Error("Invalid OAuth callback - missing code or state"));
@@ -299,5 +269,55 @@ export class OAuthCallbackServer {
 			this.server = null;
 			this.port = 0;
 		}
+	}
+
+	/** Shared error page for any rejected callback (missing params or state mismatch) */
+	private renderErrorPage(): string {
+		return `
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<title>Authentication Error</title>
+				<style>
+					body {
+						font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+						display: flex;
+						justify-content: center;
+						align-items: center;
+						height: 100vh;
+						margin: 0;
+						background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+					}
+					.container {
+						background: white;
+						padding: 3rem;
+						border-radius: 10px;
+						box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+						text-align: center;
+						max-width: 400px;
+					}
+					h1 {
+						color: #f5576c;
+						margin-bottom: 1rem;
+					}
+					p {
+						color: #666;
+						line-height: 1.6;
+					}
+					.error-icon {
+						width: 80px; height: 80px;
+						margin-bottom: 1rem;
+					}
+				</style>
+			</head>
+			<body>
+				<div class="container">
+					<div class="error-icon">✗</div>
+					<h1>Authentication Error</h1>
+					<p>Invalid callback received. Please try again.</p>
+				</div>
+			</body>
+			</html>
+		`;
 	}
 }

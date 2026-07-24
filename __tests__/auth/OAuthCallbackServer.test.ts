@@ -96,12 +96,12 @@ describe("OAuthCallbackServer", () => {
 		test("P3: Callback with code+state resolves correctly", async () => {
 			const port = await server.start();
 
-			// Simulate OAuth callback in background
-			const callbackPromise = server.waitForCallback(5000);
-
 			// Send callback request with code and state
 			const code = "test_authorization_code";
 			const state = "test_state_value";
+
+			// Simulate OAuth callback in background — expectedState matches what's about to arrive
+			const callbackPromise = server.waitForCallback(state, 5000);
 
 			await new Promise<void>((resolve, reject) => {
 				const req = http.request(
@@ -132,7 +132,7 @@ describe("OAuthCallbackServer", () => {
 		test("P4: Callback without code rejects", async () => {
 			const port = await server.start();
 
-			const callbackPromise = server.waitForCallback(5000);
+			const callbackPromise = server.waitForCallback("test_state", 5000);
 
 			// Send callback request without code (await both in parallel)
 			const [httpResult] = await Promise.all([
@@ -162,23 +162,54 @@ describe("OAuthCallbackServer", () => {
 			await server.start();
 
 			// Wait for callback with very short timeout
-			const callbackPromise = server.waitForCallback(100);
+			const callbackPromise = server.waitForCallback("test_state", 100);
 
 			await expect(callbackPromise).rejects.toThrow(
 				"OAuth callback timeout - no response received",
 			);
 		});
+
+		test("P6-TR21: Callback with a mismatched state is rejected (session fixation protection)", async () => {
+			const port = await server.start();
+
+			// The flow expects "legit_state" — an attacker (or an unrelated stray callback)
+			// hitting the same loopback port with a DIFFERENT, otherwise-valid code+state
+			// must be rejected, not silently accepted as a successful login.
+			const callbackPromise = server.waitForCallback("legit_state", 5000);
+
+			await Promise.all([
+				new Promise<void>((resolve, reject) => {
+					const req = http.request(
+						{
+							hostname: "127.0.0.1",
+							port: port,
+							path: `/callback?code=attacker_code&state=attacker_state`,
+							method: "GET",
+						},
+						(res) => {
+							expect(res.statusCode).toBe(400);
+							resolve();
+						},
+					);
+					req.on("error", reject);
+					req.end();
+				}),
+				expect(callbackPromise).rejects.toThrow(
+					"OAuth callback rejected - state mismatch",
+				),
+			]);
+		});
 	});
 
 	describe("edge cases", () => {
 		test("waitForCallback() fails if server not started", async () => {
-			await expect(server.waitForCallback()).rejects.toThrow("Server not started");
+			await expect(server.waitForCallback("any_state")).rejects.toThrow("Server not started");
 		});
 
 		test("Callback without state rejects", async () => {
 			const port = await server.start();
 
-			const callbackPromise = server.waitForCallback(5000);
+			const callbackPromise = server.waitForCallback("test_state", 5000);
 
 			// Send callback request without state (await both in parallel)
 			await Promise.all([
@@ -207,7 +238,7 @@ describe("OAuthCallbackServer", () => {
 		test("Multiple callbacks only resolve first one", async () => {
 			const port = await server.start();
 
-			const callbackPromise = server.waitForCallback(5000);
+			const callbackPromise = server.waitForCallback("state1", 5000);
 
 			// Send first callback
 			await new Promise<void>((resolve, reject) => {
@@ -230,7 +261,8 @@ describe("OAuthCallbackServer", () => {
 			const result = await callbackPromise;
 			expect(result.code).toBe("first");
 
-			// Second callback should still return 200 but won't affect result
+			// Second callback carries a different state than the one this flow expects —
+			// correctly rejected (400) regardless of it arriving after resolution.
 			await new Promise<void>((resolve, reject) => {
 				const req = http.request(
 					{
@@ -240,7 +272,7 @@ describe("OAuthCallbackServer", () => {
 						method: "GET",
 					},
 					(res) => {
-						expect(res.statusCode).toBe(200);
+						expect(res.statusCode).toBe(400);
 						resolve();
 					},
 				);
@@ -252,7 +284,7 @@ describe("OAuthCallbackServer", () => {
 		test("Stop during waitForCallback cleans up", async () => {
 			await server.start();
 
-			const callbackPromise = server.waitForCallback(5000);
+			const callbackPromise = server.waitForCallback("any_state", 5000);
 
 			// Stop server while waiting
 			server.stop();

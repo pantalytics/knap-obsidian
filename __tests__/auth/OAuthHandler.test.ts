@@ -69,7 +69,7 @@ describe("OAuthHandler", () => {
 			const authorizeUrl = "https://casdoor.example.com/oauth/authorize?...";
 			mockCallbackServer.start.mockResolvedValue(12345);
 			mockFetch.mockResolvedValue(
-				await mockFetchResponse(200, { authorize_url: authorizeUrl }),
+				await mockFetchResponse(200, { authorize_url: authorizeUrl, state: "state_xyz" }),
 			);
 
 			const result = await handler.prepareOAuthFlow(PROVIDER);
@@ -117,6 +117,21 @@ describe("OAuthHandler", () => {
 			expect(mockCallbackServer.stop).toHaveBeenCalled();
 		});
 
+		test("P9b-TR21: Missing state throws error (nothing to verify the callback against)", async () => {
+			mockCallbackServer.start.mockResolvedValue(12345);
+			mockFetch.mockResolvedValue(
+				await mockFetchResponse(200, {
+					authorize_url: "https://casdoor.example.com/oauth/authorize",
+				}),
+			);
+
+			await expect(handler.prepareOAuthFlow(PROVIDER)).rejects.toThrow(
+				"No state token returned from control plane",
+			);
+
+			expect(mockCallbackServer.stop).toHaveBeenCalled();
+		});
+
 		test("P14: URL normalization (trailing slashes)", async () => {
 			const handlerWithSlash = new OAuthHandler(
 				"https://cp.example.com/",
@@ -131,6 +146,7 @@ describe("OAuthHandler", () => {
 			mockFetch.mockResolvedValue(
 				await mockFetchResponse(200, {
 					authorize_url: "https://casdoor.example.com/oauth/authorize",
+					state: "state_xyz",
 				}),
 			);
 
@@ -172,6 +188,7 @@ describe("OAuthHandler", () => {
 			mockFetch.mockResolvedValueOnce(
 				await mockFetchResponse(200, {
 					authorize_url: "https://casdoor.example.com/oauth/authorize",
+					state: "state_xyz",
 				}),
 			);
 			await handler.prepareOAuthFlow(PROVIDER);
@@ -181,7 +198,7 @@ describe("OAuthHandler", () => {
 
 			const result = await handler.waitForCallbackAndExchange(PROVIDER);
 
-			expect(mockCallbackServer.waitForCallback).toHaveBeenCalledWith(300000);
+			expect(mockCallbackServer.waitForCallback).toHaveBeenCalledWith("state_xyz", 300000);
 			expect(mockFetch).toHaveBeenCalledWith(
 				expect.stringContaining(
 					`/v1/auth/oauth/${PROVIDER}/callback?code=auth_code_123&state=state_xyz`,
@@ -225,6 +242,7 @@ describe("OAuthHandler", () => {
 			mockFetch.mockResolvedValueOnce(
 				await mockFetchResponse(200, {
 					authorize_url: "https://casdoor.example.com/oauth/authorize",
+					state: "state_xyz",
 				}),
 			);
 			await handler.prepareOAuthFlow(PROVIDER);
@@ -247,6 +265,7 @@ describe("OAuthHandler", () => {
 			mockFetch.mockResolvedValueOnce(
 				await mockFetchResponse(200, {
 					authorize_url: "https://casdoor.example.com/oauth/authorize",
+					state: "state_xyz",
 				}),
 			);
 			await handler.prepareOAuthFlow(PROVIDER);
@@ -269,6 +288,7 @@ describe("OAuthHandler", () => {
 			mockFetch.mockResolvedValueOnce(
 				await mockFetchResponse(200, {
 					authorize_url: "https://casdoor.example.com/oauth/authorize",
+					state: "state_xyz",
 				}),
 			);
 			await handler.prepareOAuthFlow(PROVIDER);
@@ -291,6 +311,7 @@ describe("OAuthHandler", () => {
 			mockFetch.mockResolvedValueOnce(
 				await mockFetchResponse(200, {
 					authorize_url: "https://casdoor.example.com/oauth/authorize",
+					state: "state_xyz",
 				}),
 			);
 			await handler.prepareOAuthFlow(PROVIDER);
@@ -323,7 +344,7 @@ describe("OAuthHandler", () => {
 			// Mock prepare
 			mockCallbackServer.start.mockResolvedValue(12345);
 			mockFetch.mockResolvedValueOnce(
-				await mockFetchResponse(200, { authorize_url: authorizeUrl }),
+				await mockFetchResponse(200, { authorize_url: authorizeUrl, state: "state_xyz" }),
 			);
 
 			// Mock callback
@@ -356,7 +377,7 @@ describe("OAuthHandler", () => {
 
 			mockCallbackServer.start.mockResolvedValue(12345);
 			mockFetch.mockResolvedValueOnce(
-				await mockFetchResponse(200, { authorize_url: authorizeUrl }),
+				await mockFetchResponse(200, { authorize_url: authorizeUrl, state: "state_xyz" }),
 			);
 
 			mockCallbackServer.waitForCallback.mockResolvedValue({
@@ -385,6 +406,7 @@ describe("OAuthHandler", () => {
 			mockFetch.mockResolvedValue(
 				await mockFetchResponse(200, {
 					authorize_url: "https://casdoor.example.com/oauth/authorize",
+					state: "state_xyz",
 				}),
 			);
 
