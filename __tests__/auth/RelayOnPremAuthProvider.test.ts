@@ -70,7 +70,7 @@ describe("RelayOnPremAuthProvider", () => {
 		jest.clearAllMocks();
 		mockStorage.clear();
 
-		// getAuthStore(vaultName) is a module-level singleton (by design —
+		// getAuthStore(appId) is a module-level singleton (by design —
 		// RelayOnPremAuthStore.ts's own docs: "prevent race conditions when
 		// multiple providers access storage simultaneously"). It keeps an
 		// in-memory storageFallback cache alongside every successful write
@@ -79,8 +79,8 @@ describe("RelayOnPremAuthProvider", () => {
 		// clearing only `mockStorage` (the fake localStorage) is NOT enough
 		// test isolation: a previous test's successful login can leak
 		// forward into this one via the singleton's fallback cache. Clear
-		// it explicitly, same VAULT_NAME every test reuses.
-		getAuthStore(VAULT_NAME).clearAll();
+		// it explicitly, same APP_ID every test reuses.
+		getAuthStore(APP_ID).clearAll();
 
 		provider = new RelayOnPremAuthProvider({
 			controlPlaneUrl: CONTROL_PLANE_URL,
