@@ -17,6 +17,7 @@ import { areObjectsEqual } from "./areObjectsEqual";
 import type { CanvasData } from "./CanvasView";
 import { SyncFile, isSyncFile } from "./SyncFile";
 import { reconcileWithConflictCopy } from "./y-diffMatchPatch";
+import { waitForBufferFlush } from "./websocketFlush";
 
 export interface QueueItem {
 	guid: string;
@@ -861,8 +862,12 @@ export class BackgroundSync extends HasLogging {
 					);
 				}
 			}
-			// Allow the update to propagate to the relay before disconnecting
-			await new Promise((resolve) => window.setTimeout(resolve, 1000));
+			// Wait for the reconcile update to actually leave the local send
+			// buffer before disconnecting, instead of hoping a fixed 1000ms
+			// window was long enough — a large diff on a slow link can still
+			// be sitting in bufferedAmount well past a fixed timer, and
+			// disconnecting at that point drops it silently (TR-51, #1cf58421).
+			await waitForBufferFlush(doc._provider.ws);
 		}
 
 		// promise can take some time
