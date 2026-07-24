@@ -6,6 +6,7 @@
 
 import { describe, test, expect, beforeEach, jest } from "@jest/globals";
 import { RelayOnPremAuthProvider } from "../../src/auth/RelayOnPremAuthProvider";
+import { getAuthStore } from "../../src/auth/RelayOnPremAuthStore";
 import type { AuthResponse } from "../../src/auth/IAuthProvider";
 
 // Mock dependencies
@@ -68,6 +69,18 @@ describe("RelayOnPremAuthProvider", () => {
 	beforeEach(async () => {
 		jest.clearAllMocks();
 		mockStorage.clear();
+
+		// getAuthStore(vaultName) is a module-level singleton (by design —
+		// RelayOnPremAuthStore.ts's own docs: "prevent race conditions when
+		// multiple providers access storage simultaneously"). It keeps an
+		// in-memory storageFallback cache alongside every successful write
+		// as a resilience backup, and _storageGet migrates that fallback
+		// back into localStorage whenever the real store reads empty — so
+		// clearing only `mockStorage` (the fake localStorage) is NOT enough
+		// test isolation: a previous test's successful login can leak
+		// forward into this one via the singleton's fallback cache. Clear
+		// it explicitly, same VAULT_NAME every test reuses.
+		getAuthStore(VAULT_NAME).clearAll();
 
 		provider = new RelayOnPremAuthProvider({
 			controlPlaneUrl: CONTROL_PLANE_URL,
@@ -143,6 +156,96 @@ describe("RelayOnPremAuthProvider", () => {
 			expect(provider.isLoggedIn()).toBe(false);
 			expect(provider.getCurrentUser()).toBeUndefined();
 			expect(provider.getToken()).toBeUndefined();
+		});
+
+		test("TR-52: A failed re-login while already logged in does NOT clear the existing valid session", async () => {
+			// First, a real successful login.
+			const loginData = {
+				access_token: "original_token",
+				token_type: "bearer" as const,
+				refresh_token: "original_refresh_token",
+				expires_in: 3600,
+			};
+			const userData = {
+				id: "user-123",
+				email: "test@example.com",
+				name: "Test User",
+				is_admin: false,
+				created_at: "2024-01-01T00:00:00Z",
+			};
+			mockFetch
+				.mockResolvedValueOnce(await mockFetchResponse(200, loginData))
+				.mockResolvedValueOnce(await mockFetchResponse(200, userData));
+
+			await provider.loginWithPassword("test@example.com", "correct_password");
+			expect(provider.isLoggedIn()).toBe(true);
+			expect(provider.getToken()).toBe("original_token");
+
+			// Now a re-login attempt with a typo'd password fails.
+			mockFetch.mockResolvedValue(
+				await mockFetchResponse(401, { error: "Invalid credentials" }, false),
+			);
+
+			await expect(
+				provider.loginWithPassword("test@example.com", "typo'd_password"),
+			).rejects.toThrow("Login failed");
+
+			// The ORIGINAL session must still be intact — not logged out.
+			expect(provider.isLoggedIn()).toBe(true);
+			expect(provider.getCurrentUser()?.email).toBe("test@example.com");
+			expect(provider.getToken()).toBe("original_token");
+		});
+
+		test("TR-52: a re-login that fails AFTER step 1 (login) but at step 2 (fetch user info) restores the exact prior token, not a partial mix", async () => {
+			// A boolean "don't clear" guard alone isn't enough here: step 1
+			// (POST /auth/login) can succeed and mutate this.token/
+			// storedRefreshToken/tokenExpiresAt before step 2 (GET /auth/me)
+			// fails — leaving the OLD user identity paired with a NEW
+			// (different-identity) token if the catch only skips the clear
+			// instead of restoring the exact snapshot.
+			const originalLoginData = {
+				access_token: "original_token",
+				token_type: "bearer" as const,
+				refresh_token: "original_refresh_token",
+				expires_in: 3600,
+			};
+			const originalUserData = {
+				id: "user-A",
+				email: "userA@example.com",
+				name: "User A",
+				is_admin: false,
+				created_at: "2024-01-01T00:00:00Z",
+			};
+			mockFetch
+				.mockResolvedValueOnce(await mockFetchResponse(200, originalLoginData))
+				.mockResolvedValueOnce(await mockFetchResponse(200, originalUserData));
+
+			await provider.loginWithPassword("userA@example.com", "correct_password");
+			expect(provider.getToken()).toBe("original_token");
+
+			// Re-login as a DIFFERENT user: step 1 succeeds (new token
+			// issued), step 2 (/auth/me) then fails.
+			const partialLoginData = {
+				access_token: "userB_token",
+				token_type: "bearer" as const,
+				refresh_token: "userB_refresh_token",
+				expires_in: 3600,
+			};
+			mockFetch
+				.mockResolvedValueOnce(await mockFetchResponse(200, partialLoginData))
+				.mockResolvedValueOnce(
+					await mockFetchResponse(500, { error: "server error" }, false),
+				);
+
+			await expect(
+				provider.loginWithPassword("userB@example.com", "password"),
+			).rejects.toThrow("Failed to fetch user info");
+
+			// Must be the ORIGINAL user paired with the ORIGINAL token — never
+			// userA's identity paired with userB's token.
+			expect(provider.getCurrentUser()?.email).toBe("userA@example.com");
+			expect(provider.getToken()).toBe("original_token");
+			expect(provider.isLoggedIn()).toBe(true);
 		});
 
 		test("Saves auth to localStorage on success", async () => {
@@ -232,6 +335,51 @@ describe("RelayOnPremAuthProvider", () => {
 
 			expect(provider.isLoggedIn()).toBe(false);
 			expect(mockOAuthHandler.destroy).toHaveBeenCalled();
+		});
+
+		test("TR-52: A failed OAuth2 re-login while already logged in does NOT clear the existing valid session", async () => {
+			const successfulOAuthHandler = {
+				completeOAuthFlow: jest.fn(),
+				destroy: jest.fn(),
+			};
+			MockOAuthHandler.mockImplementation(() => successfulOAuthHandler as any);
+
+			const mockAuthResponse: AuthResponse = {
+				user: {
+					id: "oauth-user-123",
+					email: "oauth@example.com",
+					name: "OAuth User",
+				},
+				token: {
+					token: "original_oauth_token",
+					expiresAt: Date.now() + 3600000,
+				},
+				refreshToken: "original_oauth_refresh_token",
+			};
+			successfulOAuthHandler.completeOAuthFlow.mockResolvedValue(mockAuthResponse);
+
+			await provider.loginWithOAuth2("casdoor");
+			expect(provider.isLoggedIn()).toBe(true);
+			expect(provider.getToken()).toBe("original_oauth_token");
+
+			// A second OAuth attempt (e.g. re-triggered for some other reason)
+			// fails — the original session must survive it.
+			const failingOAuthHandler = {
+				completeOAuthFlow: jest.fn(),
+				destroy: jest.fn(),
+			};
+			MockOAuthHandler.mockImplementation(() => failingOAuthHandler as any);
+			failingOAuthHandler.completeOAuthFlow.mockRejectedValue(
+				new Error("OAuth flow failed"),
+			);
+
+			await expect(provider.loginWithOAuth2("casdoor")).rejects.toThrow(
+				"OAuth flow failed",
+			);
+
+			expect(provider.isLoggedIn()).toBe(true);
+			expect(provider.getCurrentUser()?.email).toBe("oauth@example.com");
+			expect(provider.getToken()).toBe("original_oauth_token");
 		});
 
 		test("Opens browser with window.open", async () => {

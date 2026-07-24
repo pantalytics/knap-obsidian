@@ -269,6 +269,23 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 	async loginWithPassword(email: string, password: string): Promise<AuthResponse> {
 		this.log(`Logging in as ${email} to server ${this.serverId}`);
 
+		// Snapshot the full pre-existing session state BEFORE attempting this
+		// login — not just whether one exists. A failed re-login (e.g. a
+		// typo'd password re-entered while already logged in, for whatever
+		// reason) must not clear a session that was working fine. A boolean
+		// alone isn't enough: step 1 below mutates this.token/
+		// storedRefreshToken/tokenExpiresAt as soon as the login call
+		// succeeds, BEFORE step 2 (fetching user info) can still fail — so
+		// on that partial-failure path the catch must restore the exact
+		// prior values, not just skip clearing, or the old user identity
+		// ends up paired with a new (different-identity) token (TR-52,
+		// #914c2b9d).
+		const hadValidSession = this.isLoggedIn();
+		const previousUser = this.user;
+		const previousToken = this.token;
+		const previousTokenExpiresAt = this.tokenExpiresAt;
+		const previousRefreshToken = this.storedRefreshToken;
+
 		const loginRequest: LoginRequest = {
 			email,
 			password,
@@ -338,15 +355,37 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 			};
 		} catch (error: unknown) {
 			this.log("Login error:", error);
-			this.user = undefined;
-			this.token = undefined;
-			this.tokenExpiresAt = 0;
-			this.authStore.clear(this.serverId);
+			if (hadValidSession) {
+				// Restore exactly what was there before this attempt — step 1
+				// may have already mutated token/refreshToken/expiry.
+				this.user = previousUser;
+				this.token = previousToken;
+				this.tokenExpiresAt = previousTokenExpiresAt;
+				this.storedRefreshToken = previousRefreshToken;
+			} else {
+				this.user = undefined;
+				this.token = undefined;
+				this.tokenExpiresAt = 0;
+				this.authStore.clear(this.serverId);
+			}
 			throw error;
 		}
 	}
 
 	async loginWithOAuth2(provider: string): Promise<AuthResponse> {
+		// Same reasoning as loginWithPassword above: don't clear a
+		// pre-existing valid session just because a re-authentication
+		// attempt (e.g. re-triggering OAuth for some other reason, or the
+		// user cancelling/failing the browser flow) didn't succeed. Snapshot
+		// BEFORE the dynamic import/await below yields a turn of the event
+		// loop — a concurrent background token refresh or a second login
+		// call could otherwise mutate state between snapshot and use.
+		const hadValidSession = this.isLoggedIn();
+		const previousUser = this.user;
+		const previousToken = this.token;
+		const previousTokenExpiresAt = this.tokenExpiresAt;
+		const previousRefreshToken = this.storedRefreshToken;
+
 		// Import dynamically to avoid circular dependencies
 		const { OAuthHandler } = await import("./OAuthHandler");
 
@@ -379,11 +418,18 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 			return authResponse;
 		} catch (error: unknown) {
 			this.log("OAuth2 login error:", error);
-			this.user = undefined;
-			this.token = undefined;
-			this.tokenExpiresAt = 0;
-			this.storedRefreshToken = undefined;
-			this.authStore.clear(this.serverId);
+			if (hadValidSession) {
+				this.user = previousUser;
+				this.token = previousToken;
+				this.tokenExpiresAt = previousTokenExpiresAt;
+				this.storedRefreshToken = previousRefreshToken;
+			} else {
+				this.user = undefined;
+				this.token = undefined;
+				this.tokenExpiresAt = 0;
+				this.storedRefreshToken = undefined;
+				this.authStore.clear(this.serverId);
+			}
 			throw error;
 		} finally {
 			oauthHandler.destroy();
