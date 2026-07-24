@@ -256,8 +256,25 @@ export class LoginManager extends Observable<LoginManager> {
 			}
 		}
 
-		// Only initialize PocketBase if NOT in relay-onprem mode
-		this.pb = new PocketBase(this.endpointManager.getAuthUrl(), this.authStore);
+		// Only initialize PocketBase if NOT in relay-onprem mode. Reaching this
+		// point at all requires relayOnPrem.enabled=false, which has no UI path —
+		// only a manual data.json edit. TR-58: the EVC build compiles API_URL/
+		// AUTH_URL empty (this fork ships relay-onprem only, no System3 cloud),
+		// so unless a custom tenant URL was separately validated via
+		// validateAndApplyEndpoints(), getAuthUrl() is "" here — constructing
+		// PocketBase("") used to fail silently on every later call instead of
+		// telling the user their config is broken. Warn up front; still
+		// construct it (unchanged) so the several `this.pb!`-asserted call
+		// sites below don't regress into a null-deref crash instead.
+		const authUrl = this.endpointManager.getAuthUrl();
+		if (!authUrl) {
+			new Notice(
+				"EVC Team Relay: relay-onprem mode is disabled and no server is configured. " +
+					"Re-enable relay-onprem mode in plugin settings, or configure a server URL.",
+				10000
+			);
+		}
+		this.pb = new PocketBase(authUrl, this.authStore);
 		this.pb.beforeSend = (url, options) => {
 			pbLog(url, options);
 			if (this.pb && !this.pb.authStore.isValid && this.user) {

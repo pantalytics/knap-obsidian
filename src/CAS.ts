@@ -3,7 +3,6 @@ import { S3RN } from "./S3RN";
 import type { SharedFolder } from "./SharedFolder";
 import type { SyncFile } from "./SyncFile";
 import { customFetch } from "./customFetch";
-import PocketBase from "pocketbase";
 import { HasLogging } from "./debug";
 
 
@@ -11,13 +10,18 @@ interface DownloadUrlApiResponse { downloadUrl: string }
 interface UploadUrlApiResponse { uploadUrl: string; error?: string }
 
 export class ContentAddressedStore extends HasLogging {
-	private pb: PocketBase;
 	private tokenStore: LiveTokenStore;
 
 	constructor(private sharedFolder: SharedFolder) {
 		super();
-		const authUrl = sharedFolder.loginManager.getEndpointManager().getAuthUrl();
-		this.pb = new PocketBase(authUrl, sharedFolder.loginManager.authStore);
+		// TR-58: this class never actually calls PocketBase (every real request
+		// below goes through customFetch against token.baseUrl) — it used to
+		// construct one anyway (unconditionally, unguarded by relayOnPrem mode)
+		// just to call cancelAllRequests() in destroy(), which is a no-op on a
+		// client that never issued a request. Removed rather than gated: unlike
+		// LoginManager's PocketBase usage, there was no live behavior here to
+		// preserve, just an unused construction that hit the same
+		// getAuthUrl()==="" trap this task was filed to fix.
 		this.tokenStore = sharedFolder.tokenStore;
 	}
 
@@ -96,8 +100,6 @@ export class ContentAddressedStore extends HasLogging {
 	}
 
 	public destroy() {
-		this.pb.cancelAllRequests();
-		this.pb = null as unknown as PocketBase;
 		this.tokenStore = null as unknown as LiveTokenStore;
 		this.sharedFolder = null as unknown as SharedFolder;
 	}

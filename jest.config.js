@@ -19,6 +19,10 @@ module.exports = {
     globals: {
         "BUILD_TYPE": "production",
         "GIT_TAG": "test",
+        // Match esbuild.config.mjs: this build compiles both empty (relay-onprem
+        // only, no System3 cloud backend) — see TR-58.
+        "API_URL": "",
+        "AUTH_URL": "",
     },
 	transform: {
 		".ts": [
