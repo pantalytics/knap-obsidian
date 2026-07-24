@@ -249,21 +249,28 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 	}
 
 	public async checkStale(): Promise<boolean> {
-		// Relay-onprem: HTTP download always fails (CWT tokens rejected on HTTP endpoints).
-		// CRDT sync is handled entirely via WebSocket. Skip the HTTP freshness check.
-		if (this.sharedFolder.relayId) {
-			return false;
-		}
-
 		await this.whenSynced();
 		const diskBuffer = await this.diskBuffer(true);
 		const contents = (diskBuffer as DiskBuffer).contents;
 
-		const response = await this.sharedFolder.backgroundSync.downloadItem(this);
-
-		const updateBytes = new Uint8Array(response.arrayBuffer);
-
-		Y.applyUpdate(this.ydoc, updateBytes);
+		// Relay-linked docs (relayId is set for ANY doc belonging to a Team
+		// Relay workspace — hosted or self-hosted on-prem, not just genuinely
+		// self-hosted installs; see TR-01 #814d6d9b): the HTTP `as-update`
+		// endpoint always 401s for CWT tokens (BackgroundSync.downloadItem) —
+		// WebSocket sync is authoritative instead, so this.ydoc/this.text is
+		// already kept current by the live WS connection. Skip the doomed
+		// HTTP re-fetch, but still run the real staleness comparison below
+		// using what's already synced.
+		//
+		// TR-08 (#6e715ed5): this used to `return false` unconditionally
+		// before any comparison ran, making the entire conflict-detection UI
+		// (merge banner / differ) dead code on tr.entire.vc, the only prod
+		// auth mode — it never triggered for any relay-linked doc.
+		if (!this.sharedFolder.relayId) {
+			const response = await this.sharedFolder.backgroundSync.downloadItem(this);
+			const updateBytes = new Uint8Array(response.arrayBuffer);
+			Y.applyUpdate(this.ydoc, updateBytes);
+		}
 		const stale = this.text !== contents;
 
 		const og = this.text;
