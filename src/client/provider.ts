@@ -21,6 +21,15 @@ export const messageQueryAwareness = 3;
 export const messageAwareness = 1;
 export const messageAuth = 2;
 
+/**
+ * Safety cap on how many times a connection resends its initial awareness
+ * broadcast while waiting for the relay's room warm-up to complete (TR-41,
+ * #d7d2eca3). The real stopping condition is `provider.synced`; this cap
+ * only guards against retrying forever if that signal is somehow never
+ * observed.
+ */
+export const MAX_AWARENESS_RESEND_ATTEMPTS = 5;
+
 export type HandlerFunction = (
 	encoder: encoding.Encoder,
 	decoder: decoding.Decoder,
@@ -204,10 +213,33 @@ const setupWS = (provider: YSweetProvider) => {
 				);
 				websocket.send(encoding.toUint8Array(encoderAwarenessState) as Uint8Array);
 
-				// Re-send awareness after delay for relay room warm-up
-				// First awareness message can be dropped while relay initializes the doc room
-				window.setTimeout(() => {
-					if (provider.wsconnected && provider.ws === websocket) {
+				// Re-send awareness for relay room warm-up: the first
+				// awareness message can be dropped while the relay is still
+				// initializing the doc room. A single one-shot retry can
+				// ALSO land inside that warm-up window on unlucky timing,
+				// leaving presence missing until some unrelated awareness
+				// change happens to resend it (TR-41, #d7d2eca3). Keep
+				// retrying instead — bounded by provider.synced, the
+				// closest signal this protocol has that the relay's room
+				// warm-up has actually completed (it flips true once the
+				// doc's own sync-step2 response arrives), with a hard
+				// attempt cap as a safety fallback in case synced is
+				// somehow never observed.
+				const resendAwareness = (attempt: number) => {
+					if (attempt > MAX_AWARENESS_RESEND_ATTEMPTS) {
+						return;
+					}
+					const delay = math.min(
+						math.pow(2, attempt) * 250,
+						provider.maxBackoffTime,
+					);
+					window.setTimeout(() => {
+						if (!(provider.wsconnected && provider.ws === websocket)) {
+							// Reconnected on a new socket (which sends its own
+							// initial awareness) or disconnected — nothing left
+							// to retry on this one.
+							return;
+						}
 						const retryEncoder = encoding.createEncoder();
 						encoding.writeVarUint(retryEncoder, messageAwareness);
 						encoding.writeVarUint8Array(
@@ -218,8 +250,15 @@ const setupWS = (provider: YSweetProvider) => {
 							),
 						);
 						websocket.send(encoding.toUint8Array(retryEncoder) as Uint8Array);
-					}
-				}, 2000);
+						if (!provider.synced) {
+							// Room warm-up may still be in progress — keep going.
+							resendAwareness(attempt + 1);
+						}
+						// Once synced, this resend landed after the relay
+						// confirmed the room is up — stop.
+					}, delay);
+				};
+				resendAwareness(1);
 			}
 		};
 		provider.emit("status", [
