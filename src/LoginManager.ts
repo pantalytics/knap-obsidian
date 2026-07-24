@@ -11,7 +11,7 @@ import PocketBase, {
 import { RelayInstances, curryLog } from "./debug";
 import type { IAuthProvider } from "./auth/IAuthProvider";
 import { isRelayOnPremMode } from "./auth/AuthProviderFactory";
-import { loginWithEmailPassword, loginWithOAuth2 as loginWithOAuth2Ext, logoutUser, getCurrentUserFromProvider } from "./LoginManagerExtensions";
+import { loginWithEmailPassword, loginWithOAuth2 as loginWithOAuth2Ext, logoutUser, getCurrentUserFromProvider, resolveUserAfterFailedLogin } from "./LoginManagerExtensions";
 import type { RelayOnPremSettings, RelayOnPremServer } from "./RelayOnPremConfig";
 import { getServerById, withUpdatedLastUserEmail } from "./RelayOnPremConfig";
 import { Observable } from "./observable/Observable";
@@ -724,6 +724,14 @@ export class LoginManager extends Observable<LoginManager> {
 		this.beforeLogin();
 		this.log(`Attempting relay-onprem login for ${email}`);
 
+		// Snapshot the pre-existing session BEFORE attempting this login
+		// (TR-52 analog, audit #96d804dd) — a failed re-login (e.g. a
+		// typo'd password re-entered while already logged in, for whatever
+		// reason) must not clear a session that was working fine. See
+		// resolveUserAfterFailedLogin for why restoring this unconditionally
+		// is safe here (single-await try block, no partial-mutation risk).
+		const previousUser = this.user;
+
 		try {
 			const user = await loginWithEmailPassword(this.authProvider, email, password);
 			this.user = user;
@@ -732,7 +740,7 @@ export class LoginManager extends Observable<LoginManager> {
 			return true;
 		} catch (error: unknown) {
 			this.log("Relay-onprem login failed:", error);
-			this.user = undefined;
+			this.user = resolveUserAfterFailedLogin(previousUser);
 			this.notifyListeners();
 			throw error;
 		}

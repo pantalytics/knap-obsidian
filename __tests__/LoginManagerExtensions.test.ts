@@ -18,7 +18,7 @@
  */
 
 import { describe, test, expect, jest } from "@jest/globals";
-import { loginWithOAuth2 } from "../src/LoginManagerExtensions";
+import { loginWithOAuth2, resolveUserAfterFailedLogin } from "../src/LoginManagerExtensions";
 import type { IAuthProvider, AuthResponse } from "../src/auth/IAuthProvider";
 
 function makeAuthProvider(authResponse: AuthResponse): IAuthProvider {
@@ -82,5 +82,31 @@ describe("loginWithOAuth2", () => {
 		await expect(loginWithOAuth2(authProvider, "github")).rejects.toThrow(
 			"popup closed",
 		);
+	});
+});
+
+/**
+ * Unit tests: resolveUserAfterFailedLogin (TR-52 analog for
+ * LoginManager.loginWithEmailAndPassword, audit #96d804dd, follow-up to
+ * #67cf69b0).
+ *
+ * The bug: loginWithEmailAndPassword's catch block unconditionally set
+ * `this.user = undefined` on ANY login failure — including a failed
+ * RE-login attempted while already logged in (e.g. a typo'd password),
+ * which silently logged the user out of a session that was working fine.
+ * LoginManager itself can't be unit-tested in this repo (imports
+ * `pocketbase`, an ESM-only package that breaks ts-jest parsing — same
+ * wall documented above for loginWithOAuth2), so this tests the extracted
+ * pure decision function directly, same approach as TR-42's
+ * preserveBeforeTrash.ts extraction.
+ */
+describe("resolveUserAfterFailedLogin", () => {
+	test("TR-52 analog: a failed re-login while already logged in restores the existing user, not undefined", () => {
+		const existingUser = { id: "u1", email: "a@example.com" };
+		expect(resolveUserAfterFailedLogin(existingUser)).toBe(existingUser);
+	});
+
+	test("no prior session — stays undefined (matches pre-fix behavior for this case)", () => {
+		expect(resolveUserAfterFailedLogin(undefined)).toBeUndefined();
 	});
 });

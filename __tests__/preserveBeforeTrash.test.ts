@@ -18,7 +18,12 @@
  */
 
 import { describe, test, expect } from "@jest/globals";
-import { findByPath, hasUnsyncedEdit } from "../src/preserveBeforeTrash";
+import {
+	findByPath,
+	hasUnsyncedEdit,
+	hasUnsyncedCanvasEdit,
+} from "../src/preserveBeforeTrash";
+import type { CanvasData } from "../src/CanvasView";
 
 describe("hasUnsyncedEdit", () => {
 	test("identical content — no unsynced edit", () => {
@@ -39,6 +44,81 @@ describe("hasUnsyncedEdit", () => {
 		// The doc never had content synced (e.g. brand-new empty Y.Text), but
 		// the vault file has something — must not be silently discarded.
 		expect(hasUnsyncedEdit("some local content", "")).toBe(true);
+	});
+});
+
+describe("hasUnsyncedCanvasEdit", () => {
+	/**
+	 * Canvas equivalent of TR-42's hasUnsyncedEdit (audit #96d804dd,
+	 * follow-up to #67cf69b0): a `.canvas` file is JSON, not plain text, so
+	 * this must compare parsed structures rather than raw strings — the
+	 * on-disk file is pretty-printed by Obsidian while the exported Y.Doc
+	 * state (via Canvas.exportCanvasData) isn't, so a naive string compare
+	 * would false-positive on formatting alone for every unchanged canvas.
+	 */
+	function node(id: string, text: string): CanvasData["nodes"][number] {
+		return { id, type: "text", text, x: 0, y: 0, width: 200, height: 100 };
+	}
+
+	test("identical content, different JSON formatting — no unsynced edit", () => {
+		const synced: CanvasData = { nodes: [node("n1", "hello")], edges: [] };
+		const onDisk = JSON.stringify(synced, null, 2); // pretty-printed, like Obsidian writes
+		expect(hasUnsyncedCanvasEdit(onDisk, synced)).toBe(false);
+	});
+
+	test("differing node text — unsynced edit present", () => {
+		const synced: CanvasData = { nodes: [node("n1", "hello")], edges: [] };
+		const onDisk = JSON.stringify({
+			nodes: [node("n1", "hello, edited offline")],
+			edges: [],
+		});
+		expect(hasUnsyncedCanvasEdit(onDisk, synced)).toBe(true);
+	});
+
+	test("empty vs empty — no edit", () => {
+		expect(hasUnsyncedCanvasEdit("", { nodes: [], edges: [] })).toBe(false);
+	});
+
+	test("on-disk content vs empty synced canvas — treated as an edit", () => {
+		const onDisk = JSON.stringify({ nodes: [node("n1", "local only")], edges: [] });
+		expect(hasUnsyncedCanvasEdit(onDisk, { nodes: [], edges: [] })).toBe(true);
+	});
+
+	test("unparsable on-disk JSON — fails CLOSED (treated as an edit) even against an empty synced canvas", () => {
+		// Can't confirm it matches, so don't risk silently trashing it.
+		expect(hasUnsyncedCanvasEdit("{not valid json", { nodes: [], edges: [] })).toBe(
+			true,
+		);
+	});
+
+	test("identical nodes/edges in different order — no unsynced edit (order is not content)", () => {
+		// `syncedData` comes from iterating a Y.Map (order = per-key
+		// first-insertion time into that CRDT map); the on-disk array is
+		// whatever order Obsidian's canvas view serialized. These two
+		// orderings have no reason to agree even when nothing was actually
+		// edited, so a positional array comparison must not treat a mere
+		// reorder as an unsynced edit.
+		const synced: CanvasData = {
+			nodes: [node("n1", "hello"), node("n2", "world")],
+			edges: [],
+		};
+		const onDisk = JSON.stringify({
+			nodes: [node("n2", "world"), node("n1", "hello")],
+			edges: [],
+		});
+		expect(hasUnsyncedCanvasEdit(onDisk, synced)).toBe(false);
+	});
+
+	test("reordered AND edited — still detected as an unsynced edit", () => {
+		const synced: CanvasData = {
+			nodes: [node("n1", "hello"), node("n2", "world")],
+			edges: [],
+		};
+		const onDisk = JSON.stringify({
+			nodes: [node("n2", "world, edited offline"), node("n1", "hello")],
+			edges: [],
+		});
+		expect(hasUnsyncedCanvasEdit(onDisk, synced)).toBe(true);
 	});
 });
 

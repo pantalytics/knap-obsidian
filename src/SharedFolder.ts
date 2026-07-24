@@ -30,7 +30,7 @@ import { RelayInstances } from "./debug";
 import { LocalStorage } from "./LocalStorage";
 import { SyncFolder, isSyncFolder } from "./SyncFolder";
 import { isDocument } from "./Document";
-import { findByPath, hasUnsyncedEdit } from "./preserveBeforeTrash";
+import { findByPath, hasUnsyncedEdit, hasUnsyncedCanvasEdit } from "./preserveBeforeTrash";
 import { SyncStore } from "./SyncStore";
 import {
 	SyncType,
@@ -951,7 +951,9 @@ export class SharedFolder extends HasProvider {
 				// cycle rather than risk destroying an edit we couldn't check.
 				const promise = (
 					file instanceof TFile
-						? this.preserveUnsyncedDocumentBeforeTrash(vpath)
+						? Canvas.checkExtension(vpath)
+							? this.preserveUnsyncedCanvasBeforeTrash(vpath)
+							: this.preserveUnsyncedDocumentBeforeTrash(vpath)
 						: Promise.resolve(true)
 				).then((safeToTrash) => {
 					if (!safeToTrash) {
@@ -1007,9 +1009,9 @@ export class SharedFolder extends HasProvider {
 	 *   iteration = insertion order), which is the most-recently-created —
 	 *   i.e. the live one — but an old orphaned entry at the same path is
 	 *   still possible in principle; this doesn't attempt to prune it.
-	 * - Only Documents are covered — Canvas has the identical shape (a
-	 *   live `HasProvider`-backed object with on-disk-mirroring content)
-	 *   and the same underlying gap, but is out of scope for this fix.
+	 *
+	 * See `preserveUnsyncedCanvasBeforeTrash` below for the Canvas
+	 * equivalent — same shape and same gaps, different content format.
 	 */
 	private async preserveUnsyncedDocumentBeforeTrash(
 		vpath: string,
@@ -1037,6 +1039,64 @@ export class SharedFolder extends HasProvider {
 			const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 			const conflictPath = await this.writeConflictCopy(
 				doc,
+				onDiskContent,
+				`relay deleted ${timestamp}`,
+			);
+			this.log(
+				`Preserved unsynced edits to ${vpath} at ${conflictPath} before remote-delete cleanup`,
+			);
+			return true;
+		} catch (e: unknown) {
+			this.warn(`Failed to write conflict copy for ${vpath} before trashing`, e);
+			return false;
+		}
+	}
+
+	/**
+	 * Canvas equivalent of `preserveUnsyncedDocumentBeforeTrash` (audit
+	 * #96d804dd, follow-up to TR-42 #121a9874). Same underlying constraint:
+	 * by the time cleanupExtraLocalFiles runs, the remote delete has already
+	 * removed this path's syncStore entry, so the only remaining anchor for
+	 * "last known synced state" is the live `Canvas` object in `this.files`
+	 * — there is no last-synced snapshot to fall back to.
+	 *
+	 * Unlike a Document, a `.canvas` file is JSON rather than plain text, so
+	 * this compares parsed structures via `hasUnsyncedCanvasEdit` (deep
+	 * object comparison) instead of raw string equality — matching the
+	 * existing precedent in BackgroundSync.syncDocumentWebsocket, which
+	 * uses the same `areObjectsEqual`-based comparison for canvas content
+	 * for the same reason (on-disk JSON is pretty-printed; the exported Y.Doc
+	 * state isn't, so string comparison would false-positive on every file).
+	 *
+	 * Same fail-closed contract and known gaps as the Document version.
+	 */
+	private async preserveUnsyncedCanvasBeforeTrash(
+		vpath: string,
+	): Promise<boolean> {
+		const canvas = findByPath(this.files.values(), vpath, isCanvas) as
+			| Canvas
+			| undefined;
+		if (!canvas) {
+			return true;
+		}
+
+		let onDiskContent: string;
+		try {
+			onDiskContent = await this.read(canvas);
+		} catch (e: unknown) {
+			this.warn(`Could not read ${vpath} before trashing`, e);
+			return false;
+		}
+
+		const syncedData = Canvas.exportCanvasData(canvas.ydoc);
+		if (!hasUnsyncedCanvasEdit(onDiskContent, syncedData)) {
+			return true; // matches the last known synced content — nothing to preserve
+		}
+
+		try {
+			const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+			const conflictPath = await this.writeConflictCopy(
+				canvas,
 				onDiskContent,
 				`relay deleted ${timestamp}`,
 			);

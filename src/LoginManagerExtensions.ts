@@ -118,6 +118,34 @@ export function isUserLoggedIn(authProvider: IAuthProvider): boolean {
 }
 
 /**
+ * Decide what `LoginManager.user` should become after a login attempt
+ * fails, given the value the field held immediately before the attempt
+ * (TR-52 analog for `loginWithEmailAndPassword`, audit #96d804dd).
+ *
+ * The old behavior unconditionally cleared `this.user` on any login
+ * failure — a failed RE-login (e.g. a typo'd password re-entered while
+ * already logged in, for whatever reason) silently logged the user out of
+ * a session that was working fine. Restoring the pre-attempt snapshot
+ * fixes this: when there was no prior session (`previousUser` is
+ * `undefined`), the restored value is `undefined` too, reproducing the old
+ * (correct-in-that-case) behavior; when there was one, it survives the
+ * failed attempt instead of being wiped.
+ *
+ * Safe to call unconditionally (no `hadValidSession` branch needed) only
+ * because `loginWithEmailAndPassword`'s try block is a single `await` — on
+ * failure `this.user` was never mutated before the catch runs, so there's
+ * no partial-mutation state to reconcile. Contrast
+ * `RelayOnPremAuthProvider.loginWithPassword` (TR-52, #914c2b9d), which
+ * restores several fields individually because its step 1 can succeed and
+ * mutate state before its step 2 fails.
+ */
+export function resolveUserAfterFailedLogin<TUser>(
+	previousUser: TUser | undefined,
+): TUser | undefined {
+	return previousUser;
+}
+
+/**
  * Get current user from auth provider
  */
 export function getCurrentUserFromProvider(authProvider: IAuthProvider): User | undefined {
