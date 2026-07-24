@@ -61,12 +61,16 @@ export const customFetch = async (
 		throw: false,
 	};
 
-	// Retry logic for transient network errors (stale keep-alive connections, HTTP/2 RST_STREAM)
-	const MAX_RETRIES = 2;
+	// Retry logic for transient network errors (stale keep-alive connections, HTTP/2 RST_STREAM).
+	// Only retry idempotent methods: a mutating request (POST/PUT/PATCH/DELETE) may have already
+	// been applied server-side before the connection reset (e.g. RST after the record was
+	// written), so retrying it risks creating a duplicate (TR-29).
+	const isIdempotentMethod = method === "GET" || method === "HEAD";
+	const maxRetries = isIdempotentMethod ? 2 : 0;
 	let response: RequestUrlResponse | undefined = undefined;
 	let lastError: unknown = undefined;
 
-	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+	for (let attempt = 0; attempt <= maxRetries; attempt++) {
 		try {
 			response = await requestUrl(requestParams);
 			lastError = undefined;
@@ -81,9 +85,9 @@ export const customFetch = async (
 				msg.includes("GOAWAY") ||
 				msg.includes("RST_STREAM");
 
-			if (isRetryable && attempt < MAX_RETRIES) {
+			if (isRetryable && attempt < maxRetries) {
 				curryLog("[CustomFetch]", "warn")(
-					`Retrying ${method} ${urlString} (attempt ${attempt + 2}/${MAX_RETRIES + 1}): ${msg}`
+					`Retrying ${method} ${urlString} (attempt ${attempt + 2}/${maxRetries + 1}): ${msg}`
 				);
 				continue;
 			}
