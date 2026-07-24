@@ -61,7 +61,7 @@ function mockFetchResponse(status: number, data: any, ok = true) {
 
 describe("RelayOnPremAuthProvider", () => {
 	const CONTROL_PLANE_URL = "https://cp.example.com";
-	const VAULT_NAME = "test-vault";
+	const APP_ID = "test-app-id";
 	const SERVER_ID = "server-123";
 
 	let provider: RelayOnPremAuthProvider;
@@ -84,7 +84,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 		provider = new RelayOnPremAuthProvider({
 			controlPlaneUrl: CONTROL_PLANE_URL,
-			vaultName: VAULT_NAME,
+			appId: APP_ID,
 			serverId: SERVER_ID,
 		});
 
@@ -268,7 +268,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			await provider.loginWithPassword("test@example.com", "password123");
 
-			const storageKey = `evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`;
+			const storageKey = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			const stored = mockStorage.get(storageKey);
 			expect(stored).toBeDefined();
 
@@ -308,7 +308,7 @@ describe("RelayOnPremAuthProvider", () => {
 			expect(provider.isLoggedIn()).toBe(true);
 
 			// Check localStorage for refresh token
-			const storageKey = `evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`;
+			const storageKey = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			const stored = mockStorage.get(storageKey);
 			expect(stored).toBeDefined();
 
@@ -421,7 +421,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P20: Refresh with refresh_token", async () => {
 			// Set up initial auth with refresh token
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`,
+				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "old_token",
@@ -433,7 +433,7 @@ describe("RelayOnPremAuthProvider", () => {
 			// Recreate provider to load from storage
 			provider = new RelayOnPremAuthProvider({
 				controlPlaneUrl: CONTROL_PLANE_URL,
-				vaultName: VAULT_NAME,
+				appId: APP_ID,
 				serverId: SERVER_ID,
 			});
 			await provider.waitForRestore();
@@ -474,7 +474,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P21: Refresh without refresh_token (legacy)", async () => {
 			// Set up initial auth WITHOUT refresh token
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`,
+				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "current_token",
@@ -484,7 +484,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			provider = new RelayOnPremAuthProvider({
 				controlPlaneUrl: CONTROL_PLANE_URL,
-				vaultName: VAULT_NAME,
+				appId: APP_ID,
 				serverId: SERVER_ID,
 			});
 			await provider.waitForRestore();
@@ -518,7 +518,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P22: Error clears auth", async () => {
 			// Set up initial auth
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`,
+				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -529,7 +529,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			provider = new RelayOnPremAuthProvider({
 				controlPlaneUrl: CONTROL_PLANE_URL,
-				vaultName: VAULT_NAME,
+				appId: APP_ID,
 				serverId: SERVER_ID,
 			});
 			await provider.waitForRestore();
@@ -546,7 +546,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 		test("TR-28: calls onSessionExpired when the refresh token is rejected (401/403)", async () => {
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`,
+				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -558,7 +558,7 @@ describe("RelayOnPremAuthProvider", () => {
 			const onSessionExpired = jest.fn();
 			provider = new RelayOnPremAuthProvider({
 				controlPlaneUrl: CONTROL_PLANE_URL,
-				vaultName: VAULT_NAME,
+				appId: APP_ID,
 				serverId: SERVER_ID,
 				onSessionExpired,
 			});
@@ -575,7 +575,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 		test("TR-28: does NOT call onSessionExpired on a network/server error (auth stays valid for retry)", async () => {
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`,
+				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -587,7 +587,7 @@ describe("RelayOnPremAuthProvider", () => {
 			const onSessionExpired = jest.fn();
 			provider = new RelayOnPremAuthProvider({
 				controlPlaneUrl: CONTROL_PLANE_URL,
-				vaultName: VAULT_NAME,
+				appId: APP_ID,
 				serverId: SERVER_ID,
 				onSessionExpired,
 			});
@@ -615,7 +615,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P23: Restore with valid token", async () => {
 			const expiresAt = Date.now() + 3600000;
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`,
+				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "restored@example.com" },
 					token: "stored_token",
@@ -626,7 +626,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			provider = new RelayOnPremAuthProvider({
 				controlPlaneUrl: CONTROL_PLANE_URL,
-				vaultName: VAULT_NAME,
+				appId: APP_ID,
 				serverId: SERVER_ID,
 			});
 			await provider.waitForRestore();
@@ -639,7 +639,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P24: Restore with expired token + refresh", async () => {
 			const expiredAt = Date.now() - 1000; // Expired 1 second ago
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`,
+				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "expired_token",
@@ -667,7 +667,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			provider = new RelayOnPremAuthProvider({
 				controlPlaneUrl: CONTROL_PLANE_URL,
-				vaultName: VAULT_NAME,
+				appId: APP_ID,
 				serverId: SERVER_ID,
 			});
 			await provider.waitForRestore();
@@ -679,7 +679,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P25: Restore with expired + no refresh clears", async () => {
 			const expiredAt = Date.now() - 1000;
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`,
+				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "expired_token",
@@ -690,7 +690,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			provider = new RelayOnPremAuthProvider({
 				controlPlaneUrl: CONTROL_PLANE_URL,
-				vaultName: VAULT_NAME,
+				appId: APP_ID,
 				serverId: SERVER_ID,
 			});
 			await provider.waitForRestore();
@@ -701,13 +701,13 @@ describe("RelayOnPremAuthProvider", () => {
 
 		test("P26: Restore with corrupted data", async () => {
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`,
+				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				"invalid json{",
 			);
 
 			provider = new RelayOnPremAuthProvider({
 				controlPlaneUrl: CONTROL_PLANE_URL,
-				vaultName: VAULT_NAME,
+				appId: APP_ID,
 				serverId: SERVER_ID,
 			});
 			await provider.waitForRestore();
@@ -722,7 +722,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			// Token expires in 4 minutes (less than 5-minute buffer)
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`,
+				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -732,7 +732,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			provider = new RelayOnPremAuthProvider({
 				controlPlaneUrl: CONTROL_PLANE_URL,
-				vaultName: VAULT_NAME,
+				appId: APP_ID,
 				serverId: SERVER_ID,
 			});
 			await provider.waitForRestore();
@@ -741,7 +741,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			// Token expires in 6 minutes (more than 5-minute buffer)
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`,
+				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -751,7 +751,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			provider = new RelayOnPremAuthProvider({
 				controlPlaneUrl: CONTROL_PLANE_URL,
-				vaultName: VAULT_NAME,
+				appId: APP_ID,
 				serverId: SERVER_ID,
 			});
 			await provider.waitForRestore();
@@ -768,7 +768,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P28: Success", async () => {
 			// Set up logged in state
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`,
+				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -778,7 +778,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			provider = new RelayOnPremAuthProvider({
 				controlPlaneUrl: CONTROL_PLANE_URL,
-				vaultName: VAULT_NAME,
+				appId: APP_ID,
 				serverId: SERVER_ID,
 			});
 			await provider.waitForRestore();
@@ -804,7 +804,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 		test("P29: Network error still clears local state", async () => {
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`,
+				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -814,7 +814,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			provider = new RelayOnPremAuthProvider({
 				controlPlaneUrl: CONTROL_PLANE_URL,
-				vaultName: VAULT_NAME,
+				appId: APP_ID,
 				serverId: SERVER_ID,
 			});
 			await provider.waitForRestore();
@@ -850,7 +850,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			await provider.loginWithPassword("test@example.com", "password");
 
-			const storageKey = `evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`;
+			const storageKey = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			const stored = mockStorage.get(storageKey);
 			expect(stored).toBeDefined();
 
@@ -868,7 +868,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("Handles trailing slashes in control plane URL", async () => {
 			const providerWithSlash = new RelayOnPremAuthProvider({
 				controlPlaneUrl: "https://cp.example.com/",
-				vaultName: VAULT_NAME,
+				appId: APP_ID,
 				serverId: SERVER_ID,
 			});
 			await providerWithSlash.waitForRestore();

@@ -408,10 +408,11 @@ export default class Live extends Plugin {
 		// and update all shared folder settings that reference the old server ID
 		if (migration.renamedServerId) {
 			const oldId = migration.renamedServerId;
-			const vaultName = this.app.vault.getName();
+			// Must match RelayOnPremAuthStore.getStorageKey()'s format, which is
+			// keyed by appId (stable across vault renames), not vault display name.
 			const prefix = "evc-team-relay_onprem_auth_";
-			const oldKey = `${prefix}${vaultName}_${oldId}`;
-			const newKey = `${prefix}${vaultName}_${EVC_SERVER_ID}`;
+			const oldKey = `${prefix}${this.appId}_${oldId}`;
+			const newKey = `${prefix}${this.appId}_${EVC_SERVER_ID}`;
 			try {
 				const oldData = window.localStorage.getItem(oldKey);
 				if (oldData && !window.localStorage.getItem(newKey)) {
@@ -588,6 +589,7 @@ export default class Live extends Plugin {
 
 		this.loginManager = new LoginManager(
 			this.vault.getName(),
+			this.appId,
 			this.openSettings.bind(this),
 			this.timeProvider,
 			this.patchWebviewer.bind(this),

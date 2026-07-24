@@ -196,6 +196,10 @@ export class LoginManager extends Observable<LoginManager> {
 
 	constructor(
 		private vaultName: string,
+		// Obsidian's stable per-vault-instance id — survives vault rename, unlike
+		// vaultName above. Used for relay-onprem auth storage keying only; vaultName
+		// stays in place for the legacy PocketBase/System3 localStorage key.
+		private appId: string,
 		openSettings: () => Promise<void>,
 		timeProvider: TimeProvider,
 		private beforeLogin: () => void,
@@ -219,7 +223,7 @@ export class LoginManager extends Observable<LoginManager> {
 
 				// Initialize multi-server auth manager
 				this.multiServerAuthManager = new MultiServerAuthManager(
-					vaultName,
+					appId,
 					relayOnPremSettings.servers,
 					(serverId) => this.handleSessionExpired(serverId),
 				);

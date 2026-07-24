@@ -4,7 +4,8 @@
  * Persists authentication state to localStorage so that users remain logged in
  * across Obsidian restarts. Supports multiple servers with independent auth state.
  *
- * Uses singleton pattern per vault to prevent race conditions when multiple
+ * Uses singleton pattern per vault instance (keyed by Obsidian's stable `app.appId`,
+ * NOT the user-editable vault name) to prevent race conditions when multiple
  * providers access storage simultaneously.
  */
 
@@ -19,46 +20,46 @@ export interface RelayOnPremAuthData {
 }
 
 /**
- * Singleton instances per vault name to ensure consistent storage access
+ * Singleton instances per vault appId to ensure consistent storage access
  */
 const authStoreInstances: Map<string, RelayOnPremAuthStore> = new Map();
 
 /**
- * Get or create a singleton AuthStore instance for the given vault.
+ * Get or create a singleton AuthStore instance for the given vault (by appId).
  * This prevents multiple providers from creating separate instances with
  * separate fallback storage, which could cause auth loss.
  */
-export function getAuthStore(vaultName: string): RelayOnPremAuthStore {
-	if (!authStoreInstances.has(vaultName)) {
-		authStoreInstances.set(vaultName, new RelayOnPremAuthStore(vaultName));
+export function getAuthStore(appId: string): RelayOnPremAuthStore {
+	if (!authStoreInstances.has(appId)) {
+		authStoreInstances.set(appId, new RelayOnPremAuthStore(appId));
 	}
-	return authStoreInstances.get(vaultName)!;
+	return authStoreInstances.get(appId)!;
 }
 
 export class RelayOnPremAuthStore {
 	private log = curryLog("[RelayOnPremAuthStore]");
 	private storageFallback: { [key: string]: unknown } = {};
-	private vaultName: string;
+	private appId: string;
 	private static readonly MAX_RETRY_ATTEMPTS = 3;
 	private static readonly RETRY_DELAY_MS = 50;
 
-	constructor(vaultName: string) {
-		this.vaultName = vaultName;
-		this.log(`Initialized for vault: ${vaultName}`);
+	constructor(appId: string) {
+		this.appId = appId;
+		this.log(`Initialized for vault appId: ${appId}`);
 	}
 
 	/**
 	 * Get storage key for a specific server
 	 */
 	private getStorageKey(serverId: string): string {
-		return `evc-team-relay_onprem_auth_${this.vaultName}_${serverId}`;
+		return `evc-team-relay_onprem_auth_${this.appId}_${serverId}`;
 	}
 
 	/**
 	 * Get storage key prefix for listing all server keys
 	 */
 	private getStorageKeyPrefix(): string {
-		return `evc-team-relay_onprem_auth_${this.vaultName}_`;
+		return `evc-team-relay_onprem_auth_${this.appId}_`;
 	}
 
 	/**

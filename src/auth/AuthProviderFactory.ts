@@ -22,7 +22,7 @@ export interface AuthProviderFactoryConfig {
 
 	// For relay-onprem mode
 	relayOnPremSettings?: RelayOnPremSettings;
-	vaultName?: string;
+	appId?: string;
 	serverId?: string; // Optional: specific server ID for multi-server mode
 }
 
@@ -33,8 +33,8 @@ export interface AuthProviderFactoryConfig {
 export function createAuthProvider(config: AuthProviderFactoryConfig): IAuthProvider {
 	// Check if relay-onprem mode is enabled
 	if (config.relayOnPremSettings?.enabled) {
-		if (!config.vaultName) {
-			throw new Error("Vault name is required for relay-onprem mode");
+		if (!config.appId) {
+			throw new Error("Vault appId is required for relay-onprem mode");
 		}
 
 		// Multi-server mode: use servers array
@@ -54,7 +54,7 @@ export function createAuthProvider(config: AuthProviderFactoryConfig): IAuthProv
 
 			return new RelayOnPremAuthProvider({
 				controlPlaneUrl: server.controlPlaneUrl,
-				vaultName: config.vaultName,
+				appId: config.appId,
 				serverId: server.id,
 			});
 		}
@@ -77,11 +77,11 @@ export function createAuthProvider(config: AuthProviderFactoryConfig): IAuthProv
  */
 export function createAuthProviderForServer(
 	server: RelayOnPremServer,
-	vaultName: string
+	appId: string
 ): RelayOnPremAuthProvider {
 	return new RelayOnPremAuthProvider({
 		controlPlaneUrl: server.controlPlaneUrl,
-		vaultName: vaultName,
+		appId: appId,
 		serverId: server.id,
 	});
 }

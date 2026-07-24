@@ -21,19 +21,19 @@ export interface ServerAuthStatus {
 export class MultiServerAuthManager {
 	private log = curryLog("[MultiServerAuthManager]");
 	private providers: Map<string, RelayOnPremAuthProvider> = new Map();
-	private vaultName: string;
+	private appId: string;
 	private authStore: RelayOnPremAuthStore;
 
 	constructor(
-		vaultName: string,
+		appId: string,
 		servers: RelayOnPremServer[] = [],
 		// TR-28: forwarded to every provider this manager creates, so the
 		// owner (LoginManager) learns exactly which server's session died
 		// instead of the death staying invisible outside this class's map.
 		private onSessionExpired?: (serverId: string) => void,
 	) {
-		this.vaultName = vaultName;
-		this.authStore = new RelayOnPremAuthStore(vaultName);
+		this.appId = appId;
+		this.authStore = new RelayOnPremAuthStore(appId);
 
 		// Initialize providers for all configured servers
 		for (const server of servers) {
@@ -53,7 +53,7 @@ export class MultiServerAuthManager {
 		this.log(`Adding server: ${server.name} (${server.id})`);
 		const provider = new RelayOnPremAuthProvider({
 			controlPlaneUrl: server.controlPlaneUrl,
-			vaultName: this.vaultName,
+			appId: this.appId,
 			serverId: server.id,
 			onSessionExpired: () => this.onSessionExpired?.(server.id),
 		});

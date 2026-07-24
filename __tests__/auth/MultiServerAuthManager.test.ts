@@ -57,7 +57,7 @@ function mockFetchResponse(status: number, data: unknown, ok = true) {
 	} as Response);
 }
 
-const VAULT_NAME = "test-vault";
+const APP_ID = "test-app-id";
 
 function makeServer(id: string): RelayOnPremServer {
 	return {
@@ -70,7 +70,7 @@ function makeServer(id: string): RelayOnPremServer {
 
 function seedAuth(serverId: string) {
 	mockStorage.set(
-		`evc-team-relay_onprem_auth_${VAULT_NAME}_${serverId}`,
+		`evc-team-relay_onprem_auth_${APP_ID}_${serverId}`,
 		JSON.stringify({
 			user: { id: `user-${serverId}`, email: `${serverId}@example.com` },
 			token: "token",
@@ -92,7 +92,7 @@ describe("MultiServerAuthManager", () => {
 
 		const onSessionExpired = jest.fn();
 		const manager = new MultiServerAuthManager(
-			VAULT_NAME,
+			APP_ID,
 			[makeServer("server-a"), makeServer("server-b")],
 			onSessionExpired,
 		);
@@ -116,7 +116,7 @@ describe("MultiServerAuthManager", () => {
 
 		const onSessionExpired = jest.fn();
 		const manager = new MultiServerAuthManager(
-			VAULT_NAME,
+			APP_ID,
 			[makeServer("server-a"), makeServer("server-b")],
 			onSessionExpired,
 		);
@@ -135,7 +135,7 @@ describe("MultiServerAuthManager", () => {
 
 	test("addServer() added after construction still wires the callback", async () => {
 		const onSessionExpired = jest.fn();
-		const manager = new MultiServerAuthManager(VAULT_NAME, [], onSessionExpired);
+		const manager = new MultiServerAuthManager(APP_ID, [], onSessionExpired);
 
 		seedAuth("server-late");
 		manager.addServer(makeServer("server-late"));
@@ -153,7 +153,7 @@ describe("MultiServerAuthManager", () => {
 
 	test("works with no onSessionExpired callback provided (optional)", async () => {
 		seedAuth("server-a");
-		const manager = new MultiServerAuthManager(VAULT_NAME, [makeServer("server-a")]);
+		const manager = new MultiServerAuthManager(APP_ID, [makeServer("server-a")]);
 		await manager.waitForAllRestore();
 
 		mockFetch.mockResolvedValue(

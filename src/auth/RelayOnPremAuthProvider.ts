@@ -39,7 +39,7 @@ interface MeResponse {
 
 export interface RelayOnPremAuthConfig {
 	controlPlaneUrl: string;
-	vaultName: string;
+	appId: string;
 	serverId: string;
 	/**
 	 * TR-28: called when a background token refresh discovers the refresh
@@ -71,7 +71,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 		// Normalize URL - remove trailing slashes to prevent double-slash issues
 		this.normalizedUrl = config.controlPlaneUrl.replace(/\/+$/, "");
 		// Use singleton AuthStore to prevent race conditions
-		this.authStore = getAuthStore(config.vaultName);
+		this.authStore = getAuthStore(config.appId);
 		// Try to restore auth from localStorage on init
 		// Store promise so callers can await if needed
 		this.restorePromise = this.restoreAuth();
@@ -101,7 +101,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 	 */
 	private async restoreAuth(): Promise<void> {
 		try {
-			this.log(`restoreAuth: serverId=${this.serverId}, vaultName=${this.config.vaultName}`);
+			this.log(`restoreAuth: serverId=${this.serverId}, appId=${this.config.appId}`);
 
 			const authData = this.authStore.load(this.serverId);
 			this.log(`restoreAuth: authData exists=${!!authData}`);

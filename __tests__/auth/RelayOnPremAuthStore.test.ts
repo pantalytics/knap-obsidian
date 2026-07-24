@@ -36,7 +36,7 @@ Object.defineProperty(global, "window", {
 });
 
 describe("RelayOnPremAuthStore", () => {
-	const VAULT_NAME = "test-vault";
+	const APP_ID = "test-app-id";
 	const SERVER_ID = "server-123";
 
 	let store: RelayOnPremAuthStore;
@@ -54,7 +54,7 @@ describe("RelayOnPremAuthStore", () => {
 
 	beforeEach(() => {
 		mockStorage.clear();
-		store = new RelayOnPremAuthStore(VAULT_NAME);
+		store = new RelayOnPremAuthStore(APP_ID);
 	});
 
 	describe("save() and load()", () => {
@@ -78,7 +78,7 @@ describe("RelayOnPremAuthStore", () => {
 				expiresAt: Date.now() + 3600000,
 			};
 
-			const key = `evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`;
+			const key = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			mockStorage.set(key, JSON.stringify(incompleteData));
 
 			const loaded = store.load(SERVER_ID);
@@ -92,7 +92,7 @@ describe("RelayOnPremAuthStore", () => {
 				expiresAt: Date.now() + 3600000,
 			};
 
-			const key = `evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`;
+			const key = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			mockStorage.set(key, JSON.stringify(incompleteData));
 
 			const loaded = store.load(SERVER_ID);
@@ -106,7 +106,7 @@ describe("RelayOnPremAuthStore", () => {
 				token: "token",
 			};
 
-			const key = `evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`;
+			const key = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			mockStorage.set(key, JSON.stringify(incompleteData));
 
 			const loaded = store.load(SERVER_ID);
@@ -116,16 +116,16 @@ describe("RelayOnPremAuthStore", () => {
 	});
 
 	describe("Storage key format", () => {
-		test("P32: Key format evc-team-relay_onprem_auth_{vault}_{server}", () => {
+		test("P32: Key format evc-team-relay_onprem_auth_{appId}_{server}", () => {
 			store.save(SERVER_ID, mockAuthData);
 
-			const expectedKey = `evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`;
+			const expectedKey = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			expect(mockStorage.has(expectedKey)).toBe(true);
 		});
 
-		test("Different vaults have separate storage", () => {
-			const store1 = new RelayOnPremAuthStore("vault1");
-			const store2 = new RelayOnPremAuthStore("vault2");
+		test("Different vault appIds have separate storage", () => {
+			const store1 = new RelayOnPremAuthStore("app-id-1");
+			const store2 = new RelayOnPremAuthStore("app-id-2");
 
 			const authData1 = { ...mockAuthData, user: { ...mockAuthData.user, email: "vault1@example.com" } };
 			const authData2 = { ...mockAuthData, user: { ...mockAuthData.user, email: "vault2@example.com" } };
@@ -135,6 +135,25 @@ describe("RelayOnPremAuthStore", () => {
 
 			expect(store1.load(SERVER_ID)?.user.email).toBe("vault1@example.com");
 			expect(store2.load(SERVER_ID)?.user.email).toBe("vault2@example.com");
+		});
+
+		test("TR-56: storage identity is a pure function of appId — no vaultName parameter exists to be affected by a rename", () => {
+			// Regression test for TR-56: the store used to be constructed with the
+			// vault's user-editable display name (`app.vault.getName()`), so renaming
+			// the vault silently orphaned the stored session (new name -> new, empty
+			// key). The constructor signature no longer accepts a vault name at all —
+			// only Obsidian's rename-stable `app.appId` — so there is nothing left
+			// for a vault rename to change. This test can't literally rename a vault
+			// (no such concept reaches this class anymore); it documents and pins
+			// the invariant: two instances constructed with the same appId always
+			// see the same session, regardless of when/whether the vault was renamed
+			// in between (main.ts re-derives appId fresh from the Obsidian API on
+			// every load and passes nothing else into this chain).
+			const beforeRestart = new RelayOnPremAuthStore(APP_ID);
+			beforeRestart.save(SERVER_ID, mockAuthData);
+
+			const afterRestart = new RelayOnPremAuthStore(APP_ID);
+			expect(afterRestart.load(SERVER_ID)).toEqual(mockAuthData);
 		});
 
 		test("Different servers have separate storage", () => {
@@ -208,7 +227,7 @@ describe("RelayOnPremAuthStore", () => {
 				writable: true,
 			});
 
-			const storeWithoutLocalStorage = new RelayOnPremAuthStore(VAULT_NAME);
+			const storeWithoutLocalStorage = new RelayOnPremAuthStore(APP_ID);
 			storeWithoutLocalStorage.save(SERVER_ID, mockAuthData);
 			expect(storeWithoutLocalStorage.load(SERVER_ID)).not.toBeNull();
 
@@ -245,7 +264,7 @@ describe("RelayOnPremAuthStore", () => {
 				writable: true,
 			});
 
-			const storeWithoutLocalStorage = new RelayOnPremAuthStore(VAULT_NAME);
+			const storeWithoutLocalStorage = new RelayOnPremAuthStore(APP_ID);
 
 			storeWithoutLocalStorage.save(SERVER_ID, mockAuthData);
 			const loaded = storeWithoutLocalStorage.load(SERVER_ID);
@@ -273,7 +292,7 @@ describe("RelayOnPremAuthStore", () => {
 
 	describe("JSON parse error", () => {
 		test("P36: Returns null", () => {
-			const key = `evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`;
+			const key = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			mockStorage.set(key, "invalid json{");
 
 			const loaded = store.load(SERVER_ID);
@@ -284,8 +303,8 @@ describe("RelayOnPremAuthStore", () => {
 
 	describe("Singleton pattern", () => {
 		test("P37: Per vault", () => {
-			const store1 = getAuthStore(VAULT_NAME);
-			const store2 = getAuthStore(VAULT_NAME);
+			const store1 = getAuthStore(APP_ID);
+			const store2 = getAuthStore(APP_ID);
 
 			expect(store1).toBe(store2);
 
@@ -338,7 +357,7 @@ describe("RelayOnPremAuthStore", () => {
 			});
 
 			// Save to fallback
-			const storeWithoutLocalStorage = new RelayOnPremAuthStore(VAULT_NAME);
+			const storeWithoutLocalStorage = new RelayOnPremAuthStore(APP_ID);
 			storeWithoutLocalStorage.save("server-2", mockAuthData);
 
 			// Restore localStorage
@@ -377,7 +396,7 @@ describe("RelayOnPremAuthStore", () => {
 		});
 
 		test("Returns false if data incomplete", () => {
-			const key = `evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`;
+			const key = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			mockStorage.set(
 				key,
 				JSON.stringify({ user: mockAuthData.user }),
@@ -389,7 +408,7 @@ describe("RelayOnPremAuthStore", () => {
 
 	describe("Non-JSON data", () => {
 		test("Saves and loads string as-is", () => {
-			const key = `evc-team-relay_onprem_auth_${VAULT_NAME}_${SERVER_ID}`;
+			const key = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			mockStorage.set(key, "plain text");
 
 			const loaded = store.load(SERVER_ID);
