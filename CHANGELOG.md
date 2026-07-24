@@ -1,7 +1,10 @@
 # Changelog
 
+## 1.1.37
+- Sync (TR-08): `checkStale()` now actually detects divergence for relay-linked docs instead of always reporting "not stale" — the HTTP re-fetch is skipped for relay-linked docs (WebSocket sync is authoritative) but the real staleness comparison now runs, so the conflict-detection UI is no longer dead code on tr.entire.vc. (This fix was listed under 1.1.36 but did not make that build; it ships here.)
+
 ## 1.1.36
-- Sync (TR-08): `checkStale()` now actually detects divergence for relay-linked docs instead of always reporting "not stale".
+- Sync (TR-08): shipped in 1.1.37 (this build did not include the fix).
 - Auth (TR-10): route OAuth2 login through `LoginManager` so listeners fire and shares load without a restart.
 - Network (TR-12): reconnect retries forever with capped backoff instead of giving up after 3 attempts.
 - Auth (TR-21): verify the OAuth callback `state` to close a session-fixation gap.
