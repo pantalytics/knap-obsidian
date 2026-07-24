@@ -11,7 +11,7 @@ import PocketBase, {
 import { RelayInstances, curryLog } from "./debug";
 import type { IAuthProvider } from "./auth/IAuthProvider";
 import { isRelayOnPremMode } from "./auth/AuthProviderFactory";
-import { loginWithEmailPassword, logoutUser, getCurrentUserFromProvider } from "./LoginManagerExtensions";
+import { loginWithEmailPassword, loginWithOAuth2 as loginWithOAuth2Ext, logoutUser, getCurrentUserFromProvider } from "./LoginManagerExtensions";
 import type { RelayOnPremSettings, RelayOnPremServer } from "./RelayOnPremConfig";
 import { getServerById } from "./RelayOnPremConfig";
 import { Observable } from "./observable/Observable";
@@ -711,6 +711,66 @@ export class LoginManager extends Observable<LoginManager> {
 		} catch (error: unknown) {
 			this.log("Relay-onprem login failed:", error);
 			this.user = undefined;
+			this.notifyListeners();
+			throw error;
+		}
+	}
+
+	/**
+	 * Login with OAuth2 (relay-onprem mode).
+	 *
+	 * TR-10 (#e7bca9fb): callers used to invoke `authProvider.loginWithOAuth2()`
+	 * directly, bypassing LoginManager entirely — `this.user` was never set and
+	 * `notifyListeners()` was never called, so the `on()` listener main.ts
+	 * registers (which gates `_onLogin()`/`loadRelayOnPremShares()` on
+	 * `this.loggedIn`) never fired. Shares/live-sync only started after a
+	 * plugin reload happened to re-run the "already logged in" restore path.
+	 * Mirrors `loginToServer`'s single/multi-server + notify pattern exactly
+	 * so OAuth and password login produce identical downstream effects.
+	 *
+	 * serverId: pass the specific server being logged into (multi-server
+	 * mode); omit for the legacy single-server flow (uses `this.authProvider`
+	 * directly, like `loginWithEmailAndPassword`).
+	 */
+	async loginWithOAuth2(provider: string, serverId?: string): Promise<boolean> {
+		if (!this.isRelayOnPrem) {
+			throw new Error("OAuth2 login is only available in relay-onprem mode");
+		}
+
+		const authProvider = serverId
+			? this.getAuthProviderForServer(serverId)
+			: this.authProvider;
+
+		if (!authProvider) {
+			throw new Error("Auth provider not available");
+		}
+
+		this.beforeLogin();
+		this.log(`Attempting OAuth2 login (${provider})${serverId ? ` for server ${serverId}` : ""}`);
+
+		try {
+			const user = await loginWithOAuth2Ext(authProvider, provider);
+
+			if (serverId && this.relayOnPremSettings) {
+				const server = getServerById(this.relayOnPremSettings, serverId);
+				if (server) {
+					server.lastUserEmail = user.email;
+				}
+			}
+
+			// If this is the active server (or single-server mode), update the current user
+			if (!serverId || serverId === this.activeServerId) {
+				if (serverId) {
+					this.authProvider = authProvider;
+				}
+				this.user = user;
+			}
+
+			this.notifyListeners();
+			this.log("OAuth2 login successful");
+			return true;
+		} catch (error: unknown) {
+			this.log("OAuth2 login failed:", error);
 			this.notifyListeners();
 			throw error;
 		}

@@ -43,6 +43,34 @@ export async function loginWithEmailPassword(
 }
 
 /**
+ * Login with OAuth2 (relay-onprem mode)
+ */
+export async function loginWithOAuth2(
+	authProvider: IAuthProvider,
+	provider: string,
+): Promise<User> {
+	log(`Logging in with OAuth2 provider: ${provider}`);
+
+	try {
+		const authResponse = await authProvider.loginWithOAuth2(provider);
+
+		const user = new User(
+			authResponse.user.id,
+			authResponse.user.name || authResponse.user.email,
+			authResponse.user.email,
+			authResponse.user.picture || "",
+			authResponse.token.token,
+		);
+
+		log(`Successfully logged in as ${user.email}`);
+		return user;
+	} catch (error: unknown) {
+		log("OAuth2 login error:", error);
+		throw error;
+	}
+}
+
+/**
  * Refresh authentication token
  */
 export async function refreshAuthToken(authProvider: IAuthProvider): Promise<User> {

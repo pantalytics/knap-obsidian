@@ -235,20 +235,10 @@ export class RelayOnPremLoginModal extends Modal {
 		this.hideError();
 
 		try {
-			// Get auth provider for the server
-			let authProvider;
-			if (this.serverId) {
-				authProvider = this.loginManager.getAuthProviderForServer(this.serverId);
-			} else {
-				authProvider = this.loginManager.getAuthProvider();
-			}
-
-			if (!authProvider) {
-				throw new Error("Auth provider not available");
-			}
-
-			// Start OAuth login
-			await authProvider.loginWithOAuth2(provider);
+			// Route through LoginManager (not the authProvider directly) so
+			// this.user gets set and notifyListeners() fires — see TR-10,
+			// #e7bca9fb — otherwise main.ts's post-login hook never runs.
+			await this.loginManager.loginWithOAuth2(provider, this.serverId);
 
 			new Notice(`Successfully logged in with ${provider}!`);
 			this.close();

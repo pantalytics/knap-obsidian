@@ -302,7 +302,11 @@
 			if (authProvider) {
 				try {
 					new Notice(`Starting OAuth login with ${serverInfo.features.oauth_provider}...`);
-					await authProvider.loginWithOAuth2(serverInfo.features.oauth_provider);
+					// Route through LoginManager (not the authProvider directly) so
+					// this.user gets set and notifyListeners() fires — see TR-10,
+					// #e7bca9fb — otherwise main.ts's post-login hook never runs and
+					// shares/live-sync don't start until the plugin is reloaded.
+					await plugin.loginManager.loginWithOAuth2(serverInfo.features.oauth_provider, server.id);
 					new Notice(`Logged in to ${server.name}`);
 					refreshAuthStatus();
 					return;
