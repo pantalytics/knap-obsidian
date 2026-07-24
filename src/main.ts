@@ -859,8 +859,15 @@ export default class Live extends Plugin {
 							(sharedFolder) => sharedFolder.path === file.path,
 						);
 						if (!folder) {
-							// Folder is not shared yet - offer to share in relay-onprem mode
-							if (this.loginManager.isRelayOnPremMode() && this.loginManager.isLoggedInToAnyServer()) {
+							// Folder is not shared yet - offer to share in relay-onprem mode,
+							// unless it's nested with an existing share (TR-30): Relay doesn't
+							// support overlapping shares, so don't even offer the option.
+							const nestingConflict = this.sharedFolders.findNestingConflict(file.path);
+							if (
+								!nestingConflict &&
+								this.loginManager.isRelayOnPremMode() &&
+								this.loginManager.isLoggedInToAnyServer()
+							) {
 								menu.addItem((item) => {
 									item
 										.setTitle("Relay: share folder")

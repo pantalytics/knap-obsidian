@@ -50,6 +50,7 @@ import { SyncSettingsManager, type SyncFlags } from "./SyncSettings";
 import { ContentAddressedFileStore, SyncFile, isSyncFile } from "./SyncFile";
 import { Canvas, isCanvas } from "./Canvas";
 import { flags } from "./flagManager";
+import { findNestingConflictPath } from "./sharedFolderNesting";
 
 export interface SharedFolderSettings {
 	guid: string;
@@ -1969,6 +1970,25 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 		return folder;
 	}
 
+	/**
+	 * Returns the existing SharedFolder that would conflict by nesting with `path`,
+	 * in either direction: `path` is a subfolder of an existing share, or `path`
+	 * would itself contain an existing share. Null if sharing `path` is safe.
+	 *
+	 * Relay does not support nested shares -- two SharedFolders covering
+	 * overlapping files race on which one processes a given file (TR-30).
+	 * Single source of truth so callers (the file-menu UI and the actual
+	 * creation guard in _new()) can't drift out of sync with each other.
+	 */
+	findNestingConflict(path: string): SharedFolder | null {
+		const existingPaths = this.items().map((folder) => folder.path);
+		const conflictPath = findNestingConflictPath(path, existingPaths, sep);
+		if (conflictPath === null) {
+			return null;
+		}
+		return this.find((folder) => folder.path === conflictPath) ?? null;
+	}
+
 	destroy() {
 		this.items().forEach((folder) => {
 			folder.destroy();
@@ -2037,6 +2057,12 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 		const samePath = this.find((folder) => folder.path == path);
 		if (samePath) {
 			throw new Error("Conflict: Tracked folder exists at this location.");
+		}
+		const nestingConflict = this.findNestingConflict(path);
+		if (nestingConflict) {
+			throw new Error(
+				`Conflict: nested shares are not supported (existing share at ${nestingConflict.path}).`,
+			);
 		}
 		const folder = this.folderBuilder(path, guid, relayId, awaitingUpdates);
 		this._set.add(folder);
