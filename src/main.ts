@@ -1802,19 +1802,41 @@ export default class Live extends Plugin {
 
 		this.registerEvent(
 			this.app.vault.on("modify", (tfile) => {
+				// InboundFileDownloader writes sync-artifact content via
+				// vault.adapter.writeBinary(), which still fires this "modify" event
+				// (the underlying file-system watcher doesn't distinguish it from a
+				// user edit) — without this guard, our own inbound download for an
+				// unconnected Document was mistaken for a local edit and enqueued
+				// right back out via backgroundSync.enqueueSync(), which reconciles
+				// by diffing the vault file against the Y.Doc's CURRENT text
+				// (BackgroundSync.ts syncDocumentWebsocket). If a second client's
+				// edit had merged into that Y.Doc between the inbound write and this
+				// handler firing, the echoed sync would treat the (now-stale)
+				// inbound content as the "local edit" and reconcile against it,
+				// demoting the second client's genuine edit into a conflict-copy
+				// file (TR-01's reconcileWithConflictCopy prevents outright data
+				// loss, but this is still a spurious, avoidable conflict).
+				// Previously only the web-auto-sync branch below checked this
+				// (v1.9); this mirrors the same guard onto the SharedFolder/Document
+				// path (U4).
+				const isInboundEcho =
+					this.inboundFileDownloader?.isInboundWriting(tfile.path) ?? false;
+
 				const folder = this.sharedFolders.lookup(tfile.path);
 				if (folder) {
 					vaultLog("Modify", tfile.path);
-					const file = folder.proxy.getFile(tfile);
-					if (file && isSyncFile(file)) {
-						void file.sync();
-					}
-					// For Documents (folder share files): if the file has no active
-					// WS connection, edits bypass Y.Text entirely (no live CM binding).
-					// Enqueue a background sync to push vault content to relay.
-					// When connected, LiveCMPluginValue handles sync automatically.
-					if (file && isDocument(file) && !file.connected) {
-						void folder.backgroundSync.enqueueSync(file);
+					if (!isInboundEcho) {
+						const file = folder.proxy.getFile(tfile);
+						if (file && isSyncFile(file)) {
+							void file.sync();
+						}
+						// For Documents (folder share files): if the file has no active
+						// WS connection, edits bypass Y.Text entirely (no live CM binding).
+						// Enqueue a background sync to push vault content to relay.
+						// When connected, LiveCMPluginValue handles sync automatically.
+						if (file && isDocument(file) && !file.connected) {
+							void folder.backgroundSync.enqueueSync(file);
+						}
 					}
 					// Trigger metadata resolve with the actual TFile (not our Document proxy)
 					this.timeProvider.setTimeout(() => {
@@ -1823,8 +1845,7 @@ export default class Live extends Plugin {
 				}
 
 				// Handle auto-sync to web (v1.8.1); skip if InboundFileDownloader is writing (echo-loop guard, v1.9)
-				if (this.webSyncManager && tfile instanceof TFile &&
-					!this.inboundFileDownloader?.isInboundWriting(tfile.path)) {
+				if (this.webSyncManager && tfile instanceof TFile && !isInboundEcho) {
 					void this.webSyncManager.onFileModified(tfile);
 				}
 			}),
