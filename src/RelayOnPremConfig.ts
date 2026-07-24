@@ -365,3 +365,25 @@ export function getDefaultServer(settings: RelayOnPremSettings): RelayOnPremServ
 	}
 	return settings.servers[0];
 }
+
+/**
+ * Return a new settings object with the given server's lastUserEmail set,
+ * for persisting via NamespacedSettings.update(). Leaves settings unchanged
+ * (same reference) if the server isn't found, so callers can skip a no-op
+ * write by comparing references.
+ */
+export function withUpdatedLastUserEmail(
+	settings: RelayOnPremSettings,
+	serverId: string,
+	email: string
+): RelayOnPremSettings {
+	if (!getServerById(settings, serverId)) {
+		return settings;
+	}
+	return {
+		...settings,
+		servers: settings.servers.map((s) =>
+			s.id === serverId ? { ...s, lastUserEmail: email } : s
+		),
+	};
+}

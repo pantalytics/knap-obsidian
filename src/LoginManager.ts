@@ -13,7 +13,7 @@ import type { IAuthProvider } from "./auth/IAuthProvider";
 import { isRelayOnPremMode } from "./auth/AuthProviderFactory";
 import { loginWithEmailPassword, loginWithOAuth2 as loginWithOAuth2Ext, logoutUser, getCurrentUserFromProvider } from "./LoginManagerExtensions";
 import type { RelayOnPremSettings, RelayOnPremServer } from "./RelayOnPremConfig";
-import { getServerById } from "./RelayOnPremConfig";
+import { getServerById, withUpdatedLastUserEmail } from "./RelayOnPremConfig";
 import { Observable } from "./observable/Observable";
 import { MultiServerAuthManager, type ServerAuthStatus } from "./auth/MultiServerAuthManager";
 
@@ -206,6 +206,7 @@ export class LoginManager extends Observable<LoginManager> {
 		public loginSettings: NamespacedSettings<LoginSettings>,
 		endpointManager: EndpointManager,
 		relayOnPremSettings?: RelayOnPremSettings,
+		private relayOnPremSettingsStore?: NamespacedSettings<RelayOnPremSettings>,
 	) {
 		super();
 		const pbLog = curryLog("[Pocketbase]", "debug");
@@ -855,12 +856,20 @@ export class LoginManager extends Observable<LoginManager> {
 		try {
 			await this.multiServerAuthManager.loginToServer(serverId, email, password);
 
-			// Update server's lastUserEmail in settings
+			// Update server's lastUserEmail in settings. Mutate the in-memory
+			// snapshot for immediate reads within this session, AND persist
+			// via NamespacedSettings.update() (TR-53) — mutating the snapshot
+			// alone never reaches disk, so lastUserEmail was lost on restart.
 			if (this.relayOnPremSettings) {
 				const server = getServerById(this.relayOnPremSettings, serverId);
 				if (server) {
 					server.lastUserEmail = email;
 				}
+			}
+			if (this.relayOnPremSettingsStore) {
+				await this.relayOnPremSettingsStore.update((current) =>
+					withUpdatedLastUserEmail(current, serverId, email)
+				);
 			}
 
 			// If this is the active server, update the current user

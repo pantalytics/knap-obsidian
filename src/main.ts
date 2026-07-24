@@ -596,6 +596,7 @@ export default class Live extends Plugin {
 			this.loginSettings,
 			endpointManager,
 			this.relayOnPremSettings.get(),
+			this.relayOnPremSettings,
 		);
 		this.relayManager = new RelayManager(this.loginManager);
 		this.sharedFolders = new SharedFolders(
