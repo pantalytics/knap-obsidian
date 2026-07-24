@@ -14,6 +14,7 @@ import type { ClientToken } from "./client/types";
 import { S3RN, type S3RNType } from "./S3RN";
 import { encodeClientToken } from "./client/types";
 import { flags } from "./flagManager";
+import { computeReconnectDelay } from "./reconnectThrottle";
 
 export interface Subscription {
 	on: () => void;
@@ -36,7 +37,7 @@ function makeProvider(
 			connect: false,
 			params: params,
 			disableBc: true,
-			maxConnectionErrors: 3,
+			// TR-12: no cap — see YSweetProvider's maxConnectionErrors default.
 		},
 	);
 
@@ -61,6 +62,10 @@ export class HasProvider extends HasLogging {
 	_providerSynced: boolean = false;
 	private _offConnectionError: () => void;
 	private _offState: () => void;
+	private _lastConnectionErrorReconnectAt = 0;
+	// Same Node-vs-DOM setTimeout return-type ambiguity provider.ts's
+	// _resyncInterval/_checkInterval fields already work around.
+	private _pendingConnectionErrorReconnect?: ReturnType<typeof setTimeout> | number;
 	listeners: Map<unknown, Listener>;
 
 	constructor(
@@ -97,7 +102,7 @@ export class HasProvider extends HasLogging {
 				const shouldConnect = this._provider.canReconnect();
 				this.disconnect();
 				if (shouldConnect) {
-					void this.connect();
+					this.scheduleConnectionErrorReconnect();
 				}
 			},
 		);
@@ -199,6 +204,40 @@ export class HasProvider extends HasLogging {
 
 	public get connected(): boolean {
 		return this.state.status === "connected";
+	}
+
+	/**
+	 * TR-12: this.connect() here refreshes the auth token before retrying
+	 * (unlike _provider's own onclose-driven reconnect, which just recreates
+	 * the WebSocket against its existing, possibly-now-stale, URL) — needed
+	 * so a token-expiry-caused disconnect can actually recover instead of
+	 * retrying forever with a dead token. That's still required.
+	 *
+	 * What's NOT still required is calling it with zero delay: this handler
+	 * used to be implicitly throttled by the same wsUnsuccessfulReconnects/
+	 * maxConnectionErrors counter capping reconnection out at 3 attempts
+	 * total. Now that _provider retries forever (TR-12), this path needs
+	 * its OWN floor — otherwise a fast-failing connection (e.g. DNS
+	 * refusal, immediate server rejection) fires connect() in a tight,
+	 * un-backed-off loop on every single attempt, forever. Throttle to at
+	 * most once per _provider.maxBackoffTime, matching the steady-state
+	 * rate _provider's own retry loop settles into.
+	 */
+	private scheduleConnectionErrorReconnect(): void {
+		if (this._pendingConnectionErrorReconnect !== undefined) {
+			return;
+		}
+		const delay = computeReconnectDelay(
+			Date.now(),
+			this._lastConnectionErrorReconnectAt,
+			this._provider.maxBackoffTime,
+		);
+
+		this._pendingConnectionErrorReconnect = window.setTimeout(() => {
+			this._pendingConnectionErrorReconnect = undefined;
+			this._lastConnectionErrorReconnectAt = Date.now();
+			void this.connect();
+		}, delay);
 	}
 
 	connect(): Promise<boolean> {
@@ -326,6 +365,10 @@ export class HasProvider extends HasLogging {
 	}
 
 	destroy() {
+		if (this._pendingConnectionErrorReconnect !== undefined) {
+			window.clearTimeout(this._pendingConnectionErrorReconnect as number);
+			this._pendingConnectionErrorReconnect = undefined;
+		}
 		if (this._offConnectionError) {
 			this._offConnectionError();
 		}

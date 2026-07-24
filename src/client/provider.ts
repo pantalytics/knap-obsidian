@@ -346,7 +346,16 @@ export class YSweetProvider extends Observable<string> {
 			resyncInterval = -1,
 			maxBackoffTime = 2500,
 			disableBc = false,
-			maxConnectionErrors = 3,
+			// TR-12: was 3 — after a brief relay-server outage (deploy restart,
+			// 5-30s) the old default exhausted all 3 attempts in ~0.7s (backoff
+			// starts at 100ms, doubling), then canReconnect() went permanently
+			// false. Nothing else re-armed it automatically — recovery needed an
+			// editor view switch or a control-plane health flap (which doesn't
+			// even observe the relay-server itself). Uncapped attempt count +
+			// maxBackoffTime's existing interval cap (still 2500ms by default)
+			// is the actual safety mechanism: retry forever, never faster than
+			// once per maxBackoffTime.
+			maxConnectionErrors = Infinity,
 		}: YSweetProviderParams = {},
 	) {
 		super();
