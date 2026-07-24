@@ -191,6 +191,18 @@ export class RelayOnPremTokenProvider {
 				throw new RateLimitError(retryAfterMs, `Token request rate limited for doc ${docId}`);
 			}
 
+			if (response.status === 403 && mode === "write") {
+				// The caller always requests "write" regardless of the member's actual
+				// share role (see LiveTokenStoreRefresh.ts) — the control-plane correctly
+				// 403s a viewer's write request (ensure_write_access), but without this
+				// fallback that 403 propagated as a hard connection failure, leaving
+				// viewer-role members unable to open onprem relay shares at all (U3).
+				this.log(
+					`Write access denied for doc ${docId} — retrying as read-only (viewer role)`
+				);
+				return this.requestToken(relayId, folderId, docId, "read", filePath);
+			}
+
 			if (!response.ok) {
 				const errorText = await response.text();
 				throw new Error(`Token request failed: ${response.status} - ${errorText}`);

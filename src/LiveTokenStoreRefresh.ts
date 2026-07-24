@@ -148,7 +148,10 @@ async function refreshRelayOnPrem(
 			entityInfo.relayId,
 			entityInfo.folderId,
 			entityInfo.docId,
-			"write", // TODO: Determine read/write based on context
+			// Always request "write" — RelayOnPremTokenProvider.requestToken falls
+			// back to "read" on a 403 (viewer-role member), so this doesn't need to
+			// pre-determine the member's role client-side (U3).
+			"write",
 			filePath // Pass file path for folder share validation
 		);
 

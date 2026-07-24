@@ -118,3 +118,91 @@ describe("RelayOnPremTokenProvider.updateControlPlaneUrl", () => {
 		);
 	});
 });
+
+/**
+ * Tests for the write->read fallback (U3, Mesh #eb6ab38f).
+ *
+ * The caller (LiveTokenStoreRefresh.ts) always requests mode "write" regardless
+ * of the member's actual share role. The control-plane correctly 403s a
+ * viewer's write request (app/services/share_service.py::ensure_write_access,
+ * verified live against tr-relay-vm + its own test_viewer_cannot_write test) --
+ * without this fallback that 403 propagated as a hard connection failure,
+ * leaving viewer-role members unable to open onprem relay shares at all.
+ */
+describe("RelayOnPremTokenProvider.requestToken write->read fallback", () => {
+	beforeEach(() => {
+		jest.useFakeTimers();
+		mockFetch.mockClear();
+	});
+
+	afterEach(() => {
+		jest.useRealTimers();
+	});
+
+	function mockResponse(status: number, data: RelayTokenResponse | null) {
+		return Promise.resolve({
+			ok: status >= 200 && status < 300,
+			status,
+			text: async () => (data ? JSON.stringify(data) : "Write access denied"),
+			json: async () => data,
+			headers: new Headers(),
+		} as Response);
+	}
+
+	test("a 403 on a write request is retried once as read, and succeeds", async () => {
+		let calls = 0;
+		mockFetch.mockImplementation((_url, init) => {
+			calls++;
+			const body = JSON.parse((init as RequestInit).body as string);
+			if (body.mode === "write") {
+				return mockResponse(403, null);
+			}
+			expect(body.mode).toBe("read");
+			return mockResponse(200, TOKEN_RESPONSE);
+		});
+
+		const provider = new RelayOnPremTokenProvider({
+			controlPlaneUrl: "https://relay.example.com",
+			authProvider: makeAuthProvider(),
+		});
+
+		const request = provider.requestToken("relay1", "folder1", "doc1", "write");
+		await jest.advanceTimersByTimeAsync(2_400); // the retry queues behind the throttle
+		const clientToken = await request;
+
+		expect(calls).toBe(2);
+		expect(clientToken.authorization).toBe("read-only");
+		expect(clientToken.token).toBe(TOKEN_RESPONSE.token);
+	});
+
+	test("a 403 on an explicit read request does NOT retry (no infinite loop)", async () => {
+		mockFetch.mockImplementation(() => mockResponse(403, null));
+
+		const provider = new RelayOnPremTokenProvider({
+			controlPlaneUrl: "https://relay.example.com",
+			authProvider: makeAuthProvider(),
+		});
+
+		const request = provider.requestToken("relay1", "folder1", "doc1", "read");
+		const assertion = expect(request).rejects.toThrow(/403/);
+		await jest.advanceTimersByTimeAsync(0);
+		await assertion;
+		expect(mockFetch).toHaveBeenCalledTimes(1);
+	});
+
+	test("an editor's write request still succeeds on the first try, no fallback triggered", async () => {
+		mockFetch.mockImplementation(() => mockResponse(200, TOKEN_RESPONSE));
+
+		const provider = new RelayOnPremTokenProvider({
+			controlPlaneUrl: "https://relay.example.com",
+			authProvider: makeAuthProvider(),
+		});
+
+		const request = provider.requestToken("relay1", "folder1", "doc1", "write");
+		await jest.advanceTimersByTimeAsync(0);
+		const clientToken = await request;
+
+		expect(mockFetch).toHaveBeenCalledTimes(1);
+		expect(clientToken.authorization).toBe("full");
+	});
+});
