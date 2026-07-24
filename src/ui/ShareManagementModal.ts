@@ -13,6 +13,7 @@ import { FolderSuggestModal } from "./FolderSuggestModal";
 import { getDefaultServer, type RelayOnPremServer } from "../RelayOnPremConfig";
 import { S3RN } from "../S3RN";
 import { confirmDialog, promptDialog } from "./dialogs";
+import { withOutboundSyncGuard } from "../WebSyncManager";
 
 export class ShareManagementModal extends Modal {
 	private shares: ShareWithServer[] = [];
@@ -836,18 +837,23 @@ export class ShareManagementModal extends Modal {
 
 			let updatedShare;
 
+			// TR-25-followup (#1d244fb4): manual "sync now" push, bypasses
+			// WebSyncManager's own syncFile()/syncFolderFile() — echo-guard it
+			// the same way, per-push (guard is ref-counted, safe to wrap each
+			// push individually rather than the whole function).
 			if (this.plugin.shareClientManager) {
 				console.debug("[WebSync] Using shareClientManager, serverId:", this.selectedShare.serverId);
-				updatedShare = await this.plugin.shareClientManager.updateShare(
-					this.selectedShare.serverId,
-					this.selectedShare.id,
-					{ web_folder_items: items }
+				const clientManager = this.plugin.shareClientManager;
+				const share = this.selectedShare;
+				updatedShare = await withOutboundSyncGuard(this.plugin.webSyncManager, () =>
+					clientManager.updateShare(share.serverId, share.id, { web_folder_items: items })
 				);
 			} else if (this.plugin.shareClient) {
 				console.debug("[WebSync] Using shareClient (single-server)");
-				updatedShare = await this.plugin.shareClient.updateShare(
-					this.selectedShare.id,
-					{ web_folder_items: items }
+				const client = this.plugin.shareClient;
+				const share = this.selectedShare;
+				updatedShare = await withOutboundSyncGuard(this.plugin.webSyncManager, () =>
+					client.updateShare(share.id, { web_folder_items: items })
 				);
 			} else {
 				throw new Error("No share client available");
@@ -881,17 +887,15 @@ export class ShareManagementModal extends Modal {
 							if (content) {
 								if (this.plugin.shareClientManager) {
 									console.debug("[WebSync] Calling syncFolderFileContent for:", item.path);
-									await this.plugin.shareClientManager.syncFolderFileContent(
-										this.selectedShare.serverId,
-										slug,
-										item.path,
-										content
+									const clientManager = this.plugin.shareClientManager;
+									const serverId = this.selectedShare.serverId;
+									await withOutboundSyncGuard(this.plugin.webSyncManager, () =>
+										clientManager.syncFolderFileContent(serverId, slug, item.path, content)
 									);
 								} else if (this.plugin.shareClient) {
-									await this.plugin.shareClient.syncFolderFileContent(
-										slug,
-										item.path,
-										content
+									const client = this.plugin.shareClient;
+									await withOutboundSyncGuard(this.plugin.webSyncManager, () =>
+										client.syncFolderFileContent(slug, item.path, content)
 									);
 								}
 								syncedFiles++;

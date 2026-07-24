@@ -52,6 +52,25 @@ export class WebSyncManager {
 		this._outboundSyncCount = Math.max(0, this._outboundSyncCount - 1);
 	}
 
+	/**
+	 * Run an outbound content push under the echo-guard, for callers OUTSIDE
+	 * this class's own debounced auto-sync paths (TR-25-followup, #1d244fb4)
+	 * — manual "Sync All"/"Sync Current File" commands, the stale-share
+	 * startup catch-up, and the Settings/Detail-view "sync now" actions all
+	 * push content directly via the share client, bypassing syncFile()/
+	 * syncFolderFile() (those methods only handle pre-registered auto-sync
+	 * shares). Without this, InboundSyncPoller/InboundFileDownloader could
+	 * race a manual push the same way TR-25 fixed for the debounced path.
+	 */
+	async runOutboundSync<T>(fn: () => Promise<T>): Promise<T> {
+		this._beginOutboundSync();
+		try {
+			return await fn();
+		} finally {
+			this._endOutboundSync();
+		}
+	}
+
 	// Debounced sync function per file path (doc shares — keyed by the doc's own path)
 	private debouncedSyncMap: Map<string, () => void> = new Map();
 
@@ -567,4 +586,21 @@ export class WebSyncManager {
 		this.debouncedSyncMap.clear();
 		this.debouncedFolderFileSyncMap.clear();
 	}
+}
+
+/**
+ * Run an outbound content push under the WebSyncManager echo-guard if one is
+ * available, else just run it (TR-25-followup, #1d244fb4). Callers — main.ts's
+ * manual/full-sync commands, ShareManagementModal.ts, ShareDetailView.svelte —
+ * may run before webSyncManager is initialized (or in a context that never
+ * constructs one), so this degrades gracefully rather than throwing.
+ */
+export async function withOutboundSyncGuard<T>(
+	webSyncManager: WebSyncManager | undefined,
+	fn: () => Promise<T>
+): Promise<T> {
+	if (webSyncManager) {
+		return webSyncManager.runOutboundSync(fn);
+	}
+	return fn();
 }

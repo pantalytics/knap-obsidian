@@ -1389,51 +1389,59 @@ export default class Live extends Plugin {
 			}
 
 			// 2. Sync web-published shares
+			// TR-25-followup (#1d244fb4): pushes content directly via
+			// shareClientManager, bypassing WebSyncManager's own syncFile()/
+			// syncFolderFile() — wrap in the same echo-guard those use so
+			// InboundSyncPoller/InboundFileDownloader don't race this manual
+			// push the way TR-25 fixed for the debounced auto-sync path.
+			const { withOutboundSyncGuard } = await import("./WebSyncManager");
 			let webSynced = 0;
 			const webShares = shares.filter(s => s.web_published);
-			for (const share of webShares) {
-				try {
-					if (share.kind === "doc") {
-						const file = this.vault.getAbstractFileByPath(share.path);
-						if (file instanceof TFile) {
-							const content = await this.vault.read(file);
-							await this.shareClientManager.updateShare(share.serverId, share.id, {
-								web_content: content,
-							});
-							webSynced++;
-						}
-					} else if (share.kind === "folder") {
-						const folderAbs = this.vault.getAbstractFileByPath(share.path);
-						if (folderAbs instanceof TFolder) {
-							// 1. Build recursive folder items and PATCH structure
-							const items = this.getFolderItemsRecursive(folderAbs);
-							await this.shareClientManager.updateShare(share.serverId, share.id, {
-								web_folder_items: items,
-							});
-							// 2. POST content for each doc/canvas
-							if (share.web_slug) {
-								for (const item of items) {
-									if (item.type === "doc" || item.type === "canvas") {
-										try {
-											const filePath = `${share.path}/${item.path}`;
-											const f = this.vault.getAbstractFileByPath(filePath);
-											if (f instanceof TFile) {
-												const content = await this.vault.read(f);
-												await this.shareClientManager.syncFolderFileContent(
-													share.serverId, share.web_slug, item.path, content
-												);
-												webSynced++;
-											}
-										} catch { /* skip individual file errors */ }
+			await withOutboundSyncGuard(this.webSyncManager, async () => {
+				for (const share of webShares) {
+					try {
+						if (share.kind === "doc") {
+							const file = this.vault.getAbstractFileByPath(share.path);
+							if (file instanceof TFile) {
+								const content = await this.vault.read(file);
+								await this.shareClientManager!.updateShare(share.serverId, share.id, {
+									web_content: content,
+								});
+								webSynced++;
+							}
+						} else if (share.kind === "folder") {
+							const folderAbs = this.vault.getAbstractFileByPath(share.path);
+							if (folderAbs instanceof TFolder) {
+								// 1. Build recursive folder items and PATCH structure
+								const items = this.getFolderItemsRecursive(folderAbs);
+								await this.shareClientManager!.updateShare(share.serverId, share.id, {
+									web_folder_items: items,
+								});
+								// 2. POST content for each doc/canvas
+								if (share.web_slug) {
+									for (const item of items) {
+										if (item.type === "doc" || item.type === "canvas") {
+											try {
+												const filePath = `${share.path}/${item.path}`;
+												const f = this.vault.getAbstractFileByPath(filePath);
+												if (f instanceof TFile) {
+													const content = await this.vault.read(f);
+													await this.shareClientManager!.syncFolderFileContent(
+														share.serverId, share.web_slug, item.path, content
+													);
+													webSynced++;
+												}
+											} catch { /* skip individual file errors */ }
+										}
 									}
 								}
 							}
 						}
+					} catch (e: unknown) {
+						console.error(`Failed to sync ${share.path}:`, e);
 					}
-				} catch (e: unknown) {
-					console.error(`Failed to sync ${share.path}:`, e);
 				}
-			}
+			});
 
 			const parts = [];
 			if (relaySynced > 0) parts.push(`${relaySynced} relay`);
@@ -1447,50 +1455,56 @@ export default class Live extends Plugin {
 	private async _initialFullSync(shares: ShareWithServer[]): Promise<void> {
 		if (!this.shareClientManager) return;
 		this.log("Running initial full-sync for stale auto-sync shares", shares.length);
-		for (const share of shares) {
-			try {
-				const folderAbs = this.vault.getAbstractFileByPath(share.path);
-				if (!(folderAbs instanceof TFolder)) {
-					this.log("Folder not in vault, skipping initial full-sync", share.path);
-					continue;
-				}
-				const items = this.getFolderItemsRecursive(folderAbs);
-				await this.shareClientManager.updateShare(share.serverId, share.id, {
-					web_folder_items: items,
-				});
-				if (share.web_slug) {
-					let syncedCount = 0;
-					for (const item of items) {
-						if (item.type === "doc" || item.type === "canvas") {
-							try {
-								const f = this.vault.getAbstractFileByPath(`${share.path}/${item.path}`);
-								if (f instanceof TFile) {
-									const content = await this.vault.read(f);
-									if (!content) {
-										this.log("Skipping empty file in initial full-sync", item.path);
-										continue;
+		// TR-25-followup (#1d244fb4): same echo-guard as syncAllShares() —
+		// this pushes content directly, bypassing WebSyncManager's own
+		// syncFile()/syncFolderFile().
+		const { withOutboundSyncGuard } = await import("./WebSyncManager");
+		await withOutboundSyncGuard(this.webSyncManager, async () => {
+			for (const share of shares) {
+				try {
+					const folderAbs = this.vault.getAbstractFileByPath(share.path);
+					if (!(folderAbs instanceof TFolder)) {
+						this.log("Folder not in vault, skipping initial full-sync", share.path);
+						continue;
+					}
+					const items = this.getFolderItemsRecursive(folderAbs);
+					await this.shareClientManager!.updateShare(share.serverId, share.id, {
+						web_folder_items: items,
+					});
+					if (share.web_slug) {
+						let syncedCount = 0;
+						for (const item of items) {
+							if (item.type === "doc" || item.type === "canvas") {
+								try {
+									const f = this.vault.getAbstractFileByPath(`${share.path}/${item.path}`);
+									if (f instanceof TFile) {
+										const content = await this.vault.read(f);
+										if (!content) {
+											this.log("Skipping empty file in initial full-sync", item.path);
+											continue;
+										}
+										await this.shareClientManager!.syncFolderFileContent(
+											share.serverId, share.web_slug, item.path, content
+										);
+										syncedCount++;
+										await new Promise<void>(r => window.setTimeout(r, 200));
 									}
-									await this.shareClientManager.syncFolderFileContent(
-										share.serverId, share.web_slug, item.path, content
-									);
-									syncedCount++;
-									await new Promise<void>(r => window.setTimeout(r, 200));
+								} catch (e: unknown) {
+									this.log("Failed to sync file in initial full-sync", item.path, String(e));
 								}
-							} catch (e: unknown) {
-								this.log("Failed to sync file in initial full-sync", item.path, String(e));
 							}
 						}
+						this.log("Initial full-sync done for share", share.path, syncedCount, "of", items.length);
 					}
-					this.log("Initial full-sync done for share", share.path, syncedCount, "of", items.length);
+					// Bump web_content_updated_at so the stale check won't re-trigger on next startup
+					await this.shareClientManager!.updateShare(share.serverId, share.id, {
+						web_content_updated_at: new Date().toISOString(),
+					});
+				} catch (e: unknown) {
+					this.log("Initial full-sync failed for share", share.path, String(e));
 				}
-				// Bump web_content_updated_at so the stale check won't re-trigger on next startup
-				await this.shareClientManager.updateShare(share.serverId, share.id, {
-					web_content_updated_at: new Date().toISOString(),
-				});
-			} catch (e: unknown) {
-				this.log("Initial full-sync failed for share", share.path, String(e));
 			}
-		}
+		});
 	}
 
 	/**
@@ -1511,33 +1525,39 @@ export default class Live extends Plugin {
 		try {
 			const shares = await this.shareClientManager.getAllSharesFlat();
 
-			// Check direct doc share match
-			const docShare = shares.find(s => s.path === activeFile.path && s.web_published);
-			if (docShare) {
-				const content = await this.vault.read(activeFile);
-				await this.shareClientManager.updateShare(docShare.serverId, docShare.id, {
-					web_content: content,
-				});
-				new Notice(`Synced ${activeFile.name} to web`);
-				return;
-			}
+			// TR-25-followup (#1d244fb4): same echo-guard as syncAllShares() —
+			// pushes content directly, bypassing WebSyncManager's own
+			// syncFile()/syncFolderFile().
+			const { withOutboundSyncGuard } = await import("./WebSyncManager");
+			await withOutboundSyncGuard(this.webSyncManager, async () => {
+				// Check direct doc share match
+				const docShare = shares.find(s => s.path === activeFile.path && s.web_published);
+				if (docShare) {
+					const content = await this.vault.read(activeFile);
+					await this.shareClientManager!.updateShare(docShare.serverId, docShare.id, {
+						web_content: content,
+					});
+					new Notice(`Synced ${activeFile.name} to web`);
+					return;
+				}
 
-			// Check if file is inside a folder share
-			const folderShare = shares.find(s =>
-				s.kind === "folder" && s.web_published && s.web_slug &&
-				activeFile.path.startsWith(s.path + "/")
-			);
-			if (folderShare && folderShare.web_slug) {
-				const content = await this.vault.read(activeFile);
-				const relativePath = activeFile.path.substring(folderShare.path.length + 1);
-				await this.shareClientManager.syncFolderFileContent(
-					folderShare.serverId, folderShare.web_slug, relativePath, content
+				// Check if file is inside a folder share
+				const folderShare = shares.find(s =>
+					s.kind === "folder" && s.web_published && s.web_slug &&
+					activeFile.path.startsWith(s.path + "/")
 				);
-				new Notice(`Synced ${activeFile.name} to web`);
-				return;
-			}
+				if (folderShare && folderShare.web_slug) {
+					const content = await this.vault.read(activeFile);
+					const relativePath = activeFile.path.substring(folderShare.path.length + 1);
+					await this.shareClientManager!.syncFolderFileContent(
+						folderShare.serverId, folderShare.web_slug, relativePath, content
+					);
+					new Notice(`Synced ${activeFile.name} to web`);
+					return;
+				}
 
-			new Notice("Current file is not in a web-published share");
+				new Notice("Current file is not in a web-published share");
+			});
 		} catch (error: unknown) {
 			new Notice(`Sync failed: ${error instanceof Error ? error.message : "Unknown error"}`);
 		}

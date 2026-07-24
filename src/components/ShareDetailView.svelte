@@ -10,6 +10,7 @@
 	import { FolderSuggestModal } from "../ui/FolderSuggestModal";
 	import { S3RN } from "../S3RN";
 	import { confirmDialog, promptDialog, choiceDialog } from "../ui/dialogs";
+	import { withOutboundSyncGuard } from "../WebSyncManager";
 
 	export let plugin: Live;
 	export let server: RelayOnPremServer;
@@ -361,6 +362,9 @@
 		}
 	}
 
+	// TR-25-followup (#1d244fb4): this "sync now" action pushes content
+	// directly, bypassing WebSyncManager's own syncFile()/syncFolderFile() —
+	// echo-guard each push the same way (guard is ref-counted, safe per-call).
 	async function syncWebContent() {
 		if (currentShare.kind === "doc") {
 			try {
@@ -368,9 +372,13 @@
 				if (!content) { new Notice("Could not read document"); return; }
 				let updated;
 				if (plugin.shareClientManager) {
-					updated = await plugin.shareClientManager.updateShare(share.serverId, share.id, { web_content: content });
+					updated = await withOutboundSyncGuard(plugin.webSyncManager, () =>
+						plugin.shareClientManager!.updateShare(share.serverId, share.id, { web_content: content })
+					);
 				} else if (plugin.shareClient) {
-					updated = await plugin.shareClient.updateShare(share.id, { web_content: content });
+					updated = await withOutboundSyncGuard(plugin.webSyncManager, () =>
+						plugin.shareClient!.updateShare(share.id, { web_content: content })
+					);
 				}
 				if (updated) currentShare = { ...currentShare, ...updated };
 				new Notice("Content synced!");
@@ -383,9 +391,13 @@
 				if (items.length === 0) { new Notice("Folder empty"); return; }
 				let updated;
 				if (plugin.shareClientManager) {
-					updated = await plugin.shareClientManager.updateShare(share.serverId, share.id, { web_folder_items: items });
+					updated = await withOutboundSyncGuard(plugin.webSyncManager, () =>
+						plugin.shareClientManager!.updateShare(share.serverId, share.id, { web_folder_items: items })
+					);
 				} else if (plugin.shareClient) {
-					updated = await plugin.shareClient.updateShare(share.id, { web_folder_items: items });
+					updated = await withOutboundSyncGuard(plugin.webSyncManager, () =>
+						plugin.shareClient!.updateShare(share.id, { web_folder_items: items })
+					);
 				}
 				if (updated) currentShare = { ...currentShare, ...updated };
 
@@ -399,9 +411,15 @@
 								const content = await getDocumentContent(`${currentShare.path}/${item.path}`);
 								if (content) {
 									if (plugin.shareClientManager) {
-										await plugin.shareClientManager.syncFolderFileContent(share.serverId, slug, item.path, content);
+										const clientManager = plugin.shareClientManager;
+										await withOutboundSyncGuard(plugin.webSyncManager, () =>
+											clientManager.syncFolderFileContent(share.serverId, slug, item.path, content)
+										);
 									} else if (plugin.shareClient) {
-										await plugin.shareClient.syncFolderFileContent(slug, item.path, content);
+										const client = plugin.shareClient;
+										await withOutboundSyncGuard(plugin.webSyncManager, () =>
+											client.syncFolderFileContent(slug, item.path, content)
+										);
 									}
 									synced++;
 								}

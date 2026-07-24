@@ -19,7 +19,7 @@
 
 import { describe, test, expect, jest, beforeEach, afterEach } from "@jest/globals";
 import { TFile, Vault, noticeMock } from "obsidian";
-import { WebSyncManager } from "../src/WebSyncManager";
+import { WebSyncManager, withOutboundSyncGuard } from "../src/WebSyncManager";
 import type { RelayOnPremShareClientManager } from "../src/RelayOnPremShareClientManager";
 
 function makeVault(fileContents: Record<string, string> = {}): Vault {
@@ -473,5 +473,104 @@ describe("WebSyncManager — isOutboundSyncing echo-guard (TR-25, #652db7ce)", (
 		await manager.onFileModified(new TFile("notes/note.md"));
 
 		expect(manager.isOutboundSyncing).toBe(false);
+	});
+});
+
+describe("WebSyncManager.runOutboundSync / withOutboundSyncGuard (TR-25-followup, #1d244fb4)", () => {
+	// TR-25 wired isOutboundSyncing into the debounced auto-sync paths
+	// (onFileModified -> syncFile/syncFolderFile) but manual/full-sync
+	// callers (main.ts's "Sync All"/"Sync Current File" commands, the
+	// stale-share startup catch-up, and Settings/Detail-view "sync now")
+	// push content directly via the share client, bypassing those methods
+	// entirely — the guard never engaged for them. These tests cover the
+	// public API those callers now use instead.
+
+	test("runOutboundSync: isOutboundSyncing is true while fn is in flight, false once it resolves", async () => {
+		const vault = makeVault();
+		const clientManager = makeClientManager();
+		const manager = new WebSyncManager(vault, clientManager);
+		const pending = deferred<string>();
+
+		const resultPromise = manager.runOutboundSync(() => pending.promise);
+
+		await Promise.resolve();
+		expect(manager.isOutboundSyncing).toBe(true);
+
+		pending.resolve("done");
+		expect(await resultPromise).toBe("done");
+		expect(manager.isOutboundSyncing).toBe(false);
+	});
+
+	test("runOutboundSync: resets to false even when fn throws, and rethrows", async () => {
+		const vault = makeVault();
+		const clientManager = makeClientManager();
+		const manager = new WebSyncManager(vault, clientManager);
+
+		await expect(
+			manager.runOutboundSync(async () => {
+				throw new Error("push failed");
+			})
+		).rejects.toThrow("push failed");
+
+		expect(manager.isOutboundSyncing).toBe(false);
+	});
+
+	test("runOutboundSync: stays true while ONE of two overlapping calls is still in flight (shares the ref-count with the debounced path)", async () => {
+		const vault = makeVault();
+		const clientManager = makeClientManager();
+		const manager = new WebSyncManager(vault, clientManager);
+		const pendingA = deferred<void>();
+		const pendingB = deferred<void>();
+
+		const a = manager.runOutboundSync(() => pendingA.promise);
+		const b = manager.runOutboundSync(() => pendingB.promise);
+
+		await Promise.resolve();
+		expect(manager.isOutboundSyncing).toBe(true);
+
+		pendingA.resolve();
+		await a;
+		expect(manager.isOutboundSyncing).toBe(true); // B still in flight
+
+		pendingB.resolve();
+		await b;
+		expect(manager.isOutboundSyncing).toBe(false);
+	});
+
+	test("withOutboundSyncGuard: engages the guard when a manager is provided", async () => {
+		const vault = makeVault();
+		const clientManager = makeClientManager();
+		const manager = new WebSyncManager(vault, clientManager);
+		const pending = deferred<void>();
+
+		const resultPromise = withOutboundSyncGuard(manager, () => pending.promise);
+
+		await Promise.resolve();
+		expect(manager.isOutboundSyncing).toBe(true);
+
+		pending.resolve();
+		await resultPromise;
+		expect(manager.isOutboundSyncing).toBe(false);
+	});
+
+	test("withOutboundSyncGuard: degrades gracefully (still runs fn) when no manager is available", async () => {
+		let ran = false;
+		const result = await withOutboundSyncGuard(undefined, async () => {
+			ran = true;
+			return "value";
+		});
+
+		expect(ran).toBe(true);
+		expect(result).toBe("value");
+	});
+
+	test("withOutboundSyncGuard: propagates fn's return value through a real manager", async () => {
+		const vault = makeVault();
+		const clientManager = makeClientManager();
+		const manager = new WebSyncManager(vault, clientManager);
+
+		const result = await withOutboundSyncGuard(manager, async () => 42);
+
+		expect(result).toBe(42);
 	});
 });
