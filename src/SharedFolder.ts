@@ -30,6 +30,7 @@ import { RelayInstances } from "./debug";
 import { LocalStorage } from "./LocalStorage";
 import { SyncFolder, isSyncFolder } from "./SyncFolder";
 import { isDocument } from "./Document";
+import { findByPath, hasUnsyncedEdit } from "./preserveBeforeTrash";
 import { SyncStore } from "./SyncStore";
 import {
 	SyncType,
@@ -939,7 +940,28 @@ export class SharedFolder extends HasProvider {
 			const filePending = this.pendingUpload.has(vpath);
 			if (fileInFolder && isSyncableFile && !fileInMap && !filePending) {
 				diffLog.push(`deleted local file ${vpath} for remotely deleted doc`);
-				const promise = this.vault.adapter.trashLocal(file.path);
+				// A remote delete races with an offline local edit the same way
+				// TR-01's reconcile did — the difference is this path destroys
+				// the file outright instead of overwriting it. Preserve any
+				// unsynced edit as a conflict-copy first (TR-42, #121a9874);
+				// folders have no content of their own to preserve. Fail
+				// CLOSED like TR-01's reconcileWithConflictCopy: if we can't
+				// positively confirm it's safe (nothing to preserve, or the
+				// preserve step actually succeeded), skip the trash this
+				// cycle rather than risk destroying an edit we couldn't check.
+				const promise = (
+					file instanceof TFile
+						? this.preserveUnsyncedDocumentBeforeTrash(vpath)
+						: Promise.resolve(true)
+				).then((safeToTrash) => {
+					if (!safeToTrash) {
+						diffLog.push(
+							`skipped trashing ${vpath} — could not confirm no unsynced edits`,
+						);
+						return;
+					}
+					return this.vault.adapter.trashLocal(file.path);
+				});
 				deletes.push({
 					op: "delete",
 					path: vpath,
@@ -950,6 +972,82 @@ export class SharedFolder extends HasProvider {
 		files.forEach(sync);
 		folders.forEach(sync);
 		return deletes;
+	}
+
+	/**
+	 * Before a remote-delete cleanup trashes a local file, check whether it
+	 * has unsynced edits and preserve them as a conflict-copy instead of
+	 * letting `trashLocal` silently discard them (TR-42, #121a9874).
+	 *
+	 * By the time cleanupExtraLocalFiles runs, the remote deletion has
+	 * already removed this path's syncStore entry (a CRDT map removal),
+	 * so there's no "last known synced hash" left to compare against for
+	 * that path. The one thing that CAN still hold the last-synced content
+	 * is a live Document object in `this.files` — nothing clears it in
+	 * response to a remote delete, so for a Document whose session hasn't
+	 * restarted since it was last synced, `doc.text` still reflects that
+	 * state. Comparing the on-disk file against it is the same technique
+	 * TR-01's reconcileWithConflictCopy uses, applied to the delete path.
+	 *
+	 * Returns whether it's safe to proceed with the trash. Fails CLOSED,
+	 * matching TR-01's reconcileWithConflictCopy: any step we can't
+	 * positively confirm (couldn't read the file, couldn't write the
+	 * conflict-copy) returns false rather than falling through to trash —
+	 * an orphaned local file left behind for the next cleanup pass to
+	 * retry is strictly safer than destroying content we couldn't verify.
+	 *
+	 * Known gaps (not fixed here, scoped out for this P3 fix):
+	 * - If the app restarted between the last sync and the remote delete,
+	 *   `this.files` has no entry for this path — nothing left to safely
+	 *   compare against, so this falls back to the existing trash behavior.
+	 * - `this.files` is keyed by GUID and never pruned on a remote delete,
+	 *   so a path that's been deleted-then-recreated more than once in the
+	 *   same session could have more than one entry matching `vpath`.
+	 *   `findByPath` returns the LAST match by iteration order (Map
+	 *   iteration = insertion order), which is the most-recently-created —
+	 *   i.e. the live one — but an old orphaned entry at the same path is
+	 *   still possible in principle; this doesn't attempt to prune it.
+	 * - Only Documents are covered — Canvas has the identical shape (a
+	 *   live `HasProvider`-backed object with on-disk-mirroring content)
+	 *   and the same underlying gap, but is out of scope for this fix.
+	 */
+	private async preserveUnsyncedDocumentBeforeTrash(
+		vpath: string,
+	): Promise<boolean> {
+		const doc = findByPath(this.files.values(), vpath, isDocument) as
+			| Document
+			| undefined;
+		if (!doc) {
+			return true;
+		}
+
+		let onDiskContent: string;
+		try {
+			onDiskContent = await this.read(doc);
+		} catch (e: unknown) {
+			this.warn(`Could not read ${vpath} before trashing`, e);
+			return false;
+		}
+
+		if (!hasUnsyncedEdit(onDiskContent, doc.text)) {
+			return true; // matches the last known synced content — nothing to preserve
+		}
+
+		try {
+			const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+			const conflictPath = await this.writeConflictCopy(
+				doc,
+				onDiskContent,
+				`relay deleted ${timestamp}`,
+			);
+			this.log(
+				`Preserved unsynced edits to ${vpath} at ${conflictPath} before remote-delete cleanup`,
+			);
+			return true;
+		} catch (e: unknown) {
+			this.warn(`Failed to write conflict copy for ${vpath} before trashing`, e);
+			return false;
+		}
 	}
 
 	syncByType(
