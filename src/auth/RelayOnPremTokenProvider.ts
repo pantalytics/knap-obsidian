@@ -7,7 +7,7 @@
 
 import { customFetch } from "../customFetch";
 import { curryLog } from "../debug";
-import type { ClientToken } from "../client/types";
+import type { ClientToken, FileToken } from "../client/types";
 import type { IAuthProvider } from "./IAuthProvider";
 
 export interface RelayTokenRequest {
@@ -21,6 +21,19 @@ export interface RelayTokenRequest {
 export interface RelayTokenResponse {
 	relay_url: string;
 	token: string;
+	expires_at: string;
+}
+
+export interface FileTokenRequest {
+	path: string;
+	sha256: string;
+	content_type: string;
+	content_length: number;
+}
+
+export interface FileTokenApiResponse {
+	token: string;
+	base_url: string;
 	expires_at: string;
 }
 
@@ -231,8 +244,26 @@ export class RelayOnPremTokenProvider {
 	}
 
 	/**
-	 * Request a file token for attachment access
-	 * Note: relay-onprem may need a separate endpoint for this
+	 * Request a file token for attachment (CAS) access — HEAD/download-url/
+	 * upload-url on POST /shares/{id}/file-token's response. Unlike
+	 * requestToken (relay-token for the WebSocket doc connection), this
+	 * mints a presigned-URL-flavored token: CAS.ts reads only `baseUrl` and
+	 * `token` off the result and does HEAD/GET/POST against
+	 * `baseUrl` (+ "/download-url" | "/upload-url"). See CAS.ts for the
+	 * exact three-call contract this token is consumed by.
+	 *
+	 * Requests one token per operation without stating read/write intent
+	 * (same call shape for verify/readFile/writeFile) — the backend
+	 * independently re-checks read vs write access at each of the three
+	 * consuming routes, so this mint only needs read access to succeed.
+	 *
+	 * Storage key is `fileId` (the S3RemoteFile UUID), not the vault path:
+	 * CAS.ts's call chain (SyncFile -> getFileToken(documentId, ...)) never
+	 * threads the vault-relative path down to this layer, and re-deriving it
+	 * would mean changing CAS.ts's own call signature. fileId is already
+	 * available (decoded from documentId one layer up in fetchFileToken),
+	 * stable across renames, and unique per attachment within a share — a
+	 * better storage key than a path would be anyway.
 	 */
 	async requestFileToken(
 		relayId: string,
@@ -241,11 +272,83 @@ export class RelayOnPremTokenProvider {
 		fileHash: string,
 		contentType: string,
 		contentLength: number,
-		filePath?: string
-	): Promise<ClientToken> {
-		// For now, use the same endpoint as document tokens
-		// TODO: Implement separate file token endpoint if needed
-		return this.requestToken(relayId, folderId, fileId, "read", filePath);
+	): Promise<FileToken> {
+		const token = await this.config.authProvider.getValidToken();
+
+		if (!token) {
+			throw new Error("Not authenticated");
+		}
+
+		this.log(`Requesting file token for ${fileId} in folder ${folderId}`);
+
+		const request: FileTokenRequest = {
+			path: fileId,
+			sha256: fileHash,
+			content_type: contentType,
+			content_length: contentLength,
+		};
+
+		await this.throttle.acquire();
+
+		try {
+			const response = await customFetch(
+				`${this.normalizedUrl}/shares/${folderId}/file-token`,
+				{
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						Authorization: `Bearer ${token}`,
+					},
+					body: JSON.stringify(request),
+				}
+			);
+
+			if (response.status === 429) {
+				const retryAfterSec = parseInt(response.headers.get("Retry-After") ?? "60", 10);
+				const retryAfterMs = (isNaN(retryAfterSec) ? 60 : retryAfterSec) * 1000;
+				const errorText = await response.text().catch(() => "");
+				console.warn(
+					`[DIAG][RelayOnPremTokenProvider] 429 rate limited for file-token ${fileId}. retryAfter=${retryAfterMs}ms body=${errorText}`
+				);
+				throw new RateLimitError(
+					retryAfterMs,
+					`File token request rate limited for ${fileId}`
+				);
+			}
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(`File token request failed: ${response.status} - ${errorText}`);
+			}
+
+			const data = (await response.json()) as FileTokenApiResponse;
+			const expiresAt = new Date(data.expires_at);
+
+			const fileToken: FileToken = {
+				token: data.token,
+				// CAS.ts does `token.baseUrl!` then customFetch(baseUrl, ...) —
+				// must be populated, `url` is unused by CAS.ts but required by
+				// the ClientToken shape, reuse the same value rather than "".
+				baseUrl: data.base_url,
+				url: data.base_url,
+				docId: fileId,
+				folder: folderId,
+				expiryTime: expiresAt.getTime(),
+				// Not read by CAS.ts (verified) — real read/write enforcement
+				// happens server-side per-route, not via this cached label.
+				authorization: "full",
+				contentType,
+				contentLength,
+				fileHash,
+			};
+
+			this.log(`Successfully obtained file token for ${fileId}, expires at ${data.expires_at}`);
+
+			return fileToken;
+		} catch (error: unknown) {
+			this.log("File token request error:", error);
+			throw error;
+		}
 	}
 
 	destroy() {

@@ -36,9 +36,11 @@ export interface ClientToken {
 
 	authorization?: "full" | "read-only";
 	expiryTime?: number;
-	contentType?: number;
+	/** MIME type, e.g. "image/png" — not a number despite the field name pattern of its siblings. */
+	contentType?: string;
 	contentLength?: number;
-	fileHash?: number;
+	/** Hex-encoded content hash (sha256) — a string, not a number. */
+	fileHash?: string;
 }
 
 export interface FileToken extends ClientToken {
@@ -50,9 +52,9 @@ export interface FileToken extends ClientToken {
 	token: string;
 
 	expiryTime: number;
-	contentType: number;
+	contentType: string;
 	contentLength: number;
-	fileHash: number;
+	fileHash: string;
 }
 
 function stringToBase64(input: string) {

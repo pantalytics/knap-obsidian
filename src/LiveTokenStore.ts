@@ -172,19 +172,33 @@ export class LiveTokenStore extends TokenStore<ClientToken> {
 		const debug = curryLog("[TokenStore][Fetch]", "debug");
 		debug(`${documentId}`);
 		const entity: S3RNType = S3RN.decode(documentId);
-		let payload: string;
-		if (entity instanceof S3RemoteFile) {
-			payload = JSON.stringify({
-				docId: entity.fileId,
-				relay: entity.relayId,
-				folder: entity.folderId,
-				hash: fileHash,
-				contentType,
-				contentLength,
-			});
-		} else {
+		if (!(entity instanceof S3RemoteFile)) {
 			throw new Error(`No remote to connect to for ${documentId}`);
 		}
+
+		// TR-09: mirror universalRefresh's isRelayOnPremMode/tokenProvider branch
+		// (LiveTokenStoreRefresh.ts) — this method previously always hit the
+		// System-3 API regardless of mode, so CAS.ts's verify/readFile/writeFile
+		// silently used an empty API URL in relay-onprem builds.
+		if (this.isRelayOnPremMode && this.relayOnPremTokenProvider) {
+			return this.relayOnPremTokenProvider.requestFileToken(
+				entity.relayId,
+				entity.folderId,
+				entity.fileId,
+				fileHash,
+				contentType,
+				contentLength,
+			);
+		}
+
+		const payload = JSON.stringify({
+			docId: entity.fileId,
+			relay: entity.relayId,
+			folder: entity.folderId,
+			hash: fileHash,
+			contentType,
+			contentLength,
+		});
 		if (!this.loginManager.loggedIn) {
 			throw new Error("Not logged in");
 		}

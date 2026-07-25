@@ -15,6 +15,7 @@ import { describe, test, expect, jest, beforeEach, afterEach } from "@jest/globa
 import {
 	RelayOnPremTokenProvider,
 	type RelayTokenResponse,
+	type FileTokenApiResponse,
 } from "../../src/auth/RelayOnPremTokenProvider";
 import type { IAuthProvider } from "../../src/auth/IAuthProvider";
 
@@ -204,5 +205,175 @@ describe("RelayOnPremTokenProvider.requestToken write->read fallback", () => {
 
 		expect(mockFetch).toHaveBeenCalledTimes(1);
 		expect(clientToken.authorization).toBe("full");
+	});
+});
+
+/**
+ * Tests for requestFileToken (TR-09) — the attachment (CAS) presigned-URL
+ * token flow, wired into LiveTokenStore.fetchFileToken's relay-onprem
+ * branch. Hits POST /shares/{id}/file-token, distinct from requestToken's
+ * /tokens/relay (WebSocket doc connection). CAS.ts (untouched by this task)
+ * reads only `token.baseUrl` and `token.token` off the result and does
+ * HEAD/GET/POST against baseUrl (+ "/download-url" | "/upload-url") — so the
+ * returned FileToken MUST have baseUrl populated, not just `url`.
+ */
+describe("RelayOnPremTokenProvider.requestFileToken", () => {
+	beforeEach(() => {
+		jest.useFakeTimers();
+		mockFetch.mockClear();
+	});
+
+	afterEach(() => {
+		jest.useRealTimers();
+	});
+
+	const FILE_TOKEN_RESPONSE: FileTokenApiResponse = {
+		token: "file-scoped-token",
+		base_url: "https://cp.example.com/shares/folder1/files/file1",
+		expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+	};
+
+	function mockFileTokenResponse(status: number, data: FileTokenApiResponse | null) {
+		return Promise.resolve({
+			ok: status >= 200 && status < 300,
+			status,
+			text: async () => (data ? JSON.stringify(data) : "error body"),
+			json: async () => data,
+			headers: new Headers(),
+		} as Response);
+	}
+
+	test("POSTs to /shares/{folderId}/file-token with fileId as the path, sha256/content_type/content_length in the body", async () => {
+		mockFetch.mockImplementation(() => mockFileTokenResponse(200, FILE_TOKEN_RESPONSE));
+
+		const provider = new RelayOnPremTokenProvider({
+			controlPlaneUrl: "https://cp.example.com",
+			authProvider: makeAuthProvider(),
+		});
+
+		const request = provider.requestFileToken(
+			"relay1",
+			"folder1",
+			"file1",
+			"deadbeef",
+			"image/png",
+			12345,
+		);
+		await jest.advanceTimersByTimeAsync(0);
+		await request;
+
+		expect(mockFetch).toHaveBeenCalledWith(
+			"https://cp.example.com/shares/folder1/file-token",
+			expect.objectContaining({
+				method: "POST",
+				headers: expect.objectContaining({
+					Authorization: "Bearer fake-token",
+					"Content-Type": "application/json",
+				}),
+				body: JSON.stringify({
+					path: "file1",
+					sha256: "deadbeef",
+					content_type: "image/png",
+					content_length: 12345,
+				}),
+			}),
+		);
+	});
+
+	test("maps base_url into token.baseUrl (and mirrors it into token.url) — CAS.ts does a non-null assertion on baseUrl", async () => {
+		mockFetch.mockImplementation(() => mockFileTokenResponse(200, FILE_TOKEN_RESPONSE));
+
+		const provider = new RelayOnPremTokenProvider({
+			controlPlaneUrl: "https://cp.example.com",
+			authProvider: makeAuthProvider(),
+		});
+
+		const request = provider.requestFileToken(
+			"relay1",
+			"folder1",
+			"file1",
+			"deadbeef",
+			"image/png",
+			12345,
+		);
+		await jest.advanceTimersByTimeAsync(0);
+		const fileToken = await request;
+
+		expect(fileToken.baseUrl).toBe(FILE_TOKEN_RESPONSE.base_url);
+		expect(fileToken.url).toBe(FILE_TOKEN_RESPONSE.base_url);
+		expect(fileToken.token).toBe("file-scoped-token");
+		expect(fileToken.docId).toBe("file1");
+		expect(fileToken.folder).toBe("folder1");
+		expect(fileToken.contentType).toBe("image/png");
+		expect(fileToken.contentLength).toBe(12345);
+		expect(fileToken.fileHash).toBe("deadbeef");
+	});
+
+	test("throws when not authenticated, without hitting the network", async () => {
+		const provider = new RelayOnPremTokenProvider({
+			controlPlaneUrl: "https://cp.example.com",
+			authProvider: {
+				...makeAuthProvider(),
+				getValidToken: async () => undefined,
+			},
+		});
+
+		await expect(
+			provider.requestFileToken("relay1", "folder1", "file1", "deadbeef", "image/png", 12345),
+		).rejects.toThrow("Not authenticated");
+		expect(mockFetch).not.toHaveBeenCalled();
+	});
+
+	test("429 throws RateLimitError with the parsed Retry-After delay", async () => {
+		mockFetch.mockImplementation(() =>
+			Promise.resolve({
+				ok: false,
+				status: 429,
+				text: async () => "slow down",
+				json: async () => null,
+				headers: new Headers({ "Retry-After": "12" }),
+			} as Response),
+		);
+
+		const provider = new RelayOnPremTokenProvider({
+			controlPlaneUrl: "https://cp.example.com",
+			authProvider: makeAuthProvider(),
+		});
+
+		const request = provider.requestFileToken(
+			"relay1",
+			"folder1",
+			"file1",
+			"deadbeef",
+			"image/png",
+			12345,
+		);
+		const assertion = expect(request).rejects.toMatchObject({
+			name: "RateLimitError",
+			retryAfterMs: 12_000,
+		});
+		await jest.advanceTimersByTimeAsync(0);
+		await assertion;
+	});
+
+	test("a non-ok, non-429 response throws with the status and body text", async () => {
+		mockFetch.mockImplementation(() => mockFileTokenResponse(403, null));
+
+		const provider = new RelayOnPremTokenProvider({
+			controlPlaneUrl: "https://cp.example.com",
+			authProvider: makeAuthProvider(),
+		});
+
+		const request = provider.requestFileToken(
+			"relay1",
+			"folder1",
+			"file1",
+			"deadbeef",
+			"image/png",
+			12345,
+		);
+		const assertion = expect(request).rejects.toThrow(/403/);
+		await jest.advanceTimersByTimeAsync(0);
+		await assertion;
 	});
 });
