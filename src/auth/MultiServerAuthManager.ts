@@ -9,7 +9,7 @@ import { curryLog } from "../debug";
 import type { RelayOnPremServer } from "../RelayOnPremConfig";
 import type { AuthUser } from "./IAuthProvider";
 import { RelayOnPremAuthProvider } from "./RelayOnPremAuthProvider";
-import { RelayOnPremAuthStore } from "./RelayOnPremAuthStore";
+import { RelayOnPremAuthStore, getAuthStore } from "./RelayOnPremAuthStore";
 
 export interface ServerAuthStatus {
 	serverId: string;
@@ -33,7 +33,14 @@ export class MultiServerAuthManager {
 		private onSessionExpired?: (serverId: string) => void,
 	) {
 		this.appId = appId;
-		this.authStore = new RelayOnPremAuthStore(appId);
+		// Use the shared singleton (not `new RelayOnPremAuthStore(...)`) — it's the
+		// SAME instance RelayOnPremAuthProvider reads/writes through (also via
+		// getAuthStore). A separate instance's clear()/save() never touches the
+		// singleton's in-memory storageFallback cache, which _storageGet() falls
+		// back to (and resurrects into localStorage) when the real localStorage
+		// key is missing — clearing through a different instance is a no-op from
+		// the provider's point of view (TR-55).
+		this.authStore = getAuthStore(appId);
 
 		// Initialize providers for all configured servers
 		for (const server of servers) {
@@ -75,10 +82,26 @@ export class MultiServerAuthManager {
 	}
 
 	/**
-	 * Update server configuration (recreates the provider)
+	 * Update server configuration (recreates the provider).
+	 *
+	 * The auth store is keyed by serverId, not URL — if the control-plane URL
+	 * changes but the id stays the same, a naive recreate would let the new
+	 * provider restore the OLD host's stored token from localStorage and send
+	 * it to the NEW host's /v1/auth/refresh (TR-55). Clear stored auth for
+	 * this id first whenever the URL actually changed, forcing a fresh login
+	 * against the new host instead of carrying the old token forward.
 	 */
 	updateServer(server: RelayOnPremServer): void {
 		this.log(`Updating server: ${server.name} (${server.id})`);
+
+		const oldProvider = this.providers.get(server.id);
+		const oldUrl = oldProvider?.getControlPlaneUrl();
+		const newUrl = server.controlPlaneUrl.replace(/\/+$/, "");
+		if (oldUrl !== undefined && oldUrl !== newUrl) {
+			this.log(`Server ${server.id} URL changed (${oldUrl} -> ${newUrl}), clearing stored auth`);
+			this.authStore.clear(server.id);
+		}
+
 		// Remove old provider if exists
 		this.providers.delete(server.id);
 		// Create new provider with updated config

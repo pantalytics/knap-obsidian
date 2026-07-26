@@ -95,6 +95,13 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 	}
 
 	/**
+	 * Get the normalized control-plane URL this provider is configured for.
+	 */
+	getControlPlaneUrl(): string {
+		return this.normalizedUrl;
+	}
+
+	/**
 	 * Restore authentication from localStorage if available.
 	 * If the token is expired but we have a refresh token, attempt to refresh.
 	 * IMPORTANT: Never clear auth on refresh failure — keep refresh token for retry.
