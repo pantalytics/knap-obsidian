@@ -3,7 +3,7 @@
 	import { createEventDispatcher } from "svelte";
 	import type Live from "../main";
 	import type { RelayOnPremServer } from "../RelayOnPremConfig";
-	import { EVC_SERVER_ID, generateServerId, validateServerConfig } from "../RelayOnPremConfig";
+	import { EVC_SERVER_ID, generateServerId, validateServerConfig, findDuplicateServer } from "../RelayOnPremConfig";
 	import { RelayOnPremLoginModal } from "../ui/RelayOnPremLoginModal";
 	import { customFetch } from "../customFetch";
 	import { confirmDialog } from "../ui/dialogs";
@@ -184,6 +184,17 @@
 
 		// Generate or use existing ID (prefer server's own ID if available)
 		const serverId = editingServer?.id || serverInfo?.id || generateServerId(newControlPlaneUrl);
+
+		// Reject adding a server that duplicates an existing one (same id or
+		// same URL under a different id) — editing an existing entry is exempt,
+		// it's expected to keep its own id.
+		if (!editingServer) {
+			const duplicate = findDuplicateServer(servers, serverId, newControlPlaneUrl);
+			if (duplicate) {
+				formError = `"${duplicate.name}" already uses this URL. Edit that server instead of adding a duplicate.`;
+				return;
+			}
+		}
 
 		const serverConfig: RelayOnPremServer = {
 			id: serverId,

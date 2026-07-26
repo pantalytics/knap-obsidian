@@ -1,11 +1,12 @@
-import { withUpdatedLastUserEmail } from "../src/RelayOnPremConfig";
+import { withUpdatedLastUserEmail, findDuplicateServer } from "../src/RelayOnPremConfig";
 import type { RelayOnPremSettings, RelayOnPremServer } from "../src/RelayOnPremConfig";
 
 function makeServer(overrides: Partial<RelayOnPremServer> = {}): RelayOnPremServer {
 	return {
 		id: "server-1",
 		name: "Server 1",
-		controlPlaneUrl: "https://cp.example.com",
+		controlPlaneUrl: "https://cp.tr.entire.vc",
+		isValidated: true,
 		...overrides,
 	};
 }
@@ -68,5 +69,57 @@ describe("withUpdatedLastUserEmail", () => {
 
 		expect(updated.defaultServerId).toBe("server-1");
 		expect(updated.enabled).toBe(true);
+	});
+});
+
+describe("findDuplicateServer", () => {
+	test("finds a collision on matching generated id (same URL added twice)", () => {
+		const existing = [makeServer({ id: "cp-tr-entire-vc-443" })];
+
+		const duplicate = findDuplicateServer(
+			existing,
+			"cp-tr-entire-vc-443",
+			"https://cp.tr.entire.vc"
+		);
+
+		expect(duplicate).toBe(existing[0]);
+	});
+
+	test("finds a collision on matching URL under a different id", () => {
+		const existing = [
+			makeServer({ id: "server-custom-id", controlPlaneUrl: "https://cp.tr.entire.vc" }),
+		];
+
+		const duplicate = findDuplicateServer(
+			existing,
+			"cp-tr-entire-vc-443", // freshly generated id, differs from the stored custom id
+			"https://cp.tr.entire.vc"
+		);
+
+		expect(duplicate).toBe(existing[0]);
+	});
+
+	test("matches URLs that differ only by trailing slash or case", () => {
+		const existing = [makeServer({ controlPlaneUrl: "https://CP.tr.entire.vc/" })];
+
+		const duplicate = findDuplicateServer(existing, "some-new-id", "https://cp.tr.entire.vc");
+
+		expect(duplicate).toBe(existing[0]);
+	});
+
+	test("returns undefined when there's no collision", () => {
+		const existing = [makeServer({ id: "server-1", controlPlaneUrl: "https://cp.tr.entire.vc" })];
+
+		const duplicate = findDuplicateServer(
+			existing,
+			"other-host-443",
+			"https://other-host.example.com"
+		);
+
+		expect(duplicate).toBeUndefined();
+	});
+
+	test("returns undefined against an empty server list", () => {
+		expect(findDuplicateServer([], "any-id", "https://cp.tr.entire.vc")).toBeUndefined();
 	});
 });

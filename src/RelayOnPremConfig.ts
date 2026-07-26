@@ -387,3 +387,25 @@ export function withUpdatedLastUserEmail(
 		),
 	};
 }
+
+function normalizeControlPlaneUrl(url: string): string {
+	return url.trim().replace(/\/+$/, "").toLowerCase();
+}
+
+/**
+ * Find an existing server that would collide with a proposed add — same id
+ * (generateServerId is deterministic per URL, so re-adding the same URL
+ * produces the same id) or same URL under a different id (e.g. the server's
+ * own self-reported id differs from generateServerId's output). Returns
+ * undefined when there's no collision, i.e. the add is safe.
+ */
+export function findDuplicateServer(
+	servers: RelayOnPremServer[],
+	candidateId: string,
+	candidateUrl: string
+): RelayOnPremServer | undefined {
+	const normalizedCandidate = normalizeControlPlaneUrl(candidateUrl);
+	return servers.find(
+		(s) => s.id === candidateId || normalizeControlPlaneUrl(s.controlPlaneUrl) === normalizedCandidate
+	);
+}
