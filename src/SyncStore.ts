@@ -112,6 +112,20 @@ export class SyncStore extends Observable<SyncStore> {
 	}
 
 	/**
+	 * Discard a locally-minted-but-never-published guid for `vpath` (TR-15-
+	 * follow-up, #7c14871a): `get()` checks `pendingUpload` BEFORE the synced
+	 * `meta`/`legacyIds` maps, so a pendingUpload entry left behind after
+	 * losing the upload-claim race for this vpath would permanently shadow
+	 * the winner's guid once it syncs in. Deliberately narrower than
+	 * `delete()` — this must NOT touch `meta`/`legacyIds`, which may already
+	 * hold (or be about to receive) the winner's entry.
+	 */
+	clearPendingUpload(vpath: string): void {
+		this.assertVPath(vpath);
+		this.pendingUpload.delete(vpath);
+	}
+
+	/**
 	 * Ensure a file has a Y.Map metadata entry (filemeta_v0 + legacyIds).
 	 * Called from addLocalDocs() to write metadata that markUploaded() would
 	 * normally write after background sync completes. This ensures the relay

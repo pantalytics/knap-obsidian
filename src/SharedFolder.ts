@@ -30,7 +30,11 @@ import { RelayInstances } from "./debug";
 import { LocalStorage } from "./LocalStorage";
 import { SyncFolder, isSyncFolder } from "./SyncFolder";
 import { isDocument } from "./Document";
-import { findByPath, hasUnsyncedEdit, hasUnsyncedCanvasEdit } from "./preserveBeforeTrash";
+import {
+	findByPath,
+	hasUnsyncedEdit,
+	hasUnsyncedCanvasEdit,
+} from "./preserveBeforeTrash";
 import { SyncStore } from "./SyncStore";
 import {
 	SyncType,
@@ -52,6 +56,7 @@ import { ContentAddressedFileStore, SyncFile, isSyncFile } from "./SyncFile";
 import { Canvas, isCanvas } from "./Canvas";
 import { flags } from "./flagManager";
 import { findNestingConflictPath } from "./sharedFolderNesting";
+import { claimVpathIfUnclaimed, awaitVpathClaimSettled, wonVpathClaim } from "./uploadClaim";
 
 export interface SharedFolderSettings {
 	guid: string;
@@ -303,7 +308,7 @@ export class SharedFolder extends HasProvider {
 				}
 
 				console.debug(`[SharedFolder] ready to sync: path=${this.path}, synced=${this.synced}, authoritative=${this.authoritative}`);
-				this.addLocalDocs();
+				await this.addLocalDocs();
 				void this.syncFileTree(this.syncStore);
 			}
 		});
@@ -333,57 +338,88 @@ export class SharedFolder extends HasProvider {
 		RelayInstances.set(this, this.path);
 	}
 
-	private addLocalDocs = () => {
+	private addLocalDocs = async () => {
 		const syncTFiles = this.getSyncFiles();
 		const files: IFile[] = [];
 		const newPaths = this.placeHold(syncTFiles);
 
+		// Among the freshly-minted paths, Document/Canvas vpaths can race: two
+		// clients discovering the SAME brand-new vpath at once (e.g. both
+		// connecting to a brand-new shared folder that already has matching
+		// local files) each minted a DIFFERENT guid above -- placeHold()'s
+		// SyncStore.new() is a random uuidv4() into per-device LocalStorage,
+		// never seen by the other client, before either publishes to the
+		// shared meta map. Claim the vpath itself (there isn't a shared guid
+		// to claim yet) so only the winner's guid actually gets
+		// published/uploaded; the loser adopts the winner's guid instead of
+		// publishing its own orphan (TR-15-follow-up, #7c14871a). Canvas
+		// vpaths are excluded when canvas sync is disabled -- they fall
+		// through to the generic syncFile path below, same as before, which
+		// this claim doesn't cover.
+		const raceable = newPaths.filter((vpath) => {
+			if (Document.checkExtension(vpath)) return true;
+			if (Canvas.checkExtension(vpath)) return flags().enableCanvasSync;
+			return false;
+		});
+		const { lost } = await this.claimUploadPaths(raceable);
+		const lostPaths = new Set(lost);
+
 		// Ensure all local files have Y.Map metadata entries.
 		// This is critical: markUploaded() only runs after background sync completes,
 		// but if individual doc syncs hang (e.g., onceProviderSynced race condition),
-		// the Y.Map never gets entries and the relay stays empty.
-		this.ensureFileMetadata(syncTFiles);
+		// the Y.Map never gets entries and the relay stays empty. Vpaths this
+		// client lost the upload claim on are skipped here -- publishing their
+		// locally-minted guid would race the winner's own publish on the same
+		// key (see claimUploadPaths).
+		this.ensureFileMetadata(syncTFiles, lostPaths);
 
-		syncTFiles.forEach((tfile) => {
+		for (const tfile of syncTFiles) {
 			const vpath = this.getVirtualPath(tfile.path);
-			const upload = newPaths.contains(vpath);
+			const upload = newPaths.contains(vpath) && !lostPaths.has(vpath);
 
 			// Check if file already exists with correct type based on metadata
 			const existingFile = this.getFile(tfile, false);
 			if (existingFile) {
 				files.push(existingFile);
-				return;
+				continue;
 			}
 
 			// For new files, use upload/create logic based on extension and feature flags
 			if (tfile instanceof TFolder) {
 				const doc = this.getSyncFolder(vpath, false);
 				files.push(doc);
-				return;
+				continue;
 			}
 			if (Document.checkExtension(vpath)) {
 				if (upload) {
 					const doc = this.uploadDoc(vpath, false);
 					files.push(doc);
+				} else if (lostPaths.has(vpath)) {
+					const doc = await this.adoptWinnerDoc(vpath);
+					files.push(doc);
 				} else {
 					const doc = this.getDoc(vpath, false);
 					files.push(doc);
 				}
-				return;
+				continue;
 			}
 			if (Canvas.checkExtension(vpath)) {
 				if (upload) {
 					if (flags().enableCanvasSync) {
 						const doc = this.uploadCanvas(vpath, false);
 						files.push(doc);
-						return;
+						continue;
 					}
 					// fall through to syncFile
+				} else if (lostPaths.has(vpath) && flags().enableCanvasSync) {
+					const doc = await this.adoptWinnerCanvas(vpath);
+					files.push(doc);
+					continue;
 				} else {
 					const doc = this.getFile(tfile, false);
 					if (doc) {
 						files.push(doc);
-						return;
+						continue;
 					}
 				}
 			}
@@ -396,23 +432,235 @@ export class SharedFolder extends HasProvider {
 					files.push(file);
 				}
 			}
-		});
+		}
 		if (files.length > 0) {
 			this.fset.update();
 		}
 	};
 
 	/**
+	 * Runs the claim/settle/decide protocol (uploadClaim.ts) for each
+	 * candidate vpath in parallel and returns which ones this client won vs.
+	 * lost. A no-op (empty won/lost) for the common single-client case where
+	 * `vpaths` is empty.
+	 */
+	private async claimUploadPaths(
+		vpaths: string[],
+	): Promise<{ won: string[]; lost: string[] }> {
+		if (vpaths.length === 0) {
+			return { won: [], lost: [] };
+		}
+		const results = await Promise.all(
+			vpaths.map(async (vpath) => {
+				claimVpathIfUnclaimed(this.ydoc, vpath, this._provider.awareness);
+				await awaitVpathClaimSettled(this.ydoc, vpath, {
+					socket: this._provider.ws,
+				});
+				return { vpath, won: wonVpathClaim(this.ydoc, vpath) };
+			}),
+		);
+		return {
+			won: results.filter((r) => r.won).map((r) => r.vpath),
+			lost: results.filter((r) => !r.won).map((r) => r.vpath),
+		};
+	}
+
+	/**
+	 * Called for a Document vpath this client LOST the upload claim on --
+	 * another client is (or will shortly be) canonical for it. Discards the
+	 * guid this client would otherwise have minted for it (never published),
+	 * waits for the winner's guid to sync in and its content to arrive
+	 * (awaitDocSynced), then makes the winner's content canonical locally
+	 * too.
+	 *
+	 * Winner-wins, not vault-file-wins (Bill's sign-off, 2026-07-26,
+	 * reversing an earlier vault-file-wins draft of this method): the
+	 * winner's content is ALREADY published to the relay and may already be
+	 * visible to other peers, so overwriting it would propagate to
+	 * everyone; a diverging loser's local content is still purely local, so
+	 * archiving it stays confined to this one device. It's also
+	 * deterministic with more than two racing clients -- with N losers,
+	 * each makes exactly one local conflict-copy instead of a chain of
+	 * canon-overwrites (one per loser, in arbitrary arrival order) that
+	 * vault-file-wins would produce, re-opening the same class of race this
+	 * whole fix chain exists to close (TR-15, #1c52a010).
+	 *
+	 * Never mutates doc.ydoc/the relay at all -- only the local vault file.
+	 * This is what makes "every peer, including this loser, converges on
+	 * the winner's content" true BY CONSTRUCTION rather than something a
+	 * separate propagation step has to achieve: awaitDocSynced already
+	 * waited for the winner's synced state before this method ever reads
+	 * doc.text, so the canonical Y.Doc content is never touched, and the
+	 * only write here is bringing the LOCAL FILE in line with it.
+	 */
+	private async adoptWinnerDoc(vpath: string): Promise<Document> {
+		this.syncStore.clearPendingUpload(vpath);
+		await this.awaitVpathResolved(vpath);
+
+		const doc = this.getDoc(vpath, false);
+		await this.awaitDocSynced(doc);
+
+		let localContent: string;
+		try {
+			localContent = await this.read(doc);
+		} catch (e: unknown) {
+			this.warn(`Could not read ${vpath} to reconcile after losing the upload claim`, e);
+			return doc;
+		}
+
+		const winnerContent = doc.text;
+		if (!hasUnsyncedEdit(localContent, winnerContent)) {
+			return doc;
+		}
+
+		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+		try {
+			const conflictPath = await this.writeConflictCopy(
+				doc,
+				localContent,
+				`upload race ${timestamp}`,
+			);
+			await this.flush(doc, winnerContent);
+			this.log(
+				`[${doc.path}] Lost the upload-claim race and had different local content -- ` +
+					`adopted the winner's content, preserved ours at ${conflictPath}`,
+			);
+		} catch (e: unknown) {
+			this.warn(
+				`Failed to preserve local content for ${vpath} before adopting the upload-claim winner's content -- skipping to avoid silent data loss`,
+				e,
+			);
+		}
+		return doc;
+	}
+
+	/** Canvas equivalent of adoptWinnerDoc -- see its doc comment for the
+	 * winner-wins rationale. Canvas content is JSON, not plain text, so the
+	 * divergence check uses hasUnsyncedCanvasEdit (already the established
+	 * comparison for this codebase's Canvas content, see
+	 * preserveUnsyncedCanvasBeforeTrash) instead of hasUnsyncedEdit's plain
+	 * string equality. */
+	private async adoptWinnerCanvas(vpath: string): Promise<Canvas> {
+		this.syncStore.clearPendingUpload(vpath);
+		await this.awaitVpathResolved(vpath);
+
+		const canvas = this.getCanvas(vpath, false);
+		await this.awaitDocSynced(canvas);
+
+		let localContent: string;
+		try {
+			localContent = await this.read(canvas);
+		} catch (e: unknown) {
+			this.warn(`Could not read ${vpath} to reconcile after losing the upload claim`, e);
+			return canvas;
+		}
+
+		const syncedData = Canvas.exportCanvasData(canvas.ydoc);
+		if (!hasUnsyncedCanvasEdit(localContent, syncedData)) {
+			return canvas;
+		}
+
+		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+		try {
+			const conflictPath = await this.writeConflictCopy(
+				canvas,
+				localContent,
+				`upload race ${timestamp}`,
+			);
+			await this.flush(canvas, canvas.json);
+			this.log(
+				`[${canvas.path}] Lost the upload-claim race and had different local content -- ` +
+					`adopted the winner's content, preserved ours at ${conflictPath}`,
+			);
+		} catch (e: unknown) {
+			this.warn(
+				`Failed to preserve local content for ${vpath} before adopting the upload-claim winner's content -- skipping to avoid silent data loss`,
+				e,
+			);
+		}
+		return canvas;
+	}
+
+	/**
+	 * Waits until `vpath` resolves in the synced meta map (the winner's
+	 * publish has arrived) or `maxWaitMs` elapses. In the common case this
+	 * returns almost immediately -- awaitVpathClaimSettled already waited out
+	 * a quiet period on the SAME channel the winner's publish travels over.
+	 * A timeout (winner crashed after claiming, before publishing) is not
+	 * treated as fatal: the caller's subsequent getDoc()/getCanvas() call
+	 * will itself mint a fresh guid via its own internal placeHold() if the
+	 * vpath still isn't known, self-healing at the cost of bypassing this
+	 * claim for that rare double-failure case.
+	 */
+	private async awaitVpathResolved(vpath: string, maxWaitMs = 5000): Promise<boolean> {
+		const deadline = Date.now() + maxWaitMs;
+		while (!this.syncStore.has(vpath) && Date.now() < deadline) {
+			await new Promise<void>((resolve) => window.setTimeout(resolve, 100));
+		}
+		return this.syncStore.has(vpath);
+	}
+
+	/**
+	 * Waits for `doc`'s own websocket provider to report a real, authoritative
+	 * synced state (bounded by `maxWaitMs`) before the caller trusts its
+	 * content -- used by adoptWinnerDoc/adoptWinnerCanvas instead of
+	 * BackgroundSync.enqueueDownload().
+	 *
+	 * Deliberately does NOT use enqueueDownload() here: its underlying
+	 * getDocument() has a "server contains uninitialized doc" retry
+	 * (BackgroundSync.ts) that reschedules itself via a DETACHED
+	 * `timeProvider.setTimeout`, never chained into the promise
+	 * enqueueDownload returns -- so that promise resolves while doc.ydoc is
+	 * still empty, exactly in the timing window this method is called in
+	 * (right after the upload-claim settles, when the winner's own publish
+	 * may not have landed on the relay yet). Reconciling against
+	 * still-empty content would write a conflict-copy that doesn't actually
+	 * capture the winner's content, then apply this device's local content
+	 * on top -- and when the real winner content arrives moments later via
+	 * ordinary sync, Yjs merges it against this device's already-applied
+	 * diff-patch ops as two independent edit histories, reintroducing the
+	 * exact interleaved/duplicated-text failure this whole fix chain exists
+	 * to prevent (TR-15, #1c52a010), just in a narrower timing window.
+	 *
+	 * `onceProviderSynced()` is the websocket-based signal SharedFolder's
+	 * own constructor and BackgroundSync.syncDocumentWebsocket already rely
+	 * on for the same "wait for real synced state" need, and doesn't share
+	 * that gap -- it resolves off the live provider connection, not a
+	 * one-shot HTTP download with a detached retry.
+	 */
+	private async awaitDocSynced(doc: Document | Canvas, maxWaitMs = 30000): Promise<void> {
+		const synced = doc.onceProviderSynced();
+		const connected = await doc.connect();
+		if (!connected) {
+			this.warn(
+				`Connect failed for ${doc.path} while adopting the upload-claim winner's content`,
+			);
+			return;
+		}
+		await Promise.race([
+			synced,
+			new Promise<void>((resolve) => window.setTimeout(resolve, maxWaitMs)),
+		]);
+	}
+
+	/**
 	 * Ensure all local files have Y.Map metadata entries (filemeta_v0).
 	 * Without this, the relay has no file metadata and other devices
 	 * can't see the file list.
+	 *
+	 * `skip` excludes vpaths this client lost the upload-claim race on
+	 * (TR-15-follow-up, #7c14871a) -- their locally-minted guid must never be
+	 * published, since the winner is publishing their own guid for the same
+	 * vpath and both writing to `meta` would silently re-introduce the exact
+	 * divergent-guid race this method's caller (addLocalDocs) claims against.
 	 */
-	private ensureFileMetadata(syncTFiles: TAbstractFile[]) {
+	private ensureFileMetadata(syncTFiles: TAbstractFile[], skip?: Set<string>) {
 		let written = 0;
 		this.ydoc.transact(() => {
 			syncTFiles.forEach((file) => {
 				if (file instanceof TFolder) return;
 				const vpath = this.getVirtualPath(file.path);
+				if (skip?.has(vpath)) return;
 				const guid = this.syncStore.get(vpath);
 				if (!guid) return;
 
@@ -1901,6 +2149,49 @@ export class SharedFolder extends HasProvider {
 			}
 		}
 		throw new Error("unexpectedly unable to upload");
+	}
+
+	/**
+	 * Claim-protected entry point for callers OUTSIDE the addLocalDocs()
+	 * bulk-sync flow that discover a single new file and would otherwise
+	 * call placeHold()+uploadFile() directly -- e.g. main.ts's vault
+	 * "create" event, which (per its own long-standing comment) fires for
+	 * every pre-existing file at startup, including ones under a
+	 * freshly-loaded SharedFolder before that folder's own addLocalDocs()
+	 * has necessarily run. Without this, that handler mints-then-uploads
+	 * completely unprotected by the upload claim, re-opening the exact
+	 * divergent-guid race addLocalDocs() closes for the SAME "two clients
+	 * discover a brand-new shared vpath at once" scenario, just triggered by
+	 * a different Obsidian event (TR-15-follow-up, #7c14871a).
+	 */
+	async claimAndUploadFile(tfile: TAbstractFile): Promise<void> {
+		const vpath = this.getVirtualPath(tfile.path);
+		const newDocs = this.placeHold([tfile]);
+		if (newDocs.length === 0) {
+			// Already known -- ordinary existing-file path, unchanged.
+			await this.whenReady();
+			this.getFile(tfile);
+			return;
+		}
+
+		const raceable =
+			Document.checkExtension(vpath) ||
+			(Canvas.checkExtension(vpath) && flags().enableCanvasSync);
+		if (!raceable) {
+			this.uploadFile(tfile);
+			return;
+		}
+
+		const { lost } = await this.claimUploadPaths([vpath]);
+		if (lost.length === 0) {
+			this.uploadFile(tfile);
+			return;
+		}
+		if (Document.checkExtension(vpath)) {
+			await this.adoptWinnerDoc(vpath);
+		} else {
+			await this.adoptWinnerCanvas(vpath);
+		}
 	}
 
 	markPendingDelete(vpath: string) {

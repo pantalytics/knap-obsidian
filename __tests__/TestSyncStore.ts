@@ -391,6 +391,32 @@ describe("SyncStore", () => {
 			expect(store.has(path)).toBeTruthy();
 		});
 
+		test("clearPendingUpload discards a locally-minted guid without touching meta (TR-15-follow-up, #7c14871a)", () => {
+			const path = "test.md";
+			const localGuid = store.new(path);
+			expect(internal(store).pendingUpload.get(path)).toBe(localGuid);
+
+			store.clearPendingUpload(path);
+
+			expect(internal(store).pendingUpload.has(path)).toBeFalsy();
+			expect(store.has(path)).toBeFalsy();
+		});
+
+		test("clearPendingUpload does not remove an already-published meta entry for the same path", () => {
+			const path = "test.md";
+			const winnerGuid = "winner-guid";
+			store.markUploaded(path, makeDocumentMeta(winnerGuid));
+
+			// A stray local pendingUpload write for the same path (e.g. this
+			// client lost an upload-claim race but still called new() before
+			// realizing it) must not disturb the already-published meta entry.
+			internal(store).pendingUpload.set(path, "loser-guid");
+			store.clearPendingUpload(path);
+
+			expect(store.has(path)).toBeTruthy();
+			expect(store.get(path)).toBe(winnerGuid);
+		});
+
 		test("creates new folder", () => {
 			const path = "folder1";
 			store.new(path);

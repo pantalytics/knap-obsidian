@@ -1743,14 +1743,12 @@ export default class Live extends Plugin {
 				// NOTE: this is called on every file at startup...
 				const folder = this.sharedFolders.lookup(tfile.path);
 				if (folder) {
-					const newDocs = folder.placeHold([tfile]);
-					if (newDocs.length > 0) {
-						folder.uploadFile(tfile);
-					} else {
-						void folder.whenReady().then((folder) => {
-							folder.getFile(tfile);
-						});
-					}
+					// claimAndUploadFile() runs the same upload-claim protection
+					// addLocalDocs() has (TR-15-follow-up, #7c14871a) -- this event
+					// fires for pre-existing files too, so it can race a second
+					// client discovering the SAME brand-new vpath at once, same as
+					// the initial-sync path.
+					void folder.claimAndUploadFile(tfile);
 				}
 				// Update web_folder_items for auto-sync folder shares
 				if (this.webSyncManager && tfile instanceof TFile) {
