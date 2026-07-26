@@ -18,6 +18,7 @@ import type { CanvasData } from "./CanvasView";
 import { SyncFile, isSyncFile } from "./SyncFile";
 import { reconcileWithConflictCopy } from "./y-diffMatchPatch";
 import { waitForBufferFlush } from "./websocketFlush";
+import { claimInitIfUnclaimed, wonInitClaim, markInitDone, awaitClaimSettled } from "./initContentClaim";
 
 export interface QueueItem {
 	guid: string;
@@ -819,11 +820,26 @@ export class BackgroundSync extends HasLogging {
 		if (isRelayOnPrem && !contentsMatch && currentFileContents && isDocument(doc)) {
 			const syncedText = doc.text;
 			if (!syncedText) {
-				// Relay had no content — insert local file content into Y.Text
-				this.log(
-					`[syncDocumentWebsocket] Uploading new content for ${doc.path} (${currentFileContents.length} chars)`,
-				);
-				doc.ydoc.getText("contents").insert(0, currentFileContents);
+				// Relay had no content. Two clients opening the same brand-new
+				// shared folder at once would otherwise BOTH insert here and Yjs
+				// would merge both blocks (duplicated text, TR-15) — claim a slot
+				// first, give a concurrent claim from another client a settle
+				// window to arrive over the relay, then only the deterministic
+				// winner inserts. See initContentClaim.ts for the mechanism.
+				claimInitIfUnclaimed(doc.ydoc, doc._provider.awareness);
+				await awaitClaimSettled(doc.ydoc, { socket: doc._provider.ws });
+				const text = doc.ydoc.getText("contents");
+				if (wonInitClaim(doc.ydoc, text)) {
+					this.log(
+						`[syncDocumentWebsocket] Uploading new content for ${doc.path} (${currentFileContents.length} chars)`,
+					);
+					text.insert(0, currentFileContents);
+					markInitDone(doc.ydoc);
+				} else if (text.length === 0) {
+					this.warn(
+						`[syncDocumentWebsocket] Skipped initial-content insert for ${doc.path} — lost the init claim to a concurrently-connecting client`,
+					);
+				}
 			} else if (syncedText !== currentFileContents) {
 				// Relay has stale/different content — reconcile with vault file.
 				// `syncedText` at this point may include edits from OTHER clients

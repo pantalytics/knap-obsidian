@@ -22,6 +22,12 @@ import { MarkdownView, editorInfoField } from "obsidian";
 import { Document } from "src/Document";
 import { EmbedBanner } from "src/ui/EmbedBanner";
 import { ViewHookPlugin } from "src/plugins/ViewHookPlugin";
+import {
+	claimInitIfUnclaimed,
+	wonInitClaim,
+	markInitDone,
+	awaitClaimSettled,
+} from "src/initContentClaim";
 
 export const connectionManagerFacet: Facet<LiveViewManager, LiveViewManager> =
 	Facet.define({
@@ -395,8 +401,22 @@ export class LiveCMPluginValue implements PluginValue {
 			// has uploaded its content to a newly created share.
 			if (this.view.document.text === "" && this.editor.state.doc.length > 0) {
 				const editorContent = this.editor.state.doc.toString();
-				this.warn("[resync] relay is empty but editor has content — uploading to Y.Text");
-				this.view.document.ydoc.getText("contents").insert(0, editorContent);
+				// Same concurrent-first-connect race as BackgroundSync.ts (TR-15):
+				// two clients opening this file at once could both see an empty
+				// relay and both upload — claim + settle + only-winner-inserts.
+				const ydoc = this.view.document.ydoc;
+				claimInitIfUnclaimed(ydoc, this.view.document._provider.awareness);
+				await awaitClaimSettled(ydoc, {
+					socket: this.view.document._provider.ws,
+				});
+				const text = ydoc.getText("contents");
+				if (wonInitClaim(ydoc, text)) {
+					this.warn("[resync] relay is empty but editor has content — uploading to Y.Text");
+					text.insert(0, editorContent);
+					markInitDone(ydoc);
+				} else if (text.length === 0) {
+					this.warn("[resync] lost the init claim to a concurrently-connecting client — skipping upload");
+				}
 				this.view.tracking = true;
 				return;
 			}
@@ -413,8 +433,22 @@ export class LiveCMPluginValue implements PluginValue {
 			// Same guard for embedded/SharedFolder documents
 			if (this.document.text === "" && this.editor.state.doc.length > 0) {
 				const editorContent = this.editor.state.doc.toString();
-				this.warn("[resync] relay is empty but editor has content — uploading to Y.Text");
-				this.document.ydoc.getText("contents").insert(0, editorContent);
+				// Same guard as the isLiveMd branch above (TR-15) — this document
+				// might be racing another client opening the same embedded/shared
+				// file for the first time.
+				const ydoc = this.document.ydoc;
+				claimInitIfUnclaimed(ydoc, this.document._provider.awareness);
+				await awaitClaimSettled(ydoc, {
+					socket: this.document._provider.ws,
+				});
+				const text = ydoc.getText("contents");
+				if (wonInitClaim(ydoc, text)) {
+					this.warn("[resync] relay is empty but editor has content — uploading to Y.Text");
+					text.insert(0, editorContent);
+					markInitDone(ydoc);
+				} else if (text.length === 0) {
+					this.warn("[resync] lost the init claim to a concurrently-connecting client — skipping upload");
+				}
 				return;
 			}
 			const keyFrame = await this.getKeyFrame();
