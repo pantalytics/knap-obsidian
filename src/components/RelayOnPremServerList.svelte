@@ -3,7 +3,14 @@
 	import { createEventDispatcher } from "svelte";
 	import type Live from "../main";
 	import type { RelayOnPremServer } from "../RelayOnPremConfig";
-	import { EVC_SERVER_ID, generateServerId, validateServerConfig, findDuplicateServer } from "../RelayOnPremConfig";
+	import {
+		EVC_SERVER_ID,
+		generateServerId,
+		validateServerConfig,
+		findDuplicateServer,
+		isServerVersionSupported,
+		serverCompatMessage,
+	} from "../RelayOnPremConfig";
 	import { RelayOnPremLoginModal } from "../ui/RelayOnPremLoginModal";
 	import { customFetch } from "../customFetch";
 	import { confirmDialog } from "../ui/dialogs";
@@ -177,6 +184,22 @@
 
 		// Try to fetch server info for auto-configuration
 		const serverInfo = await fetchServerInfo(newControlPlaneUrl.trim());
+
+		// TR-57: reject a server below this plugin's compatibility floor here,
+		// at connect time — otherwise it saves fine and only fails later with
+		// confusing unversioned 404s on whichever endpoint the server predates.
+		// Only block on a CONCRETE version we know is too old — fetchServerInfo()
+		// returns null both for "server predates this endpoint" and for a plain
+		// network hiccup (it already succeeded a /health check moments ago via
+		// testConnection above), and conflating those would false-block saving
+		// an already-compatible server on a transient blip. A server that
+		// genuinely never returns a version is a rarer, softer case than the
+		// audit's actual finding (version fetched but not checked) — not
+		// hard-blocked here, same as before this fix.
+		if (serverInfo?.version && !isServerVersionSupported(serverInfo.version)) {
+			formError = serverCompatMessage(serverInfo.version);
+			return;
+		}
 
 		// Use server info or fallback to user input
 		const serverName = newServerName.trim() || serverInfo?.name || new URL(newControlPlaneUrl).hostname;

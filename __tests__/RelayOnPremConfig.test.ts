@@ -1,5 +1,12 @@
+import { describe, test, expect } from "@jest/globals";
 import { withUpdatedLastUserEmail, findDuplicateServer } from "../src/RelayOnPremConfig";
 import type { RelayOnPremSettings, RelayOnPremServer } from "../src/RelayOnPremConfig";
+import {
+	MIN_SUPPORTED_SERVER_VERSION,
+	compareSemver,
+	isServerVersionSupported,
+	serverCompatMessage,
+} from "../src/RelayOnPremConfig";
 
 function makeServer(overrides: Partial<RelayOnPremServer> = {}): RelayOnPremServer {
 	return {
@@ -121,5 +128,83 @@ describe("findDuplicateServer", () => {
 
 	test("returns undefined against an empty server list", () => {
 		expect(findDuplicateServer([], "any-id", "https://cp.tr.entire.vc")).toBeUndefined();
+	});
+});
+
+/**
+ * Tests for RelayOnPremConfig — TR-57 server version compatibility check.
+ *
+ * MIN_SUPPORTED_SERVER_VERSION is pinned to the control-plane's current
+ * live baseline ("0.1.0", see the constant's own comment), so these tests
+ * exercise the comparison logic against synthetic versions rather than
+ * asserting on that literal value directly — the floor is expected to move.
+ */
+
+describe("compareSemver", () => {
+	test("equal versions return 0", () => {
+		expect(compareSemver("1.2.3", "1.2.3")).toBe(0);
+	});
+
+	test("higher major wins regardless of minor/patch", () => {
+		expect(compareSemver("2.0.0", "1.9.9")).toBeGreaterThan(0);
+		expect(compareSemver("1.9.9", "2.0.0")).toBeLessThan(0);
+	});
+
+	test("higher minor wins when major is equal", () => {
+		expect(compareSemver("1.5.0", "1.4.9")).toBeGreaterThan(0);
+		expect(compareSemver("1.4.9", "1.5.0")).toBeLessThan(0);
+	});
+
+	test("higher patch wins when major and minor are equal", () => {
+		expect(compareSemver("1.2.5", "1.2.4")).toBeGreaterThan(0);
+		expect(compareSemver("1.2.4", "1.2.5")).toBeLessThan(0);
+	});
+
+	test("missing/non-numeric segments are treated as 0", () => {
+		expect(compareSemver("1.2", "1.2.0")).toBe(0);
+		expect(compareSemver("1", "1.0.0")).toBe(0);
+	});
+
+	test("a leading v/V prefix is stripped, not treated as garbage", () => {
+		expect(compareSemver("v1.2.3", "1.2.3")).toBe(0);
+		expect(compareSemver("V1.2.3", "1.2.3")).toBe(0);
+		expect(compareSemver("v2.0.0", "v1.9.9")).toBeGreaterThan(0);
+	});
+});
+
+describe("isServerVersionSupported", () => {
+	test("a version equal to the floor is supported", () => {
+		expect(isServerVersionSupported(MIN_SUPPORTED_SERVER_VERSION)).toBe(true);
+	});
+
+	test("a version above the floor is supported", () => {
+		const [major, minor, patch] = MIN_SUPPORTED_SERVER_VERSION.split(".").map(Number);
+		expect(isServerVersionSupported(`${major}.${minor}.${patch + 1}`)).toBe(true);
+		expect(isServerVersionSupported(`${major + 1}.0.0`)).toBe(true);
+	});
+
+	test("TR-57: a version below the floor is NOT supported", () => {
+		expect(isServerVersionSupported("0.0.1")).toBe(false);
+	});
+
+	test("TR-57: a missing/empty version is NOT supported (pre-versioning server)", () => {
+		expect(isServerVersionSupported(undefined)).toBe(false);
+		expect(isServerVersionSupported(null)).toBe(false);
+		expect(isServerVersionSupported("")).toBe(false);
+	});
+});
+
+describe("serverCompatMessage", () => {
+	test("mentions the server's reported version and the required floor", () => {
+		const msg = serverCompatMessage("0.0.1");
+		expect(msg).toContain("0.0.1");
+		expect(msg).toContain(MIN_SUPPORTED_SERVER_VERSION);
+		expect(msg.toLowerCase()).toContain("update the server");
+	});
+
+	test("has a distinct message for a server reporting no version at all", () => {
+		const msg = serverCompatMessage(undefined);
+		expect(msg.toLowerCase()).toContain("doesn't report a version");
+		expect(msg.toLowerCase()).toContain("update the server");
 	});
 });

@@ -257,6 +257,63 @@ export function migrateRelayOnPremSettings(
 }
 
 /**
+ * Minimum control-plane server version this plugin version supports (TR-57).
+ * Bump this whenever a breaking control-plane API change ships that this
+ * plugin relies on — a server below the floor gets a clear "please update"
+ * notice at connect time instead of failing later with confusing unversioned
+ * 404s once the plugin calls an endpoint the server doesn't have.
+ *
+ * NOTE (2026-07-22): control-plane's /server/info `version` field is
+ * currently frozen at "0.1.0" and not bumped per release (checked live
+ * against cp.tr.entire.vc) — this floor is set to that same baseline so the
+ * live EVC server isn't false-flagged. The mechanism only becomes
+ * meaningful once control-plane starts incrementing `version` on breaking
+ * changes; that's a separate, cross-repo, product-lead call — flagged as a
+ * follow-up, not fixed here.
+ */
+export const MIN_SUPPORTED_SERVER_VERSION = "0.1.0";
+
+/**
+ * Compare two bare semver strings (major.minor.patch — no pre-release/build
+ * metadata, matching this project's version convention). A leading "v"/"V"
+ * (e.g. "v1.2.3") is stripped before parsing.
+ * Returns negative if a < b, 0 if equal, positive if a > b.
+ * Missing or non-numeric segments are treated as 0.
+ */
+export function compareSemver(a: string, b: string): number {
+	const parse = (v: string): [number, number, number] => {
+		const parts = v.replace(/^v/i, "").split(".");
+		return [0, 1, 2].map((i) => parseInt(parts[i], 10) || 0) as [number, number, number];
+	};
+	const [aMajor, aMinor, aPatch] = parse(a);
+	const [bMajor, bMinor, bPatch] = parse(b);
+	if (aMajor !== bMajor) return aMajor - bMajor;
+	if (aMinor !== bMinor) return aMinor - bMinor;
+	return aPatch - bPatch;
+}
+
+/**
+ * Whether a server's reported version meets this plugin's compatibility
+ * floor. A missing/empty version (server predates the /server/info version
+ * field entirely) is treated as unsupported — it's the same "will fail
+ * later with a confusing error" failure mode this check exists to catch.
+ */
+export function isServerVersionSupported(serverVersion: string | undefined | null): boolean {
+	if (!serverVersion) return false;
+	return compareSemver(serverVersion, MIN_SUPPORTED_SERVER_VERSION) >= 0;
+}
+
+/**
+ * Human-readable message for a server that fails isServerVersionSupported().
+ */
+export function serverCompatMessage(serverVersion: string | undefined | null): string {
+	if (!serverVersion) {
+		return "This server doesn't report a version — it may be too old for this plugin version. Please update the server.";
+	}
+	return `This server is running version ${serverVersion}, older than this plugin requires (minimum ${MIN_SUPPORTED_SERVER_VERSION}). Please update the server.`;
+}
+
+/**
  * Validate a single server configuration
  */
 export function validateServerConfig(server: RelayOnPremServer): {
