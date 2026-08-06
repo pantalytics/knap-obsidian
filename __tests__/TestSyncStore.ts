@@ -135,6 +135,50 @@ describe("SyncStore", () => {
 			expect(isSyncFolderMeta(store.getMeta("folder"))).toBeTruthy();
 		});
 
+		// Regression: an inbound-synced entry can carry a full path (namespace
+		// included) instead of a virtual path, which makes assertVPath throw.
+		// It used to throw out of the legacyIds.forEach and abort the whole
+		// migration — inside a Y.Doc transact, so it surfaced as an uncaught
+		// "Expected virtual path" and wedged the plugin (dead UI, e.g. the
+		// per-share "+ Create key" button no longer responding).
+		test("one invalid legacy vpath does not abort the migration", () => {
+			const badVPath = "/test/Entire VC/Spark/docs/reports/funnel.md";
+
+			internal(store).legacyIds.set("good1.md", "guid1");
+			internal(store).legacyIds.set(badVPath, "guid-bad");
+			internal(store).legacyIds.set("folder/good2.md", "guid2");
+
+			expect(() => store.migrateUp()).not.toThrow();
+			store.commit();
+
+			// The bad entry is skipped, not migrated. Asserted on meta/overlay
+			// rather than has(), which also reports the planted legacyIds entry.
+			expect(internal(store).meta.has(badVPath)).toBeFalsy();
+			expect(internal(store).overlay.has(badVPath)).toBeFalsy();
+
+			// ...and every other entry still migrated, whichever order the
+			// legacyIds map happened to iterate in.
+			expect(isDocumentMeta(store.getMeta("good1.md"))).toBeTruthy();
+			expect(isDocumentMeta(store.getMeta("folder/good2.md"))).toBeTruthy();
+			expect(isSyncFolderMeta(store.getMeta("folder"))).toBeTruthy();
+		});
+
+		test("an invalid legacy vpath does not throw out of a transact", () => {
+			// The wedge shape from the field report: migrateUp runs from the
+			// legacyIds observer, so a throw escapes Y.Doc.transact uncaught
+			// rather than failing a single file.
+			store.start();
+
+			expect(() => {
+				ydoc.transact(() => {
+					internal(store).legacyIds.set(
+						"/test/Entire VC/Spark/docs/reports/funnel.md",
+						"guid-bad",
+					);
+				});
+			}).not.toThrow();
+		});
+
 		test("legacy client folder rename updates paths for all file types", () => {
 			// Set up initial state with both legacy docs and new files
 			// Legacy client only knows about markdown files
