@@ -56,11 +56,25 @@ import { ContentAddressedFileStore, SyncFile, isSyncFile } from "./SyncFile";
 import { Canvas, isCanvas } from "./Canvas";
 import { flags } from "./flagManager";
 import { findNestingConflictPath } from "./sharedFolderNesting";
+import {
+	checkPath as scopedCheckPath,
+	sharePrefix,
+	toVaultPath,
+	toVirtualPath,
+	type ShareScope,
+} from "./vaultScope";
 import { claimVpathIfUnclaimed, awaitVpathClaimSettled, wonVpathClaim } from "./uploadClaim";
 
 export interface SharedFolderSettings {
 	guid: string;
 	path: string;
+	/**
+	 * Whether this share is the whole vault or one folder in it.
+	 *
+	 * Absent means "folder", so every share that predates this field keeps
+	 * its meaning without a migration. A vault share carries path "".
+	 */
+	scope?: ShareScope;
 	relay?: string;
 	connect?: boolean;
 	sync?: SyncFlags;
@@ -142,6 +156,8 @@ class Files extends ObservableSet<IFile> {
 
 export class SharedFolder extends HasProvider {
 	path: string;
+	/** Whether this share covers the whole vault or one folder in it. */
+	scope: ShareScope;
 	files: Map<string, IFile>; // Maps guids to SharedDocs
 	fset: Files;
 	relayId?: string;
@@ -185,14 +201,21 @@ export class SharedFolder extends HasProvider {
 		private obsidianApp: App,
 		relayId?: string,
 		awaitingUpdates: boolean = true,
+		scope: ShareScope = "folder",
 	) {
 		const s3rn = relayId
 			? new S3RemoteFolder(relayId, guid)
 			: new S3Folder(guid);
 
 		super(guid, s3rn, tokenStore, loginManager);
-		this.path = path;
-		this.setLoggers(`[SharedFile](${this.path})`);
+		this.scope = scope;
+		// A vault share has no folder prefix, so its path is empty whatever
+		// the caller passed. Obsidian spells the vault root "/", and letting
+		// that reach the prefix arithmetic is the off-by-one this avoids.
+		this.path = scope === "vault" ? "" : path;
+		this.setLoggers(
+			scope === "vault" ? `[SharedVault]` : `[SharedFile](${this.path})`,
+		);
 		this.fileManager = fileManager;
 		this.vault = vault;
 		this.files = new Map();
@@ -715,7 +738,17 @@ export class SharedFolder extends HasProvider {
 		this._server = value;
 	}
 
-	public get tfolder(): TFolder {
+	/**
+	 * The folder this share is rooted at.
+	 *
+	 * Resolved through `getRoot()` for a vault share rather than by looking
+	 * up the path, because how `getAbstractFileByPath` spells the vault root
+	 * is not something the API guarantees.
+	 */
+	private get rootTFolder(): TFolder {
+		if (this.isVaultScope) {
+			return this.vault.getRoot();
+		}
 		const folder = this.vault.getAbstractFileByPath(this.path);
 		if (!(folder instanceof TFolder)) {
 			throw new Error("tfolder is not a folder");
@@ -723,8 +756,19 @@ export class SharedFolder extends HasProvider {
 		return folder;
 	}
 
+	public get tfolder(): TFolder {
+		return this.rootTFolder;
+	}
+
 	public isSyncableTFile(tfile: TAbstractFile): boolean {
 		const inFolder = this.checkPath(tfile.path);
+		// Return before converting. checkPath now refuses excluded paths as
+		// well as paths outside the share, and getVirtualPath throws on
+		// anything checkPath refused. At vault scope the walk starts at the
+		// root, so refused paths really do arrive here.
+		if (!inFolder) {
+			return false;
+		}
 		const vpath = this.getVirtualPath(tfile.path);
 		const isSupportedFileType = this.syncStore.canSync(vpath);
 
@@ -741,12 +785,7 @@ export class SharedFolder extends HasProvider {
 	}
 
 	private getSyncFiles(): TAbstractFile[] {
-		const folder = this.vault.getAbstractFileByPath(this.path);
-		if (!(folder instanceof TFolder)) {
-			throw new Error(
-				`Could not find shared folders on file system at ${this.path}`,
-			);
-		}
+		const folder = this.rootTFolder;
 		const files: TAbstractFile[] = [];
 		Vault.recurseChildren(folder, (file: TAbstractFile) => {
 			if (file !== folder) {
@@ -799,10 +838,18 @@ export class SharedFolder extends HasProvider {
 	}
 
 	public get name(): string {
+		// A vault share has no folder to take a name from, and an empty name
+		// is what the control plane would store for the share.
+		if (this.isVaultScope) {
+			return this.vault.getName();
+		}
 		return this.path.split("/").pop() || "";
 	}
 
 	public get location(): string {
+		if (this.isVaultScope) {
+			return "";
+		}
 		return this.path.split("/").slice(0, -1).join("/");
 	}
 
@@ -1455,6 +1502,11 @@ export class SharedFolder extends HasProvider {
 	}
 
 	move(path: string) {
+		// A vault share is not rooted at a folder, so there is nothing to
+		// move it to. Renaming the vault does not change the share.
+		if (this.isVaultScope) {
+			return;
+		}
 		this.path = path;
 		this.setLoggers(`[SharedFile](${this.path})`);
 		void this._settings.update((current) => ({
@@ -1463,19 +1515,36 @@ export class SharedFolder extends HasProvider {
 		}));
 	}
 
+	/**
+	 * Refuse a virtual path that would write outside what this share may touch.
+	 *
+	 * Every inbound write resolves a vpath that came off the CRDT, and the
+	 * write goes through `vault.adapter`, which is raw filesystem access and
+	 * not the file index. A folder share was protected by its own prefix; a
+	 * vault share has no prefix, so a vpath of `.obsidian/plugins/x/main.js`
+	 * or `../outside.md` would otherwise land on disk. This is the one guard
+	 * standing between a remote document and somebody's config directory.
+	 */
+	private assertWritableVPath(vpath: string): void {
+		const vaultPath = this.getPath(vpath);
+		if (!this.checkPath(vaultPath)) {
+			throw new Error(`Refusing to write outside the share: ${vpath}`);
+		}
+	}
+
 	read(doc: IFile): Promise<string> {
-		const vaultPath = join(this.path, doc.path);
+		const vaultPath = this.getPath(doc.path);
 		return this.vault.adapter.read(normalizePath(vaultPath));
 	}
 
 	existsSync(path: string): boolean {
-		const vaultPath = normalizePath(join(this.path, path));
+		const vaultPath = normalizePath(this.getPath(path));
 		const pathExists = this.vault.getAbstractFileByPath(vaultPath) !== null;
 		return pathExists;
 	}
 
 	exists(doc: IFile): Promise<boolean> {
-		const vaultPath = join(this.path, doc.path);
+		const vaultPath = this.getPath(doc.path);
 		return this.vault.adapter.exists(normalizePath(vaultPath));
 	}
 
@@ -1484,7 +1553,8 @@ export class SharedFolder extends HasProvider {
 			this.log("skipping flush for pending delete", doc.path);
 			return Promise.resolve();
 		}
-		const vaultPath = join(this.path, doc.path);
+		this.assertWritableVPath(doc.path);
+		const vaultPath = this.getPath(doc.path);
 		this.log("writing to ", normalizePath(vaultPath));
 		return this.vault.adapter.write(normalizePath(vaultPath), content);
 	}
@@ -1503,13 +1573,30 @@ export class SharedFolder extends HasProvider {
 		label: string,
 	): Promise<string> {
 		const conflictDocPath = buildConflictCopyPath(doc.path, label);
-		const vaultPath = join(this.path, conflictDocPath);
+		this.assertWritableVPath(conflictDocPath);
+		const vaultPath = this.getPath(conflictDocPath);
 		await this.vault.adapter.write(normalizePath(vaultPath), content);
 		return conflictDocPath;
 	}
 
+	/** True when this share is the whole vault rather than one folder in it. */
+	public get isVaultScope(): boolean {
+		return this.scope === "vault";
+	}
+
+	/**
+	 * What every vault path in this share begins with.
+	 *
+	 * "Folder/" for a folder share, "" for a vault share. Every path
+	 * conversion below is this string and nothing else, which is what lets
+	 * the two scopes share one implementation.
+	 */
+	private get prefix(): string {
+		return sharePrefix(this.scope, this.path, sep);
+	}
+
 	getPath(path: string): string {
-		return join(this.path, path);
+		return toVaultPath(this.scope, this.path, path, sep);
 	}
 
 	assertPath(path: string) {
@@ -1519,21 +1606,24 @@ export class SharedFolder extends HasProvider {
 	}
 
 	mkdir(path: string): Promise<void> {
-		const vaultPath = join(this.path, path);
+		this.assertWritableVPath(path);
+		const vaultPath = this.getPath(path);
 		return this.vault.adapter.mkdir(normalizePath(vaultPath));
 	}
 
 	checkPath(path: string): boolean {
-		return path.startsWith(this.path + sep);
+		return scopedCheckPath(
+			this.scope,
+			this.path,
+			path,
+			sep,
+			this.obsidianApp?.vault?.configDir,
+		);
 	}
 
 	getVirtualPath(path: string): string {
 		this.assertPath(path);
-
-		// Slice past the folder path AND the separator (e.g., "Folder/file.md" -> "file.md")
-		// Without +1, we'd get "/file.md" which starts with slash
-		const vPath = path.slice(this.path.length + 1);
-		return vPath;
+		return toVirtualPath(this.scope, this.path, path, sep);
 	}
 
 	getTFile(file: IFile): TFile | null {
