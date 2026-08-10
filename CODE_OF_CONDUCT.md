@@ -34,9 +34,9 @@ an individual is officially representing the community in public spaces.
 
 ## Enforcement
 
-Instances of unacceptable behavior may be reported to the project team at
-**conduct@entire.vc**. All complaints will be reviewed and investigated promptly
-and fairly.
+Instances of unacceptable behavior may be reported to the maintainers at
+**rutger@pantalytics.com**. All complaints will be reviewed and investigated
+promptly and fairly.
 
 ## Attribution
 

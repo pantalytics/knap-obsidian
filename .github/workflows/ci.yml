@@ -137,6 +137,36 @@ jobs:
           fi
           echo "OK: manifest-beta.json also agrees on $PKG_VER"
 
+      - name: Catalog readiness — what the community directory requires
+        # The directory reads manifest.json and README.md off the DEFAULT BRANCH and
+        # fetches the files themselves from the release tagged as manifest.version.
+        # These are the rules it applies at submission, checked here so they cannot
+        # rot between now and the next submission or resubmission.
+        # See docs/catalog-submission.md.
+        run: |
+          fail=0
+          for f in README.md LICENSE manifest.json; do
+            [ -f "$f" ] || { echo "::error::$f is required in the repo root by the community directory"; fail=1; }
+          done
+          ID=$(node -p "require('./manifest.json').id")
+          NAME=$(node -p "require('./manifest.json').name")
+          DESC=$(node -p "require('./manifest.json').description")
+          # Verified rule: the id must be unique across published plugins and cannot
+          # contain "obsidian" (docs.obsidian.md, Submit your plugin, read 2026-08-10).
+          case "$ID" in *[Oo]bsidian*) echo "::error::plugin id '$ID' contains 'obsidian', which the directory rejects"; fail=1;; esac
+          # A name carrying "Obsidian" reads as a first-party product, which is the
+          # reason this plugin is called Knap Sync in the first place.
+          case "$NAME" in *[Oo]bsidian*) echo "::error::plugin name '$NAME' contains 'Obsidian', which reads as a first-party product"; fail=1;; esac
+          [ -n "$(node -p "require('./manifest.json').author")" ] || { echo "::error::manifest.json needs an author"; fail=1; }
+          # 250 is our own budget, not a published limit: the description is what
+          # someone reads in the plugin browser list, and longer than this gets cut off.
+          if [ "${#DESC}" -gt 250 ]; then
+            echo "::error::description is ${#DESC} characters; keep it under 250 so it reads in the plugin browser"
+            fail=1
+          fi
+          [ "$fail" = "0" ] || exit 1
+          echo "OK: id '$ID', name '$NAME', description ${#DESC} chars, required files present"
+
       - name: Monotonicity guard — version must be strictly greater than latest release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

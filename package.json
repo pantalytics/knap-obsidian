@@ -1,7 +1,7 @@
 {
 	"name": "knap-sync",
 	"version": "1.1.41",
-	"description": "Sync an Obsidian vault to a self-hosted relay, whole vault or one folder at a time.",
+	"description": "Sync your vault to a relay you host yourself, a whole vault or one folder at a time, with real-time collaborative editing on what you share.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs watch",
