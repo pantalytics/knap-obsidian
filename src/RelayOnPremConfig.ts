@@ -5,9 +5,9 @@
  * Supports multiple servers with independent authentication
  */
 
-/** Well-known EVC Team Relay server */
-export const EVC_SERVER_ID = "evc-team-relay";
-export const EVC_CP_URL = "https://cp.tr.entire.vc";
+/** Well-known Knap relay server */
+export const EVC_SERVER_ID = "knap-sync";
+export const EVC_CP_URL = "https://cp.knap.pantalytics.com";
 
 /**
  * Generate a unique server ID from URL
@@ -99,12 +99,12 @@ interface LegacyRelayOnPremSettings {
 }
 
 export const DEFAULT_RELAY_ONPREM_SETTINGS: RelayOnPremSettings = {
-	// EVC Team Relay always uses relay-onprem mode (no System 3 cloud)
+	// Knap Sync always uses relay-onprem mode (no System 3 cloud)
 	enabled: true,
 	servers: [
 		{
 			id: EVC_SERVER_ID,
-			name: "EVC Team Relay",
+			name: "Knap Sync",
 			controlPlaneUrl: EVC_CP_URL,
 			isValidated: false,
 		},
@@ -163,7 +163,7 @@ export function migrateRelayOnPremSettings(
 			servers[evcByIdIdx] = {
 				...richServer,
 				id: EVC_SERVER_ID,
-				name: richServer.name || evcStub.name || "EVC Team Relay",
+				name: richServer.name || evcStub.name || "Knap Sync",
 			};
 			renamedServerId = richServer.id;
 
@@ -184,7 +184,7 @@ export function migrateRelayOnPremSettings(
 				renamedServerId = richest.s.id;
 				servers[richest.i] = { ...richest.s, id: EVC_SERVER_ID };
 				if (!servers[richest.i].name || servers[richest.i].name === new URL(EVC_CP_URL).hostname) {
-					servers[richest.i].name = "EVC Team Relay";
+					servers[richest.i].name = "Knap Sync";
 				}
 				if (defaultServerId === renamedServerId) {
 					defaultServerId = EVC_SERVER_ID;
@@ -201,7 +201,7 @@ export function migrateRelayOnPremSettings(
 				// No EVC server at all — prepend it
 				servers.unshift({
 					id: EVC_SERVER_ID,
-					name: "EVC Team Relay",
+					name: "Knap Sync",
 					controlPlaneUrl: EVC_CP_URL,
 					isValidated: false,
 				});

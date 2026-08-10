@@ -85,7 +85,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 
 		this.setLoggers(`[SharedDoc](${this.path})`);
 		try {
-			const key = `${this.sharedFolder.appId}-relay-doc-${this.guid}`;
+			const key = `${this.sharedFolder.appId}-knap-sync-doc-${this.guid}`;
 			this._persistence = new IndexeddbPersistence(key, this.ydoc);
 		} catch (e: unknown) {
 			this.warn("Unable to open persistence.", this.guid);

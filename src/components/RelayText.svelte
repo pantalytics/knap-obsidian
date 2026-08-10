@@ -3,12 +3,12 @@
 	let fontSize = size / 3;
 </script>
 
-<div class="evc-team-relay-text" style="font-size: {fontSize}px;">
-	<span class="evc-text">EVC Team Relay</span>
+<div class="knap-sync-text" style="font-size: {fontSize}px;">
+	<span class="knap-text">Knap Sync</span>
 </div>
 
 <style>
-	.evc-team-relay-text {
+	.knap-sync-text {
 		display: flex;
 		align-items: center;
 		justify-content: center;

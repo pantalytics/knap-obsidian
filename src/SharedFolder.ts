@@ -198,7 +198,7 @@ export class SharedFolder extends HasProvider {
 		this.files = new Map();
 		this.fset = new Files();
 		this.pendingUpload = new LocalStorage<string>(
-			`${appId}-evc-team-relay/folders/${this.guid}/pendingUploads`,
+			`${appId}-knap-sync/folders/${this.guid}/pendingUploads`,
 			this.obsidianApp,
 		);
 		this.pendingUpload.forEach((guid, vpath) => {
@@ -273,7 +273,7 @@ export class SharedFolder extends HasProvider {
 		});
 
 		try {
-			this._persistence = new IndexeddbPersistence(this.guid, this.ydoc);
+			this._persistence = new IndexeddbPersistence(`knap-sync-folder-${this.guid}`, this.ydoc);
 		} catch (e: unknown) {
 			this.warn("Unable to open persistence.", this.guid);
 			console.error(e);

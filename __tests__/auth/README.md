@@ -72,7 +72,7 @@ Tests for localStorage persistence layer.
 
 **Coverage:**
 - P31: save and load roundtrip
-- P32: Key format: evc-team-relay_onprem_auth_{vault}_{server}
+- P32: Key format: knap-sync_onprem_auth_{vault}_{server}
 - P33: clear removes data
 - P34: clearAll removes all servers for vault
 - P35: localStorage unavailable uses fallback

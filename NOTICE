@@ -1,0 +1,82 @@
+Knap Sync for Obsidian
+Copyright (c) 2026 Pantalytics
+
+This product is a derivative work. It is distributed under the MIT License;
+see LICENSE for the full text and the complete copyright line.
+
+================================================================================
+ORIGIN
+================================================================================
+
+Knap Sync is forked from EVC Team Relay
+(https://github.com/entire-vc/evc-team-relay-obsidian-plugin) at commit
+ed76d7c57b77216ddd8f94ee38c81e71684cea83.
+
+EVC Team Relay is itself derived from Relay by No Instructions, LLC
+(https://github.com/No-Instructions/Relay). Both are MIT licensed. Their
+copyright lines are carried in LICENSE alongside ours, as MIT requires.
+
+================================================================================
+THIRD-PARTY SOURCE INCLUDED IN THIS REPOSITORY
+================================================================================
+
+The following directories contain source copied from other projects rather
+than installed as dependencies. Each keeps its own licence file or per-file
+headers, and those are not to be removed.
+
+  src/client/         y-sweet client, adapted from y-websocket.
+                      MIT. Copyright (c) 2024 No Instructions, LLC;
+                      Copyright (c) 2023 Drifting in Space Corp;
+                      Copyright (c) 2020 Bartosz Sypytkowski and Kevin Jahns;
+                      Copyright (c) 2014 Kevin Jahns and RWTH Aachen.
+                      See src/client/LICENSE.
+
+  src/storage/        y-indexeddb.
+                      MIT. Copyright (c) 2024 No Instructions, LLC;
+                      Copyright (c) 2014 Kevin Jahns and RWTH Aachen.
+                      See src/storage/LICENSE.
+
+  src/y-codemirror.next/   MIT. Copyright (c) 2024 Kevin Jahns.
+                      See src/y-codemirror.next/LICENSE.
+
+  src/differ/         Adapted from obsidian-file-diff
+                      (https://github.com/friebetill/obsidian-file-diff).
+                      MIT. Copyright (c) 2022 Till Friebe.
+                      See the headers in those files.
+
+  src/pocketbase/LocalAuthStore.ts
+                      From the PocketBase JavaScript SDK.
+                      MIT. Copyright (c) 2022-present Gani Georgiev.
+
+================================================================================
+BUNDLED DEPENDENCIES
+================================================================================
+
+An Obsidian plugin ships as a single bundled main.js, so the notices below
+travel with the compiled artifact rather than only with this repository.
+
+  Apache-2.0
+    diff-match-patch          Copyright (c) The diff-match-patch Authors.
+                              Full licence text: https://www.apache.org/licenses/LICENSE-2.0
+                              We consume this library unmodified. Should any
+                              file derived from it be changed, Apache-2.0
+                              section 4(b) requires that change to be marked.
+
+  BSD-3-Clause
+    diff                      Copyright (c) 2009-2015 Kevin Decker.
+
+  ISC
+    lucide-svelte             Copyright (c) 2020 Lucide Contributors.
+                              Portions of Lucide are held by Cole Bemis
+                              2013-2022 as part of Feather (MIT).
+    monkey-around             Copyright (c) 2021 Michael Hoffman.
+
+  0BSD
+    tslib                     Copyright (c) Microsoft Corporation.
+
+  MIT
+    eventsource, eventsource-parser, jose, lib0, path-browserify, pocketbase,
+    svelte, uuid, y-protocols, yjs.
+
+Each package's full licence text is reproduced in its own distribution and in
+node_modules/<package>/LICENSE.

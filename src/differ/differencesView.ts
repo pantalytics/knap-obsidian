@@ -42,7 +42,7 @@ import { ActionLineDivider } from "./actionLineDivider";
 import { flags } from "src/flagManager";
 import { curryLog } from "src/debug";
 
-export const VIEW_TYPE_DIFFERENCES = "evc-team-relay-differences-view";
+export const VIEW_TYPE_DIFFERENCES = "knap-sync-differences-view";
 
 export interface ViewState {
 	file1: TFile;

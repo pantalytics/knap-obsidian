@@ -268,7 +268,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			await provider.loginWithPassword("test@example.com", "password123");
 
-			const storageKey = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
+			const storageKey = `knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			const stored = mockStorage.get(storageKey);
 			expect(stored).toBeDefined();
 
@@ -308,7 +308,7 @@ describe("RelayOnPremAuthProvider", () => {
 			expect(provider.isLoggedIn()).toBe(true);
 
 			// Check localStorage for refresh token
-			const storageKey = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
+			const storageKey = `knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			const stored = mockStorage.get(storageKey);
 			expect(stored).toBeDefined();
 
@@ -421,7 +421,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P20: Refresh with refresh_token", async () => {
 			// Set up initial auth with refresh token
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "old_token",
@@ -474,7 +474,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P21: Refresh without refresh_token (legacy)", async () => {
 			// Set up initial auth WITHOUT refresh token
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "current_token",
@@ -518,7 +518,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P22: Error clears auth", async () => {
 			// Set up initial auth
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -546,7 +546,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 		test("TR-28: calls onSessionExpired when the refresh token is rejected (401/403)", async () => {
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -575,7 +575,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 		test("TR-28: does NOT call onSessionExpired on a network/server error (auth stays valid for retry)", async () => {
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -615,7 +615,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P23: Restore with valid token", async () => {
 			const expiresAt = Date.now() + 3600000;
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "restored@example.com" },
 					token: "stored_token",
@@ -639,7 +639,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P24: Restore with expired token + refresh", async () => {
 			const expiredAt = Date.now() - 1000; // Expired 1 second ago
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "expired_token",
@@ -679,7 +679,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P25: Restore with expired + no refresh clears", async () => {
 			const expiredAt = Date.now() - 1000;
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "expired_token",
@@ -701,7 +701,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 		test("P26: Restore with corrupted data", async () => {
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				"invalid json{",
 			);
 
@@ -722,7 +722,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			// Token expires in 4 minutes (less than 5-minute buffer)
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -741,7 +741,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			// Token expires in 6 minutes (more than 5-minute buffer)
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -768,7 +768,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P28: Success", async () => {
 			// Set up logged in state
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -804,7 +804,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 		test("P29: Network error still clears local state", async () => {
 			mockStorage.set(
-				`evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -850,7 +850,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			await provider.loginWithPassword("test@example.com", "password");
 
-			const storageKey = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
+			const storageKey = `knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			const stored = mockStorage.get(storageKey);
 			expect(stored).toBeDefined();
 

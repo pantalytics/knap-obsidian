@@ -52,14 +52,14 @@ export class RelayOnPremAuthStore {
 	 * Get storage key for a specific server
 	 */
 	private getStorageKey(serverId: string): string {
-		return `evc-team-relay_onprem_auth_${this.appId}_${serverId}`;
+		return `knap-sync_onprem_auth_${this.appId}_${serverId}`;
 	}
 
 	/**
 	 * Get storage key prefix for listing all server keys
 	 */
 	private getStorageKeyPrefix(): string {
-		return `evc-team-relay_onprem_auth_${this.appId}_`;
+		return `knap-sync_onprem_auth_${this.appId}_`;
 	}
 
 	/**

@@ -78,7 +78,7 @@ describe("RelayOnPremAuthStore", () => {
 				expiresAt: Date.now() + 3600000,
 			};
 
-			const key = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
+			const key = `knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			mockStorage.set(key, JSON.stringify(incompleteData));
 
 			const loaded = store.load(SERVER_ID);
@@ -92,7 +92,7 @@ describe("RelayOnPremAuthStore", () => {
 				expiresAt: Date.now() + 3600000,
 			};
 
-			const key = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
+			const key = `knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			mockStorage.set(key, JSON.stringify(incompleteData));
 
 			const loaded = store.load(SERVER_ID);
@@ -106,7 +106,7 @@ describe("RelayOnPremAuthStore", () => {
 				token: "token",
 			};
 
-			const key = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
+			const key = `knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			mockStorage.set(key, JSON.stringify(incompleteData));
 
 			const loaded = store.load(SERVER_ID);
@@ -116,10 +116,10 @@ describe("RelayOnPremAuthStore", () => {
 	});
 
 	describe("Storage key format", () => {
-		test("P32: Key format evc-team-relay_onprem_auth_{appId}_{server}", () => {
+		test("P32: Key format knap-sync_onprem_auth_{appId}_{server}", () => {
 			store.save(SERVER_ID, mockAuthData);
 
-			const expectedKey = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
+			const expectedKey = `knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			expect(mockStorage.has(expectedKey)).toBe(true);
 		});
 
@@ -292,7 +292,7 @@ describe("RelayOnPremAuthStore", () => {
 
 	describe("JSON parse error", () => {
 		test("P36: Returns null", () => {
-			const key = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
+			const key = `knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			mockStorage.set(key, "invalid json{");
 
 			const loaded = store.load(SERVER_ID);
@@ -396,7 +396,7 @@ describe("RelayOnPremAuthStore", () => {
 		});
 
 		test("Returns false if data incomplete", () => {
-			const key = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
+			const key = `knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			mockStorage.set(
 				key,
 				JSON.stringify({ user: mockAuthData.user }),
@@ -408,7 +408,7 @@ describe("RelayOnPremAuthStore", () => {
 
 	describe("Non-JSON data", () => {
 		test("Saves and loads string as-is", () => {
-			const key = `evc-team-relay_onprem_auth_${APP_ID}_${SERVER_ID}`;
+			const key = `knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			mockStorage.set(key, "plain text");
 
 			const loaded = store.load(SERVER_ID);

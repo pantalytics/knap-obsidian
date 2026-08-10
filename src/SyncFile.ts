@@ -28,7 +28,7 @@ export class ContentAddressedFileStore extends HasLogging {
 	constructor(appId: string) {
 		super();
 		this.setLoggers("[ContentAddressedFileStore]");
-		this.dbName = `${appId}-relay-hashes`;
+		this.dbName = `${appId}-knap-sync-hashes`;
 		this.ready = this.openDB();
 	}
 

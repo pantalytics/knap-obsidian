@@ -44,7 +44,7 @@
 	// Load cached providers from localStorage, keyed by auth URL
 	let cachedProviders = writable<string[]>([]);
 	let shouldAnimate = writable<boolean>(false);
-	const PROVIDERS_CACHE_PREFIX = "evc-team-relay-auth-providers-";
+	const PROVIDERS_CACHE_PREFIX = "knap-sync-auth-providers-";
 
 	function getCacheKey(): string {
 		// Use the PocketBase URL as the cache key

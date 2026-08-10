@@ -14,7 +14,7 @@ export async function getSyncInfo(
 	appId: string,
 	filePath: string,
 ): Promise<FileInfo | null> {
-	const dbName = `${appId}-sync`;
+	const dbName = `${appId}-knap-sync-sync`;
 	const objectStoreName = "data";
 
 	// First, check if the database exists
