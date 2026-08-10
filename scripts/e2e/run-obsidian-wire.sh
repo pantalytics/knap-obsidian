@@ -98,71 +98,94 @@ docker exec "$CONTAINER" sh -c \
 docker exec "$CONTAINER" sh -c \
 	'certutil -d sql:/config/.pki/nssdb -A -t "C,," -n knap-e2e-ca -i /tmp/knap-ca.crt' >/dev/null 2>&1 || true
 
-# --- phase 1: the share, the note, and the guids the relay needs ----------- #
+# --- the same note, carried by each mode in turn ---------------------------- #
+# Whole vault is the default and one folder is the option, so both have to move
+# the same bytes. Projects/from-disk.md is inside either share.
 drive() {
-	sed -e "s|__TLS_PORT__|$TLS_PORT|g" -e "s|__FOLDER_GUID__|$FOLDER_GUID|g" -e "s|__PHASE__|$1|g" \
+	sed -e "s|__TLS_PORT__|$TLS_PORT|g" -e "s|__FOLDER_GUID__|$2|g" \
+		-e "s|__PHASE__|$1|g" -e "s|__SCOPE__|$3|g" \
 		"$ROOT/scripts/e2e/obsidian-wire.e2e.js"
 }
 unwrap() { python3 -c 'import json,sys; v=json.loads(sys.stdin.read()); v=json.loads(v) if isinstance(v,str) else v; print(json.dumps(v))'; }
+newdoc() {
+	curl -fsS -X POST "http://127.0.0.1:$RELAY_PORT/doc/new" -H 'Content-Type: application/json' \
+		-d "{\"docId\":\"$1\"}" --max-time 8 >/dev/null
+}
 
-curl -fsS -X POST "http://127.0.0.1:$RELAY_PORT/doc/new" -H 'Content-Type: application/json' \
-	-d "{\"docId\":\"$FOLDER_GUID\"}" --max-time 8 >/dev/null
+run_scope() {
+	local scope="$1" folder_guid="$2"
+	newdoc "$folder_guid"
+
+	local setup push read land doc_guid
+	setup="$("$HARNESS" eval "$(drive setup "$folder_guid" "$scope")" | tail -1 | unwrap)"
+	doc_guid="$(printf '%s' "$setup" | python3 -c 'import json,sys; print(json.load(sys.stdin)["docGuid"])')"
+	newdoc "$doc_guid"
+
+	push="$("$HARNESS" eval "$(drive push "$folder_guid" "$scope")" | tail -1 | unwrap)"
+
+	cd "$ROOT"
+	read="$(node scripts/e2e/obsidian-wire-readback.mjs "ws://127.0.0.1:$RELAY_PORT" "$doc_guid" read | tail -1)"
+	node scripts/e2e/obsidian-wire-readback.mjs "ws://127.0.0.1:$RELAY_PORT" "$doc_guid" \
+		write "$REMOTE_LINE" >/dev/null
+
+	land="$("$HARNESS" eval "$(drive land "$folder_guid" "$scope")" | tail -1 | unwrap)"
+
+	printf '%s\n%s\n%s\n%s\n' "$setup" "$push" "$read" "$land" > "$WORK/$scope.json"
+	echo "  $scope: pushed, read back, and landed"
+}
+
+REMOTE_LINE=$'\nDeze regel is van een ander apparaat.\n'
 
 echo "relay, tls proxy and trust are up; driving Obsidian..."
-SETUP="$("$HARNESS" eval "$(drive setup)" | tail -1 | unwrap)"
-echo "  setup: $SETUP"
-DOC_GUID="$(printf '%s' "$SETUP" | python3 -c 'import json,sys; print(json.load(sys.stdin)["docGuid"])')"
-curl -fsS -X POST "http://127.0.0.1:$RELAY_PORT/doc/new" -H 'Content-Type: application/json' \
-	-d "{\"docId\":\"$DOC_GUID\"}" --max-time 8 >/dev/null
+run_scope vault "00000000-0000-4000-8000-00000000f001"
+run_scope folder "00000000-0000-4000-8000-00000000f0a2"
 
-# --- phase 2: the plugin puts the file's bytes into the CRDT ---------------- #
-PUSH="$("$HARNESS" eval "$(drive push)" | tail -1 | unwrap)"
-echo "  push:  $(printf '%s' "$PUSH" | head -c 160)"
-
-cd "$ROOT"
-READ="$(node scripts/e2e/obsidian-wire-readback.mjs "ws://127.0.0.1:$RELAY_PORT" "$DOC_GUID" read | tail -1)"
-echo "  read:  $(printf '%s' "$READ" | head -c 160)"
-
-LINE=$'\nDeze regel is van een ander apparaat.\n'
-node scripts/e2e/obsidian-wire-readback.mjs "ws://127.0.0.1:$RELAY_PORT" "$DOC_GUID" write "$LINE" >/dev/null
-
-# --- phase 3: opening the note is what lands it on disk --------------------- #
-LAND="$("$HARNESS" eval "$(drive land)" | tail -1 | unwrap)"
-
-python3 - "$SETUP" "$PUSH" "$READ" "$LAND" <<'PYEOF'
+python3 - "$WORK/vault.json" "$WORK/folder.json" <<'PYEOF'
 import json, sys
-setup, push, read, land = (json.loads(a) for a in sys.argv[1:5])
-failures = []
-
-if setup.get("relayId") != "relay-onprem":
-    failures.append("the share was not relay backed, so the push path would never read the file")
-if not push.get("docConnected"):
-    failures.append("the plugin's document never held an open socket")
-if not str(push.get("docUrl", "")).startswith("wss://"):
-    failures.append(f"the plugin did not connect over wss, url was {push.get('docUrl')}")
-if push.get("inCrdt") != push.get("expected"):
-    failures.append("the file's bytes did not reach the CRDT")
-if read.get("text") != push.get("expected"):
-    failures.append("the other device did not receive the file's bytes off the relay")
 
 remote = "Deze regel is van een ander apparaat."
-if remote not in land.get("inCrdt", ""):
-    failures.append("what the other device wrote did not reach the plugin")
-if remote not in land.get("onDisk", ""):
-    failures.append("what the other device wrote never landed in the vault file")
-if not land.get("onDisk", "").startswith("# uit de vault"):
-    failures.append("the original note body did not survive the round trip")
+failures = []
+summary = {}
 
-print(json.dumps({
-    "bytesOnDiskBefore": setup.get("bytesOnDisk"),
-    "bytesOnDiskAfter": len(land.get("onDisk", "")),
-    "otherDeviceSaw": read.get("text", "")[:60],
-}))
+for path in sys.argv[1:3]:
+    with open(path) as fh:
+        setup, push, read, land = (json.loads(line) for line in fh if line.strip())
+    scope = setup.get("scope", "?")
+
+    def bad(msg):
+        failures.append(f"[{scope}] {msg}")
+
+    if setup.get("relayId") != "relay-onprem":
+        bad("the share was not relay backed, so the push path never reads the file")
+    if setup.get("scope") == "folder" and setup.get("sharePath") != "Projects":
+        bad(f"the folder share was rooted at {setup.get('sharePath')!r}")
+    if not push.get("docConnected"):
+        bad("the plugin's document never held an open socket")
+    if not str(push.get("docUrl", "")).startswith("wss://"):
+        bad(f"the plugin did not connect over wss, url was {push.get('docUrl')}")
+    if push.get("inCrdt") != push.get("expected"):
+        bad("the file's bytes did not reach the CRDT")
+    if read.get("text") != push.get("expected"):
+        bad("the other device did not receive the file's bytes off the relay")
+    if remote not in land.get("inCrdt", ""):
+        bad("what the other device wrote did not reach the plugin")
+    if remote not in land.get("onDisk", ""):
+        bad("what the other device wrote never landed in the vault file")
+    if not land.get("onDisk", "").startswith("# uit de vault"):
+        bad("the original note body did not survive the round trip")
+
+    summary[scope] = {
+        "sharePath": setup.get("sharePath"),
+        "bytesBefore": setup.get("bytesOnDisk"),
+        "bytesAfter": len(land.get("onDisk", "")),
+    }
+
+print(json.dumps(summary))
 
 if failures:
     print("\nFAIL")
     for f in failures:
         print("  " + f)
     sys.exit(1)
-print("\nOK: a note goes disk -> CRDT -> relay -> another device, and back to disk")
+print("\nOK: a note goes disk -> CRDT -> relay -> another device and back, in both modes")
 PYEOF
