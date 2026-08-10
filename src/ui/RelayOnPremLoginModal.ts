@@ -5,7 +5,7 @@
  * Supports multi-server mode with optional serverId parameter
  */
 
-import { App, Modal, Notice, Platform } from "obsidian";
+import { App, Modal, Notice } from "obsidian";
 import type { LoginManager } from "../LoginManager";
 import type { RelayOnPremShareClient, OAuthProvider } from "../RelayOnPremShareClient";
 
@@ -117,12 +117,11 @@ export class RelayOnPremLoginModal extends Modal {
 		if (this.oauthProviders.length > 0) {
 			const oauthSection = form.createDiv({ cls: "relay-onprem-oauth-section evc-oauth-section" });
 
-			// TR-27: OAuthCallbackServer needs Node's http module to receive the
-			// redirect (Electron-only) — on mobile/browser it just throws "only
-			// supported on desktop" the moment a button is clicked. Hide the
-			// buttons with an explanation instead of letting the user hit that
-			// raw error after already trying.
-			if (Platform.isDesktopApp) {
+			// TR-27 used to hide these on mobile, because the callback
+			// arrived on a Node HTTP server and Node is desktop only. The
+			// callback is an obsidian:// deep link now, which the app
+			// receives on every platform, so the buttons show everywhere.
+			{
 				oauthSection.createDiv({
 					text: "Or sign in with:",
 					cls: "setting-item-name evc-oauth-label",
@@ -144,11 +143,6 @@ export class RelayOnPremLoginModal extends Modal {
 						void this.handleOAuthLogin(provider.name);
 					});
 				}
-			} else {
-				oauthSection.createDiv({
-					text: "SSO sign-in isn't available on mobile yet — use the desktop app, or sign in with email and password if your account has one.",
-					cls: "evc-text-muted evc-text-sm",
-				});
 			}
 		}
 

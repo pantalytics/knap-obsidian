@@ -104,6 +104,10 @@ import {
 	getDefaultServer,
 } from "./RelayOnPremConfig";
 import { RelayOnPremTokenProvider } from "./auth/RelayOnPremTokenProvider";
+import {
+	oauthDeepLinkReceiver,
+	OAUTH_CALLBACK_ACTION,
+} from "./auth/OAuthDeepLinkReceiver";
 import type { IAuthProvider } from "./auth/IAuthProvider";
 import { RelayOnPremShareClient, type FolderItem } from "./RelayOnPremShareClient";
 import { RelayOnPremShareClientManager, type ShareWithServer } from "./RelayOnPremShareClientManager";
@@ -1972,6 +1976,13 @@ export default class Live extends Plugin {
 			id?: string;
 			version?: string;
 		}
+
+		// The OAuth callback. Registered at load rather than at sign-in,
+		// because the browser may come back after Obsidian was restarted and
+		// a handler registered per flow would not be there to catch it.
+		this.registerObsidianProtocolHandler(OAUTH_CALLBACK_ACTION, (e) => {
+			oauthDeepLinkReceiver.handleCallback(e as unknown as Record<string, string>);
+		});
 
 		this.registerObsidianProtocolHandler("knap-sync/settings/relays", (e) => {
 			const parameters = e as unknown as Parameters;

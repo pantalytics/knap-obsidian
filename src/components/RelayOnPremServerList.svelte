@@ -324,7 +324,6 @@
 		// falling back. Skip straight to the password modal instead, which
 		// already explains SSO isn't available on mobile.
 		if (
-			Platform.isDesktopApp &&
 			serverInfo?.features?.oauth_enabled &&
 			serverInfo.features.oauth_provider
 		) {

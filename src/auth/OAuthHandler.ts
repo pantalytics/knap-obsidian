@@ -7,7 +7,10 @@
 
 import { curryLog } from "../debug";
 import { customFetch } from "../customFetch";
-import { OAuthCallbackServer } from "./OAuthCallbackServer";
+import {
+	oauthDeepLinkReceiver,
+	OAUTH_REDIRECT_URI,
+} from "./OAuthDeepLinkReceiver";
 import type { AuthResponse } from "./IAuthProvider";
 
 interface OAuthAuthorizeApiResponse {
@@ -29,11 +32,9 @@ const log = curryLog("[OAuthHandler]");
 export interface OAuthStartResult {
 	authorizeUrl: string;
 	callbackUrl: string;
-	port: number;
 }
 
 export class OAuthHandler {
-	private callbackServer: OAuthCallbackServer | null = null;
 	private normalizedUrl: string;
 	/** The state token issued by the control plane for the in-flight flow — verified against
 	 *  the loopback callback to reject any code/state a local process didn't legitimately
@@ -56,12 +57,12 @@ export class OAuthHandler {
 	async prepareOAuthFlow(provider: string): Promise<OAuthStartResult> {
 		log(`Preparing OAuth flow for provider: ${provider}`);
 
-		// Start callback server
-		this.callbackServer = new OAuthCallbackServer();
-		const port = await this.callbackServer.start();
-		const callbackUrl = `http://127.0.0.1:${port}/callback`;
+		// One fixed redirect URI, registered once at the IdP. It used to be a
+		// loopback URL on an OS-assigned port, which is why signing in against
+		// an IdP that matches redirect URIs exactly was impossible.
+		const callbackUrl = OAUTH_REDIRECT_URI;
 
-		log(`Callback server started on port ${port}`);
+		log(`Awaiting the callback on ${callbackUrl}`);
 
 		// Get authorize URL from control plane
 		const authorizeUrlEndpoint = `${this.normalizedUrl}/v1/auth/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(callbackUrl)}`;
@@ -101,7 +102,6 @@ export class OAuthHandler {
 			return {
 				authorizeUrl,
 				callbackUrl,
-				port,
 			};
 		} catch (error: unknown) {
 			this.stopCallbackServer();
@@ -119,8 +119,8 @@ export class OAuthHandler {
 		provider: string,
 		timeoutMs: number = 300000,
 	): Promise<AuthResponse> {
-		if (!this.callbackServer || !this.expectedState) {
-			throw new Error("Callback server not started - call prepareOAuthFlow first");
+		if (!this.expectedState) {
+			throw new Error("OAuth flow not started - call prepareOAuthFlow first");
 		}
 
 		try {
@@ -128,7 +128,10 @@ export class OAuthHandler {
 
 			// Wait for callback with code and state, rejecting anything that doesn't carry
 			// the state token we were issued for this flow (TR-21)
-			const { code, state } = await this.callbackServer.waitForCallback(this.expectedState, timeoutMs);
+			const { code, state } = await oauthDeepLinkReceiver.waitForCallback(
+				this.expectedState,
+				timeoutMs,
+			);
 
 			log(`Received callback with code and state`);
 
@@ -200,10 +203,7 @@ export class OAuthHandler {
 	 * Stop the callback server if running
 	 */
 	private stopCallbackServer(): void {
-		if (this.callbackServer) {
-			this.callbackServer.stop();
-			this.callbackServer = null;
-		}
+		oauthDeepLinkReceiver.cancel();
 		this.expectedState = null;
 	}
 

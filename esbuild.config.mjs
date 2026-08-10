@@ -39,10 +39,12 @@ const out = process.argv[3] || ".";
 const tld = staging ? "dev" : "md";
 
 // Obsidian vault plugin directory for auto-copy on build
-const obsidianPluginDir = process.env.OBSIDIAN_PLUGIN_DIR ||
-	path.join(process.env.HOME, "Obsidian/Rogozhin/.obsidian/plugins/evc-team-relay");
+// Where a dev build gets copied. No default vault path: upstream hardcoded
+// one developer's own vault here, which silently does nothing for everybody
+// else. Set OBSIDIAN_PLUGIN_DIR to enable the copy.
+const obsidianPluginDir = process.env.OBSIDIAN_PLUGIN_DIR || "";
 
-// EVC Team Relay uses relay-onprem mode, no default System 3 URLs.
+// Knap Sync uses relay-onprem mode, no default System 3 URLs.
 // (Relay health-check URL is NOT build-time config — it's derived at runtime
 // from the relay-onprem settings' per-server controlPlaneUrl; see
 // healthUrlForServer() in src/main.ts, TR-26.)
@@ -111,7 +113,7 @@ const context = await esbuild.context({
 		GIT_TAG: `"${gitTag}"`,
 		API_URL: `"${apiUrl}"`,
 		AUTH_URL: `"${authUrl}"`,
-		REPOSITORY: `"entire-vc/evc-team-relay-obsidian-plugin"`,
+		REPOSITORY: `"pantalytics/knap-obsidian"`,
 	},
 	treeShaking: true,
 	loader: {
@@ -148,6 +150,17 @@ const files = ["styles.css", manifest];
 
 const updateManifest = (manifest) => {
 	const manifestPath = path.join(out, path.basename("manifest.json"));
+
+	// Only ever stamp a copy. When `out` is the repo root the join resolves
+	// back to the source manifest, and a plain `npm run build` would rewrite
+	// its version to the git describe string and reindent it. That is how a
+	// developer who builds and then commits trips manifest-check, which is
+	// the one CI job that actually blocks.
+	if (path.resolve(manifestPath) === path.resolve("manifest.json")) {
+		console.log("Skipping version stamp: output is the source tree");
+		return;
+	}
+
 	const raw_manifest = fs.readFileSync(manifestPath);
 	const parsed = JSON.parse(raw_manifest);
 	parsed.version = gitTag;
@@ -168,6 +181,9 @@ const move = (fnames, mapping) => {
 
 // Copy build output to Obsidian plugin directory
 const copyToObsidian = () => {
+	if (!obsidianPluginDir) {
+		return;
+	}
 	if (!fs.existsSync(obsidianPluginDir)) {
 		console.log(`Obsidian plugin dir not found: ${obsidianPluginDir}`);
 		return;

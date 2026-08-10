@@ -10,7 +10,7 @@ import {
 	normalizePath,
 } from "obsidian";
 import { IndexeddbPersistence } from "./storage/y-indexeddb";
-import { dirname, join, sep } from "path-browserify";
+import { dirname, sep } from "path-browserify";
 import { buildConflictCopyPath } from "./conflictCopyPath";
 import { HasProvider, type ConnectionIntent } from "./HasProvider";
 import { Document } from "./Document";
