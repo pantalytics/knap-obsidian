@@ -29,3 +29,4 @@ CLAUDE.md
 
 # Internal documentation (not for OSS)
 dev-docs/
+.cache/

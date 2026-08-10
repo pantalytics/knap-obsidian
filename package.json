@@ -57,7 +57,8 @@
 		"ts-jest": "^29.1.2",
 		"tslib": "2.4.0",
 		"typescript": "^5.4.5",
-		"typescript-eslint": "^8.35.1"
+		"typescript-eslint": "^8.35.1",
+		"ws": "^8.21.3"
 	},
 	"dependencies": {
 		"diff": "^5.2.0",
@@ -76,6 +77,7 @@
 		"uuid": "^9.0.1",
 		"y-leveldb": "^0.1.2",
 		"y-protocols": "^1.0.5",
+		"y-sweet": "^0.9.1",
 		"y-websocket": "^1.5.3",
 		"yjs": "^13.6.30"
 	},
