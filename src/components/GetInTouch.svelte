@@ -44,7 +44,7 @@
 			<div class="menu-content">
 				<span style="text-align: center; display: flex">
 					<a
-						href="https://github.com/entire-vc"
+						href="https://github.com/pantalytics/knap-obsidian"
 						target="_blank"
 						rel="noopener noreferrer"
 						class="menu-item"
