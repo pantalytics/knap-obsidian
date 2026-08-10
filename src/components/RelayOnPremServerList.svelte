@@ -11,7 +11,7 @@
 		isServerVersionSupported,
 		serverCompatMessage,
 	} from "../RelayOnPremConfig";
-	import { RelayOnPremLoginModal } from "../ui/RelayOnPremLoginModal";
+	import { signInWithNotices } from "../knap/signIn";
 	import { customFetch } from "../customFetch";
 	import { confirmDialog } from "../ui/dialogs";
 
@@ -50,6 +50,11 @@
 
 	// Refresh key to force auth status recalculation
 	let authRefreshKey = 0;
+
+	// A sign-in involves a browser round trip, so the button has to say so.
+	// Without it the press looks ignored and people press it again, which the
+	// receiver refuses rather than queues.
+	let signingIn = false;
 
 	function getAuthStatus(serverId: string, _refreshKey: number): { isLoggedIn: boolean; email?: string } {
 		const lm = plugin.loginManager;
@@ -307,64 +312,40 @@
 		new Notice(`Server "${server.name}" removed`);
 	}
 
-	async function loginToServer(server: RelayOnPremServer) {
-		// First, fetch server info to check if OAuth is enabled
+	async function signIn(server: RelayOnPremServer) {
+		// One flow, and it does not start here. The person goes to Knap, signs
+		// in with Zitadel, and the relay credential travels between the two
+		// servers rather than through their clipboard. What used to live in
+		// this function -- an OAuth attempt against the control plane, then a
+		// fall back to an email and a password modal -- is gone with the code
+		// card that fed it.
+		//
+		// Billing support is still read off the server, because the row shows
+		// it and it has nothing to do with signing in.
 		const serverInfo = await fetchServerInfo(server.controlPlaneUrl);
-		console.log("[RelayOnPrem] Server info:", serverInfo);
-
-		// Track billing support for this server
 		if (serverInfo) {
-			serverBillingSupport[server.id] = serverInfo.edition === "enterprise" && serverInfo.features?.billing_enabled === true;
+			serverBillingSupport[server.id] =
+				serverInfo.edition === "enterprise" &&
+				serverInfo.features?.billing_enabled === true;
 		}
 
-		// If OAuth is enabled, try OAuth-first flow. TR-27: OAuthCallbackServer
-		// needs the Electron desktop app (Node's http module) — on mobile this
-		// attempt is doomed before it starts, and would flash a technical
-		// "OAuth failed: ... only supported on the desktop app" Notice before
-		// falling back. Skip straight to the password modal instead, which
-		// already explains SSO isn't available on mobile.
-		if (
-			serverInfo?.features?.oauth_enabled &&
-			serverInfo.features.oauth_provider
-		) {
-			console.log("[RelayOnPrem] OAuth enabled, provider:", serverInfo.features.oauth_provider);
-
-			const authProvider = plugin.loginManager.getAuthProviderForServer(server.id);
-			console.log("[RelayOnPrem] Auth provider for server:", server.id, "exists:", !!authProvider);
-
-			if (authProvider) {
-				try {
-					new Notice(`Starting OAuth login with ${serverInfo.features.oauth_provider}...`);
-					// Route through LoginManager (not the authProvider directly) so
-					// this.user gets set and notifyListeners() fires — see TR-10,
-					// #e7bca9fb — otherwise main.ts's post-login hook never runs and
-					// shares/live-sync don't start until the plugin is reloaded.
-					await plugin.loginManager.loginWithOAuth2(serverInfo.features.oauth_provider, server.id);
-					new Notice(`Logged in to ${server.name}`);
-					refreshAuthStatus();
-					return;
-				} catch (error: unknown) {
-					// OAuth failed, fall back to password login
-					console.error("[RelayOnPrem] OAuth login failed:", error);
-					new Notice(`OAuth failed: ${error instanceof Error ? error.message : "Unknown error"}. Falling back to password.`);
-				}
-			} else {
-				console.warn("[RelayOnPrem] No auth provider found for server:", server.id);
-				new Notice("Auth provider not ready. Please try again.");
-			}
-		}
-
-		// Show password login modal (default or fallback)
-		const modal = new RelayOnPremLoginModal(
-			plugin.app,
-			plugin.loginManager,
-			() => {
-				new Notice(`Logged in to ${server.name}`);
+		signingIn = true;
+		try {
+			const ok = await signInWithNotices({
+				vault: plugin.app.vault,
+				loginManager: plugin.loginManager,
+				sharedFolders: plugin.sharedFolders,
+				shareClients: plugin.shareClientManager!,
+				settings,
+				saveServers: (update) => relayOnPremSettings.update(update),
+			});
+			if (ok) {
+				dispatch("serversChanged");
 				refreshAuthStatus();
-			},
-			server.id
-		);
-		modal.open();
+			}
+		} finally {
+			signingIn = false;
+		}
 	}
 
 	async function logoutFromServer(serverId: string) {
@@ -430,8 +411,12 @@
 						Logout
 					</button>
 				{:else}
-					<button class="relay-server-btn mod-cta" on:click={() => loginToServer(server)}>
-						Login
+					<button
+						class="relay-server-btn mod-cta"
+						disabled={signingIn}
+						on:click={() => signIn(server)}
+					>
+						{signingIn ? "Signing in..." : "Sign in"}
 					</button>
 				{/if}
 				<button

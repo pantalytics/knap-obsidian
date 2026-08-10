@@ -109,6 +109,7 @@ import {
 	oauthDeepLinkReceiver,
 	OAUTH_CALLBACK_ACTION,
 } from "./auth/OAuthDeepLinkReceiver";
+import { handoffReceiver, PAIRED_ACTION } from "./knap/handoff";
 import type { IAuthProvider } from "./auth/IAuthProvider";
 import { RelayOnPremShareClient, type FolderItem } from "./RelayOnPremShareClient";
 import { RelayOnPremShareClientManager, type ShareWithServer } from "./RelayOnPremShareClientManager";
@@ -1985,6 +1986,14 @@ export default class Live extends Plugin {
 		// a handler registered per flow would not be there to catch it.
 		this.registerObsidianProtocolHandler(OAUTH_CALLBACK_ACTION, (e) => {
 			oauthDeepLinkReceiver.handleCallback(e as unknown as Record<string, string>);
+		});
+
+		// The Knap handoff, where a whole setup arrives. Registered at load
+		// for the same reason as the one above, and it matters more here: the
+		// browser trip includes a Zitadel login, which is exactly the kind of
+		// wait somebody wanders off during.
+		this.registerObsidianProtocolHandler(PAIRED_ACTION, (e) => {
+			handoffReceiver.handleCallback(e as unknown as Record<string, string>);
 		});
 
 		this.registerObsidianProtocolHandler("knap-sync/settings/relays", (e) => {
