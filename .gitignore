@@ -30,3 +30,8 @@ CLAUDE.md
 # Internal documentation (not for OSS)
 dev-docs/
 .cache/
+
+# The end to ends drive Obsidian by evaluating an expression inside it, so
+# their payloads are .js and the *.js rule above swallowed them. That rule is
+# there for the build output, not for source.
+!scripts/e2e/*.js
