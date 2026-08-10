@@ -2447,6 +2447,7 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 		guid: string,
 		relayId?: string,
 		awaitingUpdates?: boolean,
+		scope?: ShareScope,
 	) => SharedFolder;
 	private _offRemoteUpdates?: () => void;
 
@@ -2458,6 +2459,7 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 			guid: string,
 			relayId?: string,
 			awaitingUpdates?: boolean,
+			scope?: ShareScope,
 		) => SharedFolder,
 		private settings: NamespacedSettings<SharedFolderSettings[]>,
 	) {
@@ -2565,7 +2567,13 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 			}
 			const relayId = folder?.relay;
 			try {
-				this._new(folder.path, folder.guid, relayId);
+				this._new(
+					folder.path,
+					folder.guid,
+					relayId,
+					undefined,
+					folder.scope ?? "folder",
+				);
 				updated = true;
 			} catch (e: unknown) {
 				this.warn(`Skipping duplicate folder ${folder.path}: ${e instanceof Error ? e.message : String(e)}`);
@@ -2582,6 +2590,7 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 		guid: string,
 		relayId?: string,
 		awaitingUpdates?: boolean,
+		scope: ShareScope = "folder",
 	): SharedFolder {
 		const existing = this.find(
 			(folder) => folder.path == path && folder.guid == guid,
@@ -2597,19 +2606,46 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 		if (samePath) {
 			throw new Error("Conflict: Tracked folder exists at this location.");
 		}
+		// A vault share covers every path, so it overlaps any other share by
+		// definition. findNestingConflict compares prefixes and cannot see
+		// that, and TR-30 is what overlapping shares cost: two shares racing
+		// over the same file. So the vault share is exclusive, both ways.
+		const existingVault = this.find((folder) => folder.isVaultScope);
+		if (scope === "vault" && this.items().length > 0) {
+			throw new Error(
+				"Conflict: syncing the whole vault cannot be combined with folder shares.",
+			);
+		}
+		if (existingVault) {
+			throw new Error(
+				"Conflict: this vault is already synced whole, so a folder cannot be shared separately.",
+			);
+		}
 		const nestingConflict = this.findNestingConflict(path);
 		if (nestingConflict) {
 			throw new Error(
 				`Conflict: nested shares are not supported (existing share at ${nestingConflict.path}).`,
 			);
 		}
-		const folder = this.folderBuilder(path, guid, relayId, awaitingUpdates);
+		const folder = this.folderBuilder(
+			path,
+			guid,
+			relayId,
+			awaitingUpdates,
+			scope,
+		);
 		this._set.add(folder);
 		return folder;
 	}
 
-	new(path: string, guid: string, relayId?: string, awaitingUpdates?: boolean) {
-		const folder = this._new(path, guid, relayId, awaitingUpdates);
+	new(
+		path: string,
+		guid: string,
+		relayId?: string,
+		awaitingUpdates?: boolean,
+		scope: ShareScope = "folder",
+	) {
+		const folder = this._new(path, guid, relayId, awaitingUpdates, scope);
 		this.notifyListeners();
 		return folder;
 	}

@@ -53,6 +53,7 @@ interface ObsidianApp {
 import { relative } from "path-browserify";
 import { SharedFolder } from "./SharedFolder";
 import type { SharedFolderSettings } from "./SharedFolder";
+import type { ShareScope } from "./vaultScope";
 import { LiveViewManager } from "./LiveViews";
 
 import { SharedFolders } from "./SharedFolder";
@@ -1057,13 +1058,14 @@ export default class Live extends Plugin {
 		guid: string,
 		relayId?: string,
 		awaitingUpdates?: boolean,
+		scope: ShareScope = "folder",
 	): SharedFolder {
 		// Initialize settings with pattern matching syntax
 		const folderSettings = new NamespacedSettings<SharedFolderSettings>(
 			this.settings as unknown as Settings<unknown>,
 			`sharedFolders/[guid=${guid}]`,
 		);
-		const settings: SharedFolderSettings = { guid: guid, path: path };
+		const settings: SharedFolderSettings = { guid: guid, path: path, scope };
 		if (relayId) {
 			settings["relay"] = relayId;
 		}
@@ -1094,6 +1096,7 @@ export default class Live extends Plugin {
 			this.app,
 			relayId,
 			awaitingUpdates,
+			scope,
 		);
 		return folder;
 	}
