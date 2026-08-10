@@ -88,7 +88,6 @@ import { FeatureFlagToggleModal } from "./ui/FeatureFlagModal";
 import { DebugModal } from "./ui/DebugModal";
 import { NamespacedSettings, Settings } from "./SettingsStorage";
 import { ObsidianFileAdapter, ObsidianNotifier } from "./debugObsididan";
-import { BugReportModal } from "./ui/BugReportModal";
 import { IndexedDBAnalysisModal } from "./ui/IndexedDBAnalysisModal";
 
 import { SyncSettingsManager } from "./SyncSettings";
@@ -484,15 +483,6 @@ export default class Live extends Plugin {
 						},
 					});
 					this.addCommand({
-						id: "send-bug-report",
-						name: "Send bug report",
-						callback: () => {
-							const modal = new BugReportModal(this.app, this);
-							this.openModals.push(modal);
-							modal.open();
-						},
-					});
-					this.addCommand({
 						id: "show-debug-info",
 						name: "Show debug info",
 						callback: () => {
@@ -519,7 +509,6 @@ export default class Live extends Plugin {
 					});
 				} else {
 					this.removeCommand("toggle-feature-flags");
-					this.removeCommand("send-bug-report");
 					this.removeCommand("show-debug-info");
 					this.removeCommand("disable-debugging");
 					this.addCommand({

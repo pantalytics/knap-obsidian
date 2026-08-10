@@ -12,7 +12,6 @@ import { LoginManager } from "./LoginManager";
 import { LiveTokenStore } from "./LiveTokenStore";
 import type { ClientToken } from "./client/types";
 import { S3RN, type S3RNType } from "./S3RN";
-import { encodeClientToken } from "./client/types";
 import { flags } from "./flagManager";
 import { computeReconnectDelay } from "./reconnectThrottle";
 
@@ -127,10 +126,6 @@ export class HasProvider extends HasLogging {
 		this.refreshProvider(this.clientToken);
 	}
 
-	public get debuggerUrl(): string {
-		const payload = encodeClientToken(this.clientToken);
-		return `https://debugger.y-sweet.dev/?payload=${payload}`;
-	}
 
 	notifyListeners() {
 		this.debug("[Provider State]", this.path, this.state);
