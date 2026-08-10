@@ -1,5 +1,5 @@
 name: Feature Request
-description: Suggest a feature for Team Relay plugin or relay server
+description: Suggest a feature for the Knap Sync plugin or the relay it talks to
 title: "[Feature]: "
 labels: ["enhancement"]
 body:
@@ -8,7 +8,7 @@ body:
     attributes:
       label: Component
       options:
-        - Obsidian Plugin
+        - Knap Sync plugin
         - Relay Server
         - Web Publish
         - Control Plane / Admin UI

@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a bug in Team Relay plugin or relay server
+description: Report a bug in the Knap Sync plugin or the relay it talks to
 title: "[Bug]: "
 labels: ["bug"]
 body:
@@ -9,7 +9,7 @@ body:
       label: Component
       description: Where does the issue occur?
       options:
-        - Obsidian Plugin (sync/collaboration)
+        - Knap Sync plugin (sync/collaboration)
         - Relay Server (self-hosted)
         - Web Publish
         - Control Plane / Admin UI
@@ -34,7 +34,7 @@ body:
       label: Deployment
       options:
         - Self-hosted (docker compose)
-        - Hosted (entire.vc)
+        - Hosted (cp.knap.pantalytics.com)
         - Local development
     validations:
       required: true
