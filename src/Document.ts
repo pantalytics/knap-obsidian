@@ -22,7 +22,7 @@ export function isDocument(file?: IFile): file is Document {
 
 export class Document extends HasProvider implements IFile, HasMimeType {
 	private _parent: SharedFolder;
-	private _persistence: IndexeddbPersistence;
+	private _persistence?: IndexeddbPersistence;
 	whenSyncedPromise: Dependency<void> | null = null;
 	persistenceSynced: boolean = false;
 	_awaitingUpdates?: boolean;
@@ -84,45 +84,17 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 		);
 
 		this.setLoggers(`[SharedDoc](${this.path})`);
-		try {
-			const key = `${this.sharedFolder.appId}-knap-sync-doc-${this.guid}`;
-			this._persistence = new IndexeddbPersistence(key, this.ydoc);
-		} catch (e: unknown) {
-			this.warn("Unable to open persistence.", this.guid);
-			console.error(e);
-			throw e;
+
+		// Opening the store is what makes a note expensive: one IndexedDB
+		// database per note, allocated for every note in the share whether or
+		// not anybody looks at it. At folder scope that was survivable. At
+		// vault scope it is one database per note in the vault, which is the
+		// single biggest thing standing between this fork and whole-vault
+		// sync. Behind the flag the store opens on first use, which is when
+		// the editor asks for it.
+		if (!flags().enableLazyDocuments) {
+			this.ensurePersistence();
 		}
-
-		void this.whenSynced().then(() => {
-			const statsObserver = (event: Y.YTextEvent) => {
-				const origin: unknown = event.transaction.origin;
-				if (event.changes.keys.size === 0) return;
-				if (origin == this) return;
-				this.updateStats();
-			};
-			this.ytext.observe(statsObserver);
-			this.unsubscribes.push(() => {
-				this.ytext?.unobserve(statsObserver);
-			});
-			this.updateStats();
-			try {
-				void this._persistence.set("path", this.path);
-				void this._persistence.set("relay", this.sharedFolder.relayId || "");
-				void this._persistence.set("appId", this.sharedFolder.appId);
-				void this._persistence.set("s3rn", S3RN.encode(this.s3rn));
-			} catch {
-				// pass
-			}
-
-			void (async () => {
-				const serverSynced = await this.getServerSynced();
-				if (!serverSynced) {
-					await this.onceProviderSynced();
-					await this.markSynced();
-				}
-				void this.sharedFolder.markUploaded(this);
-			})();
-		});
 
 		withFlag(flag.enableDeltaLogging, () => {
 			const logObserver = (event: Y.YTextEvent) => {
@@ -332,12 +304,72 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 		);
 	}
 
+	/**
+	 * Open this note's store, and run the setup that depends on it.
+	 *
+	 * Idempotent: the second call is free. Everything that used to sit in the
+	 * constructor after `new IndexeddbPersistence` lives here, because it all
+	 * needs the store and deferring the store without deferring its followers
+	 * would only move the cost.
+	 */
+	private ensurePersistence(): IndexeddbPersistence {
+		if (this._persistence) {
+			return this._persistence;
+		}
+		try {
+			const key = `${this.sharedFolder.appId}-knap-sync-doc-${this.guid}`;
+			this._persistence = new IndexeddbPersistence(key, this.ydoc);
+		} catch (e: unknown) {
+			this.warn("Unable to open persistence.", this.guid);
+			console.error(e);
+			throw e;
+		}
+
+		void this.whenSynced().then(() => {
+			const statsObserver = (event: Y.YTextEvent) => {
+				const origin: unknown = event.transaction.origin;
+				if (event.changes.keys.size === 0) return;
+				if (origin == this) return;
+				this.updateStats();
+			};
+			this.ytext.observe(statsObserver);
+			this.unsubscribes.push(() => {
+				this.ytext?.unobserve(statsObserver);
+			});
+			this.updateStats();
+			try {
+				void this.persistence.set("path", this.path);
+				void this.persistence.set("relay", this.sharedFolder.relayId || "");
+				void this.persistence.set("appId", this.sharedFolder.appId);
+				void this.persistence.set("s3rn", S3RN.encode(this.s3rn));
+			} catch {
+				// pass
+			}
+
+			void (async () => {
+				const serverSynced = await this.getServerSynced();
+				if (!serverSynced) {
+					await this.onceProviderSynced();
+					await this.markSynced();
+				}
+				void this.sharedFolder.markUploaded(this);
+			})();
+		});
+
+		return this._persistence;
+	}
+
+	/** The note's store, opened on first use. */
+	private get persistence(): IndexeddbPersistence {
+		return this.ensurePersistence();
+	}
+
 	public get ready(): boolean {
-		return this._persistence.isReady(this.synced);
+		return this.persistence.isReady(this.synced);
 	}
 
 	hasLocalDB(): boolean {
-		return this._persistence.hasServerSync || this._persistence.hasUserData();
+		return this.persistence.hasServerSync || this.persistence.hasUserData();
 	}
 
 	async awaitingUpdates(): Promise<boolean> {
@@ -383,7 +415,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 					return;
 				}
 				
-				this._persistence.once("synced", () => {
+				this.persistence.once("synced", () => {
 					this.persistenceSynced = true;
 					resolve();
 				});
@@ -422,19 +454,19 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 	requestSave = debounce(() => this.save(), 2000);
 
 	async markOrigin(origin: "local" | "remote"): Promise<void> {
-		await this._persistence.setOrigin(origin);
+		await this.persistence.setOrigin(origin);
 	}
 
 	async getOrigin(): Promise<"local" | "remote" | undefined> {
-		return this._persistence.getOrigin();
+		return this.persistence.getOrigin();
 	}
 
 	async markSynced(): Promise<void> {
-		await this._persistence.markServerSynced();
+		await this.persistence.markServerSynced();
 	}
 
 	async getServerSynced(): Promise<boolean> {
-		return this._persistence.getServerSynced();
+		return this.persistence.getServerSynced();
 	}
 
 

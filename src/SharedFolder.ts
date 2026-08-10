@@ -2049,6 +2049,18 @@ export class SharedFolder extends HasProvider {
 		}
 		const doc = this.getOrCreateDoc(guid, vpath);
 
+		// The per-document catch-up probe reads this note's own store, and
+		// reading it opens it. That is the fan-out enableLazyDocuments exists
+		// to avoid, and it fires for every note in the share at load. The same
+		// work is already queued at folder level by netSync's
+		// enqueueSharedFolderSync, so under the flag this defers to that
+		// rather than asking each note about itself up front.
+		if (flags().enableLazyDocuments) {
+			this.files.set(guid, doc);
+			this.fset.add(doc, update);
+			return doc;
+		}
+
 		void this.whenReady().then(async () => {
 			const synced = await doc.getServerSynced();
 			if (doc.tfile?.stat.size === 0 && !synced) {

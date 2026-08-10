@@ -16,6 +16,11 @@ export interface FeatureFlags {
 	enablePreviewViewHooks: boolean;
 	enableMetadataViewHooks: boolean;
 	enableKanbanView: boolean;
+	/**
+	 * Open a note's IndexedDB store when the note is first used, rather than
+	 * for every note in the share at load.
+	 */
+	enableLazyDocuments: boolean;
 }
 
 export const FeatureFlagDefaults: FeatureFlags = {
@@ -36,6 +41,7 @@ export const FeatureFlagDefaults: FeatureFlags = {
 	enablePreviewViewHooks: true,
 	enableMetadataViewHooks: true,
 	enableKanbanView: true,
+	enableLazyDocuments: false,
 } as const;
 
 export function isKeyOfFeatureFlags(key: string): key is keyof FeatureFlags {
