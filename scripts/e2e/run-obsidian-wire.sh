@@ -26,7 +26,7 @@ CONTAINER="${KNAP_OBSIDIAN_CONTAINER:-knap-obsidian}"
 RELAY_PORT="${KNAP_RELAY_PORT:-8099}"
 TLS_PORT="${KNAP_TLS_PORT:-8443}"
 BIN="$ROOT/.cache/y-sweet/node_modules/y-sweet/bin/y-sweet"
-DOC_GUID="2c619536-2c2d-4b14-a2c5-5fe2c60b566b"
+
 FOLDER_GUID="00000000-0000-4000-8000-00000000f001"
 
 for need in docker curl openssl node; do
@@ -98,16 +98,71 @@ docker exec "$CONTAINER" sh -c \
 docker exec "$CONTAINER" sh -c \
 	'certutil -d sql:/config/.pki/nssdb -A -t "C,," -n knap-e2e-ca -i /tmp/knap-ca.crt' >/dev/null 2>&1 || true
 
-# --- the relay documents the plugin will ask for ---------------------------- #
-for id in "$FOLDER_GUID" "$DOC_GUID"; do
-	curl -fsS -X POST "http://127.0.0.1:$RELAY_PORT/doc/new" \
-		-H 'Content-Type: application/json' -d "{\"docId\":\"$id\"}" --max-time 8 >/dev/null
-done
+# --- phase 1: the share, the note, and the guids the relay needs ----------- #
+drive() {
+	sed -e "s|__TLS_PORT__|$TLS_PORT|g" -e "s|__FOLDER_GUID__|$FOLDER_GUID|g" -e "s|__PHASE__|$1|g" \
+		"$ROOT/scripts/e2e/obsidian-wire.e2e.js"
+}
+unwrap() { python3 -c 'import json,sys; v=json.loads(sys.stdin.read()); v=json.loads(v) if isinstance(v,str) else v; print(json.dumps(v))'; }
+
+curl -fsS -X POST "http://127.0.0.1:$RELAY_PORT/doc/new" -H 'Content-Type: application/json' \
+	-d "{\"docId\":\"$FOLDER_GUID\"}" --max-time 8 >/dev/null
 
 echo "relay, tls proxy and trust are up; driving Obsidian..."
-RESULT="$("$HARNESS" eval "$(sed -e "s|__TLS_PORT__|$TLS_PORT|g" -e "s|__FOLDER_GUID__|$FOLDER_GUID|g" \
-	"$ROOT/scripts/e2e/obsidian-wire.e2e.js")" | tail -1)"
-echo "$RESULT"
+SETUP="$("$HARNESS" eval "$(drive setup)" | tail -1 | unwrap)"
+echo "  setup: $SETUP"
+DOC_GUID="$(printf '%s' "$SETUP" | python3 -c 'import json,sys; print(json.load(sys.stdin)["docGuid"])')"
+curl -fsS -X POST "http://127.0.0.1:$RELAY_PORT/doc/new" -H 'Content-Type: application/json' \
+	-d "{\"docId\":\"$DOC_GUID\"}" --max-time 8 >/dev/null
+
+# --- phase 2: the plugin puts the file's bytes into the CRDT ---------------- #
+PUSH="$("$HARNESS" eval "$(drive push)" | tail -1 | unwrap)"
+echo "  push:  $(printf '%s' "$PUSH" | head -c 160)"
 
 cd "$ROOT"
-node scripts/e2e/obsidian-wire-readback.mjs "ws://127.0.0.1:$RELAY_PORT" "$DOC_GUID" "$RESULT"
+READ="$(node scripts/e2e/obsidian-wire-readback.mjs "ws://127.0.0.1:$RELAY_PORT" "$DOC_GUID" read | tail -1)"
+echo "  read:  $(printf '%s' "$READ" | head -c 160)"
+
+LINE=$'\nDeze regel is van een ander apparaat.\n'
+node scripts/e2e/obsidian-wire-readback.mjs "ws://127.0.0.1:$RELAY_PORT" "$DOC_GUID" write "$LINE" >/dev/null
+
+# --- phase 3: opening the note is what lands it on disk --------------------- #
+LAND="$("$HARNESS" eval "$(drive land)" | tail -1 | unwrap)"
+
+python3 - "$SETUP" "$PUSH" "$READ" "$LAND" <<'PYEOF'
+import json, sys
+setup, push, read, land = (json.loads(a) for a in sys.argv[1:5])
+failures = []
+
+if setup.get("relayId") != "relay-onprem":
+    failures.append("the share was not relay backed, so the push path would never read the file")
+if not push.get("docConnected"):
+    failures.append("the plugin's document never held an open socket")
+if not str(push.get("docUrl", "")).startswith("wss://"):
+    failures.append(f"the plugin did not connect over wss, url was {push.get('docUrl')}")
+if push.get("inCrdt") != push.get("expected"):
+    failures.append("the file's bytes did not reach the CRDT")
+if read.get("text") != push.get("expected"):
+    failures.append("the other device did not receive the file's bytes off the relay")
+
+remote = "Deze regel is van een ander apparaat."
+if remote not in land.get("inCrdt", ""):
+    failures.append("what the other device wrote did not reach the plugin")
+if remote not in land.get("onDisk", ""):
+    failures.append("what the other device wrote never landed in the vault file")
+if not land.get("onDisk", "").startswith("# uit de vault"):
+    failures.append("the original note body did not survive the round trip")
+
+print(json.dumps({
+    "bytesOnDiskBefore": setup.get("bytesOnDisk"),
+    "bytesOnDiskAfter": len(land.get("onDisk", "")),
+    "otherDeviceSaw": read.get("text", "")[:60],
+}))
+
+if failures:
+    print("\nFAIL")
+    for f in failures:
+        print("  " + f)
+    sys.exit(1)
+print("\nOK: a note goes disk -> CRDT -> relay -> another device, and back to disk")
+PYEOF
