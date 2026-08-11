@@ -32,7 +32,7 @@ export class FolderCreateModal extends Modal {
 			.setDesc("The path where the shared folder will be created")
 			.addText((text) => {
 				text
-					.setPlaceholder("e.g., Notes/Shared")
+					.setPlaceholder("Notes/shared")
 					.setValue(this.folderPath)
 					.onChange((value) => {
 						this.folderPath = value.trim();

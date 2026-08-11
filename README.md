@@ -71,16 +71,43 @@ starts.
 
 ---
 
+## What it costs
+
+The plugin is free and MIT licensed. Nothing to buy, no licence key to enter.
+
+The relay is a different question, and whoever runs it decides the answer. Where
+a relay offers plans, Knap Sync shows them under *Settings, your server,
+Billing*, along with the one you are on, and the upgrade button hands you to
+that relay's own checkout. Plans carry limits, so a free one can run out of
+shares. Run your own relay without plans and the screen has nothing to show.
+
+**So whether Knap Sync costs you anything depends on the relay, not on the
+plugin.** The Billing screen of the server you actually use is the place to
+check.
+
+---
+
 ## Network use
 
-Knap Sync talks to the servers configured in its settings and to nothing else.
+**An account on a relay is required.** Knap Sync is a client, and with no relay
+to sign in to there is nothing for it to sync against. The account lives on the
+relay rather than with us, so if you run your own, you issue your own.
+
+Knap Sync talks to the servers configured in its settings, and to an identity
+provider only if you sign in through one.
 
 | Connection | Protocol | What for | When |
 |---|---|---|---|
 | Control plane | HTTPS | Sign-in, token refresh, listing and creating shares, inviting people | On login and on share operations |
 | Control plane | HTTPS | Issuing the short-lived token for a relay connection | Before opening a socket |
 | Relay server | WSS | The document sync itself | While a shared note is open, and while catching up |
+| Identity provider | HTTPS | The sign-in page itself, at Google, GitHub, Microsoft, Discord or your own OIDC provider | Only when your relay offers that provider and you choose it |
 | `obsidian://` callback | Obsidian URL scheme | Receiving the OAuth redirect, where the relay offers OAuth | During sign-in only |
+
+The identity provider row is worth being precise about. Knap Sync never contacts
+Google or the others on its own account. It recognises the sign-in page your
+relay sent you to, so that it can catch the redirect coming back. Sign in with
+email and password and no third party is involved at all.
 
 **No telemetry.** The plugin does not phone home, count anything, or send your
 notes anywhere except the relay you pointed it at. The default server above is a

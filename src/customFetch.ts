@@ -34,8 +34,12 @@ if ((window as unknown as Record<string, unknown>)["EventSource"] === undefined)
 		);
 	} else {
 		console.warn("[Relay] Polyfilling EventSource API");
-		// eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for optional polyfill
-		(window as unknown as Record<string, unknown>)["EventSource"] = require("eventsource") as typeof EventSource;
+		// eventsource v4 exports { ErrorEvent, EventSource }, so the module object
+		// is not itself a constructor. Assigning it whole left window.EventSource
+		// as a plain object and `new EventSource(...)` would have thrown.
+		// eslint-disable-next-line @typescript-eslint/no-require-imports -- lazy, desktop only
+		const eventsource = require("eventsource") as typeof import("eventsource");
+		(window as unknown as Record<string, unknown>)["EventSource"] = eventsource.EventSource;
 	}
 }
 

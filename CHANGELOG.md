@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.43
+- Catalog: `eslint-plugin-obsidianmd` was pinned at `^0.1.9` while the community directory scans every published version against the current ruleset. Bumped to `^0.4.1` and switched `eslint.config.mjs` to consume the plugin's own `recommended` config whole. Spreading it into a `rules` block, as before, dropped everything the config carries besides rule entries, which is why lint sat green on findings the directory would have reported.
+- Sync: `netSync()` did not await `addLocalDocs()`, so `syncFileTree()` could start while the divergent-guid claim was still running. The other caller already awaited it.
+- Auth: `require("eventsource")` assigned the whole module object to `window.EventSource`. eventsource v4 exports `{ ErrorEvent, EventSource }`, so had that desktop polyfill ever fired, `new EventSource(...)` would have thrown. It now takes the named export.
+- Mobile: dropped three unreachable Node branches that put `process` and `Buffer` in a plugin shipping with `isDesktopOnly: false`. Obsidian always has a `window`, as the surrounding code already assumed.
+- UI: `activeDocument.createElement` replaced with Obsidian's `createDiv`/`createSpan`/`createEl` at fifteen sites, and the OAuth timeout now uses `window.setTimeout` so it behaves in popout windows.
+- Deps: uuid to `^11.1.1`, clearing GHSA-w5hq-g745-h8pq, and dropped `@types/uuid` now that uuid ships its own.
+- Docs: README states that an account is required, what the relay can charge for, and that a webview reaches an identity provider when you sign in through one.
+
 ## 1.1.38
 - Network (TR-26): offline/online detection was dead in the EVC build (build-time `HEALTH_URL` was always empty) — the health-check URL is now derived at runtime from the active server's control-plane URL, with `NetworkStatus.updateUrl()` re-pointing it when the default server changes.
 - Sync (TR-09): attachments (images/audio/video/pdf) never synced in live shares — `LiveTokenStore.fetchFileToken` now branches to the relay-onprem token provider the same way `refresh()` already does, and `requestFileToken` mints a presigned-URL token from the new control-plane `POST /shares/{id}/file-token` route (companion fix, control-plane PR #151).

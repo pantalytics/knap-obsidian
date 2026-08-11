@@ -1,30 +1,43 @@
-import eslint from "@eslint/js";
-import tseslint from "typescript-eslint";
 import globals from "globals";
-import obsidianPlugin from "eslint-plugin-obsidianmd";
+import obsidianmd from "eslint-plugin-obsidianmd";
 
-export default tseslint.config(
-    eslint.configs.recommended,
-    ...tseslint.configs.recommended,
+// eslint-plugin-obsidianmd is the same ruleset the community directory runs
+// against every published version, so its own `recommended` is taken whole
+// rather than cherry-picked into a `rules` block. Cherry-picking is what let
+// this config sit green on 0.1.9 while the directory's scan would have failed:
+// spreading `configs.recommended` into `rules` silently drops everything the
+// config carries besides rule entries. See docs/catalog-submission.md.
+const obsidianPlugin = obsidianmd.default ?? obsidianmd;
+
+export default [
+    ...obsidianPlugin.configs.recommended,
     {
-        plugins: {
-            obsidianmd: obsidianPlugin,
-        },
         languageOptions: {
             globals: {
                 ...globals.browser,
-                ...globals.node,
             },
             parserOptions: {
+                projectService: true,
+                tsconfigRootDir: import.meta.dirname,
                 sourceType: "module",
             },
         },
         rules: {
-            ...obsidianPlugin.configs.recommended,
-            // These rules require parserOptions.project (typed linting) — not enabled in this config
-            "obsidianmd/no-plugin-as-component": "off",
-            "obsidianmd/no-view-references-in-plugin": "off",
-            "obsidianmd/prefer-file-manager-trash-file": "off",
+            // "Knap Sync" is the product's name, so sentence case does not apply
+            // to it. Declaring the brand once beats an eslint-disable at every
+            // mention, which the ruleset now rejects outright anyway.
+            "obsidianmd/ui/sentence-case": [
+                "error",
+                {
+                    brands: ["Knap Sync", "Knap", "Obsidian", "GitHub", "Google", "Microsoft", "Discord"],
+                    // Strings that open with a number: the rule reads the word
+                    // after the digits as the first word of the sentence and
+                    // asks for "30 Days", which is title case, not sentence
+                    // case. Our copy already says "30 days". Exempting beats
+                    // breaking correct English to satisfy the check.
+                    ignoreRegex: ["^\\d"],
+                },
+            ],
             "no-unused-vars": "off",
             "@typescript-eslint/no-unused-vars": ["error", { args: "none", caughtErrorsIgnorePattern: "^_" }],
             "@typescript-eslint/ban-ts-comment": "off",
@@ -59,6 +72,11 @@ export default tseslint.config(
     {
         // Test and build files need Node.js built-ins and have different conventions
         files: ["__tests__/**/*", "esbuild.config.mjs", "version-bump.mjs", "debug-tools/**/*"],
+        languageOptions: {
+            globals: {
+                ...globals.node,
+            },
+        },
         rules: {
             "no-restricted-imports": "off",
             "@typescript-eslint/no-unused-vars": "warn",
@@ -67,6 +85,6 @@ export default tseslint.config(
         },
     },
     {
-        ignores: ["node_modules/", "main.js", "*.config.js"],
-    }
-);
+        ignores: ["node_modules/", "main.js", "*.config.js", "coverage/"],
+    },
+];

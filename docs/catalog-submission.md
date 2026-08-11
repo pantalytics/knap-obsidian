@@ -72,78 +72,86 @@ Verified against the live repo and the live catalog on 2026-08-11, not assumed.
 | Name does not read as a first-party Obsidian product | Knap Sync. 275 catalog plugins carry "Sync" in the name, so the word itself is not a problem. CI checks for "Obsidian". |
 | `manifest.json` carries id, name, version, minAppVersion, description, author, `isDesktopOnly` | All set. `isDesktopOnly: false`, so the phone is a supported target and the scan will hold it to that. |
 | Semantic version, matching across manifest, package.json, versions.json, manifest-beta.json | CI fails the build when any two disagree. |
-| Release tagged bare semver, equal to `manifest.version` | 1.1.41 and 1.1.42 are published. `release.yml` refuses a `v` prefix and refuses a tag that differs from the manifest. |
+| Release tagged bare semver, equal to `manifest.version` | 1.1.41 and 1.1.42 are published. `release.yml` refuses a `v` prefix and refuses a tag that differs from the manifest. 1.1.43 still needs tagging, see below. |
 | Release carries `main.js`, `manifest.json`, `styles.css` | All three are attached to 1.1.42, with build provenance attestation. |
 | Licence and attribution for forked code | `LICENSE` carries all three copyright lines, `NOTICE` records the fork point and every vendored dependency. |
+| Required disclosures in the README | Network use was already there. 1.1.43 adds that an account is required, that a relay can charge and where its billing screen lives, and that signing in through Google, GitHub, Microsoft or Discord loads that provider's page. |
 | No client-side telemetry | None. The policy prohibits it outright, and nothing in `src/` reaches an analytics service. |
+
+## What was done for the scan, in 1.1.43
+
+`eslint-plugin-obsidianmd` now tracks `^0.4.1`, and `eslint.config.mjs` consumes
+the plugin's own `recommended` config whole instead of spreading it into a
+`rules` block. The old spread kept only the rule entries and dropped the rest of
+the config, which is the mechanism by which `npm run lint` stayed green on
+findings the directory would have reported.
+
+Against the plugin's untuned `recommended`, `src/` went from 1 error and 37
+warnings to **0 errors and 5 warnings**:
+
+| Was | Now |
+|---|---|
+| `eslint-comments/no-restricted-disable`, 2 | Gone. Both were `eslint-disable` comments switching off `ui/sentence-case` for the string "Knap Sync". The ruleset forbids disabling that rule, so the suppression had become the finding. The rule's `brands` option names the product once instead. |
+| `@typescript-eslint/no-floating-promises`, 1 | Fixed. `netSync()` did not await `addLocalDocs()`, so `syncFileTree()` could start while the divergent-guid claim was still in flight. |
+| `obsidianmd/prefer-create-el`, 15 | Fixed. `activeDocument.createElement()` became `createDiv()`, `createSpan()` and `createEl()`. Note the rule's message suggests `activeWindow.createDiv()`, which does not type-check: Obsidian puts `createDiv` on `Node`, where it appends, and the bare global is the one that returns a detached element. |
+| `obsidianmd/ui/sentence-case`, 9 | 2 were the product name and are handled by `brands`. 1 was a placeholder, now "Notes/shared". The other 6 are duration labels like "30 days", where the rule asks for "30 Days"; that is title case, so the rule is wrong and `ignoreRegex` exempts strings that open with a digit rather than breaking correct English. |
+| `no-undef`, 7 | 6 fixed, 1 left. Three unreachable Node branches carrying `process` and `Buffer` are gone, which they should have been in a plugin shipping `isDesktopOnly: false`, and three `require()` calls became a plain import once it was clear the only cycle was type-only. |
+| `obsidianmd/prefer-window-timers`, 2 | Fixed, and the `Pending.timer` type went from `@types/node`'s `Timeout` to `number`. |
+| `@typescript-eslint/no-deprecated`, 3 | Left. lib0's `Observable` is deprecated in favour of `ObservableV2`, but `YSweetProvider` extends it and the migration retypes every event on the core sync class. This is vendored y-websocket code kept close to upstream on purpose. |
+| `obsidianmd/settings-tab/prefer-setting-definitions`, 1 | Left. The rule assumes a tab built from `new Setting()` rows; ours mounts a Svelte app, so there is nothing to enumerate without rebuilding the settings UI. |
+| `no-undef` on `require`, 1 | Left. `customFetch.ts` lazily requires the eventsource polyfill on desktop only, and esbuild resolves it at build time. |
+
+The four left are warnings with a reason, not oversights. Preview the scan the
+way the directory runs it, ignoring our own tuning:
+
+```bash
+npx eslint src/ --config <(printf 'import o from "eslint-plugin-obsidianmd";\nexport default [...(o.default??o).configs.recommended];\n')
+```
+
+One thing this does not settle: the directory runs its own configuration, so our
+`brands` and `ignoreRegex` entries may not reach it. If the scorecard comes back
+naming "Knap sync", that is the reason, and the product name is the right answer
+rather than the lint's.
 
 ## What is left
 
-### 1. Make the scan green before submitting, not after
+### 1. Decide on svelte
 
-Bump `eslint-plugin-obsidianmd` to `^0.4.1` so CI is measuring the same thing
-the directory measures, then clear what it finds. Run today against `0.4.1`,
-`src/` reports **3 errors and 35 warnings** where the pinned `0.1.9` reports
-nothing:
+`npm audit --omit=dev` is down to one moderate finding. uuid went to `^11.1.1`
+in 1.1.43, clearing GHSA-w5hq-g745-h8pq, and `@types/uuid` went with it.
 
-| Count | Rule | What it is |
-|---|---|---|
-| 2 errors | `eslint-comments/no-restricted-disable` | `src/main.ts:465` and `:1289` disable `obsidianmd/ui/sentence-case` for the string "Knap Sync". The new ruleset forbids disabling that rule, so the suppression is now the finding. The rule takes a `brands` option, so the fix is to declare `brands: ["Knap Sync"]` in the config and delete both comments. Naming the brand once is also more honest than switching the rule off twice. |
-| 1 error | `@typescript-eslint/no-floating-promises` | `src/SharedFolder.ts:818`, `this.addLocalDocs()` is not awaited. A real one, in the reconcile path that the two lines above it warn is order-sensitive. |
-| 15 warnings | `obsidianmd/prefer-create-el` | `activeDocument.createElement()` where `activeWindow.createDiv()` is wanted, mostly in `AwarenessViewPlugin.ts`. |
-| 7 warnings | `obsidianmd/ui/sentence-case` | Title case in UI strings, for example "30 Days" and "E.g., notes/shared". |
-| 7 warnings | `no-undef` on `process` | `src/client/provider.ts:497` and `:592`. Both sit behind `typeof window !== "undefined"`, and in Obsidian `window` is always defined, so this is dead code inherited from y-websocket rather than a mobile hazard. Deleting the branch is cheaper than explaining it. |
-| 3 warnings | `@typescript-eslint/no-deprecated` | Deprecated `Observable` and `super` use in `src/client/provider.ts`. |
-| 2 warnings | `obsidianmd/prefer-window-timers` | Bare `setTimeout`/`clearTimeout` in `OAuthDeepLinkReceiver.ts`, which misbehave in popout windows. |
-| 1 warning | `obsidianmd/settings-tab/prefer-setting-definitions` | `SettingsTab.ts` has no `getSettingDefinitions()`, so our settings never show up in Obsidian's settings search. Not required, but it is the kind of thing a scorecard reader notices. |
+svelte `<=5.55.6` remains, six advisories. Five are server-side rendering issues
+that cannot fire inside a plugin. The sixth, GHSA-rcqx-6q8c-2c42, is DOM
+clobbering of internal framework state and does run client-side. The fix is
+svelte 5, and this repo has 64 components on svelte 4 using `new Component()`,
+`$set` and `$destroy`, all of which svelte 5 removes. That is a migration with
+its own testing, not a dependency bump, and it should not ride along with a
+catalog submission.
 
-Warnings are not automatically fatal, but they are visible on the scorecard, and
-the errors are what stops a submission.
+So the choice is to submit carrying one moderate advisory on the scorecard, or
+to do the svelte 5 migration first. Carrying it looks right, given five of the
+six cannot fire here and the sixth needs an attacker who can already put chosen
+markup into the settings UI.
 
-To preview the scan without waiting on the version bump:
+### 2. Cut the 1.1.43 release
+
+The published releases are 1.1.41 and 1.1.42, both of which predate the scan
+fixes. Submitting against either would put the version with the findings in
+front of the scanner, so tag first:
 
 ```bash
-npm i --no-save eslint-plugin-obsidianmd@latest
-npx eslint src/            # against a config that uses the new recommended set
+git tag 1.1.43        # bare semver, exactly the value in manifest.json
+git push origin 1.1.43
 ```
 
-### 2. Clear the two dependency advisories
+The release workflow builds, attests provenance and attaches the three assets.
+`workflow_dispatch` rebuilds a tag if a run needs repeating.
 
-`npm audit --omit=dev` reports two moderate findings in shipped dependencies:
-
-- **svelte `<=5.55.6`**, six advisories. Five are server-side rendering issues
-  that cannot fire in a plugin, but GHSA-rcqx-6q8c-2c42 is DOM clobbering of
-  internal framework state and runs client-side. We are on svelte 4, so the fix
-  is a major upgrade rather than a patch.
-- **uuid `<11.1.1`**, a missing buffer bounds check in v3/v5/v6 when a buffer is
-  passed. We do not pass one, so the exposure is nil, but the scanner reads the
-  lockfile and not the call sites.
-
-Neither is dangerous here. Both will appear on the scorecard, so decide
-deliberately whether to upgrade first or to submit and carry them.
-
-### 3. Say the quiet parts in the README
-
-The developer policies allow all of these and require that each be stated
-plainly in the README. Ours covers network use well and is thin on the rest:
-
-- **An account is required.** The Connect section shows a Login step, which
-  implies it. The policy asks for it to be indicated, so indicate it: without an
-  account on a relay, the plugin does nothing.
-- **Whether payment is required.** If the default relay at
-  `cp.knap.pantalytics.com` is a paid service at any tier, that has to be said.
-  This is the one item on this page that needs a decision rather than an edit.
-- **The "and to nothing else" sentence.** `src/LoginManager.ts:566-573`
-  intercepts OAuth redirects for Google, GitHub, Discord and Microsoft, which
-  means a webview can load those hosts during sign-in. It only happens when the
-  relay offers social sign-in and the user picks it, and we initiate none of it,
-  but the sentence as written overstates the case. One clause fixes it.
-
-### 4. Submit at community.obsidian.md
+### 3. Submit at community.obsidian.md
 
 Sign in with an Obsidian account, link the GitHub account that owns
 `pantalytics/knap-obsidian`, pick the repo, complete the form. The dashboard
-also offers a preview scan, which is worth running even after step 1.
+also offers a preview scan, which is worth running even after all of the above.
 
 Only the first version is submitted by hand. After that Obsidian picks up new
 releases from GitHub on its own, and scans each one.

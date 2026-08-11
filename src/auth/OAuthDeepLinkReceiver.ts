@@ -32,7 +32,10 @@ interface Pending {
 	expectedState: string;
 	resolve: (params: OAuthCallbackParams) => void;
 	reject: (error: Error) => void;
-	timer: ReturnType<typeof setTimeout>;
+	// window.setTimeout returns a number. @types/node is in the dev dependencies
+	// and its Timeout leaks into a bare ReturnType<typeof setTimeout>, which is
+	// the wrong handle for a plugin that also runs on a phone.
+	timer: number;
 }
 
 /**
@@ -114,7 +117,7 @@ export class OAuthDeepLinkReceiver {
 		}
 
 		return new Promise<OAuthCallbackParams>((resolve, reject) => {
-			const timer = setTimeout(() => {
+			const timer = window.setTimeout(() => {
 				this.pending = null;
 				reject(new Error("Timed out waiting for the sign-in to come back"));
 			}, timeoutMs);
@@ -136,7 +139,7 @@ export class OAuthDeepLinkReceiver {
 
 	private settle(finish: () => void): void {
 		if (this.pending) {
-			clearTimeout(this.pending.timer);
+			window.clearTimeout(this.pending.timer);
 			this.pending = null;
 		}
 		finish();
