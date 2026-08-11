@@ -11,6 +11,8 @@ import {
 	knapServer,
 	migrateRelayOnPremSettings,
 	serverCompatMessage,
+	syncModeFor,
+	withUpdatedSyncMode,
 } from "../src/RelayOnPremConfig";
 
 function makeServer(overrides: Partial<RelayOnPremServer> = {}): RelayOnPremServer {
@@ -263,5 +265,63 @@ describe("migrateRelayOnPremSettings", () => {
 	test("a disabled legacy shape still ends up on the Knap server", () => {
 		const result = migrateRelayOnPremSettings({ enabled: false, controlPlaneUrl: "" });
 		expect(result.settings).toEqual(DEFAULT_RELAY_ONPREM_SETTINGS);
+	});
+});
+
+describe("what this vault syncs", () => {
+	test("a server that has never been asked syncs the whole vault", () => {
+		const settings = makeSettings([makeServer({ id: KNAP_SERVER_ID })]);
+		expect(syncModeFor(settings, KNAP_SERVER_ID)).toBe("whole-vault");
+	});
+
+	test("a server that is not there syncs the whole vault too", () => {
+		// The default is what those installs are already doing, so a missing
+		// entry must not read as "folders" and stop the vault going up.
+		expect(syncModeFor(makeSettings([]), KNAP_SERVER_ID)).toBe("whole-vault");
+	});
+
+	test("the setting is read back per server", () => {
+		const settings = makeSettings([
+			makeServer({ id: "server-1", syncMode: "folders" }),
+			makeServer({ id: "server-2" }),
+		]);
+		expect(syncModeFor(settings, "server-1")).toBe("folders");
+		expect(syncModeFor(settings, "server-2")).toBe("whole-vault");
+	});
+
+	test("setting it leaves the other servers alone", () => {
+		const settings = makeSettings([makeServer({ id: "server-1" }), makeServer({ id: "server-2" })]);
+		const updated = withUpdatedSyncMode(settings, "server-2", "folders");
+		expect(syncModeFor(updated, "server-2")).toBe("folders");
+		expect(syncModeFor(updated, "server-1")).toBe("whole-vault");
+	});
+
+	test("no change and no server are both a no-op, by reference", () => {
+		const settings = makeSettings([makeServer({ id: "server-1", syncMode: "folders" })]);
+		expect(withUpdatedSyncMode(settings, "server-1", "folders")).toBe(settings);
+		expect(withUpdatedSyncMode(settings, "nope", "whole-vault")).toBe(settings);
+	});
+
+	test("the migration carries the setting across", () => {
+		// It is one of the two fields somebody put there by hand, so a rebuild
+		// against a different address must not silently put the whole vault
+		// back on the wire.
+		const result = migrateRelayOnPremSettings({
+			enabled: true,
+			servers: [
+				makeServer({
+					id: KNAP_SERVER_ID,
+					controlPlaneUrl: KNAP_CONTROL_PLANE_URL,
+					syncMode: "folders",
+				}),
+			],
+			defaultServerId: KNAP_SERVER_ID,
+		});
+		expect(syncModeFor(result.settings, KNAP_SERVER_ID)).toBe("folders");
+	});
+
+	test("knapServer leaves the field out when there is nothing to say", () => {
+		expect(knapServer()).not.toHaveProperty("syncMode");
+		expect(knapServer(undefined, "folders").syncMode).toBe("folders");
 	});
 });

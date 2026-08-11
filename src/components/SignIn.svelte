@@ -8,14 +8,25 @@
 		KNAP_CONTROL_PLANE_URL,
 		isServerVersionSupported,
 		serverCompatMessage,
+		syncModeFor,
+		withUpdatedSyncMode,
 	} from "../RelayOnPremConfig";
 	import { RelayOnPremLoginModal } from "../ui/RelayOnPremLoginModal";
+	import { confirmDialog } from "../ui/dialogs";
 	import { customFetch } from "../customFetch";
 	import {
 		decideVaultShare,
 		foldersInsteadLine,
+		foldersToggleHint,
+		planModeSwitch,
+		switchConfirmation,
+		switchedNotice,
+		switchFailedLine,
 		FIRST_SYNC_LINES,
+		FOLDERS_TOGGLE_LABEL,
+		type LocalShare,
 		type ShareLike,
+		type VaultSyncMode,
 	} from "../vaultShare";
 	import { RelayOnPremShareClientManager } from "../RelayOnPremShareClientManager";
 	import {
@@ -48,6 +59,9 @@
 	let settings = $relayOnPremSettings;
 	$: settings = $relayOnPremSettings;
 	$: server = settings.servers[0];
+	// What this vault syncs. A setting on this side only: the server is told
+	// which folders to share and never which preference produced them.
+	$: mode = syncModeFor(settings, KNAP_SERVER_ID);
 
 	// Bumped after every sign-in and sign-out: the login manager is not a
 	// store, so the state below is recomputed rather than subscribed to.
@@ -79,6 +93,10 @@
 	// Filled in by startSyncingTheVault, and by the folder it finds or makes.
 	let vaultPaused = false;
 	let vaultSyncing = false;
+	// True while the switch is removing shares. The toggle is disabled for the
+	// duration, because a second flip halfway through would plan against a
+	// list that is still being taken apart.
+	let switching = false;
 
 	function getAuthStatus(_refreshKey: number): {
 		isSignedIn: boolean;
@@ -137,13 +155,22 @@
 	 * signed in has not met a share or a folder picker yet, and asking them to
 	 * pick one is asking about a vault they have not seen us handle.
 	 */
-	async function startSyncingTheVault() {
+	/**
+	 * `current` is passed rather than read off `mode`, and that is not a
+	 * flourish. `mode` is a reactive value derived from the settings store, and
+	 * a reactive statement does not run until the next flush, so the switch
+	 * calling this immediately after writing the setting would read the old
+	 * one. Reading "folders" here after switching to the whole vault would put
+	 * the setting straight back.
+	 */
+	async function startSyncingTheVault(current: VaultSyncMode = mode) {
 		const clients = shareClients();
 		if (!clients) return;
 
 		const vaultName = plugin.app.vault.getName();
 		const folders = plugin.sharedFolders.items();
 		const local = {
+			mode: current,
 			hasVaultShare: folders.some((folder) => folder.isVaultScope),
 			folderShareCount: folders.filter((folder) => !folder.isVaultScope).length,
 		};
@@ -164,6 +191,11 @@
 			return;
 		}
 		if (decision.action === "folders-instead") {
+			// A second device arrives here: the folders came off the server and
+			// the setting is per device, so what is shared is where the mode is
+			// read from. Writing it down is what stops the next sign-in on this
+			// device from proposing the whole vault again.
+			await persistMode("folders");
 			vaultLines = [foldersInsteadLine(decision.count)];
 			return;
 		}
@@ -190,6 +222,95 @@
 			vaultLines = FIRST_SYNC_LINES;
 		} catch (e: unknown) {
 			error = e instanceof Error ? e.message : "Could not start syncing this vault";
+		}
+	}
+
+	async function persistMode(next: VaultSyncMode) {
+		await plugin.relayOnPremSettings.update((current) =>
+			withUpdatedSyncMode(current, KNAP_SERVER_ID, next),
+		);
+	}
+
+	/** A share the server says it has never heard of is already gone. */
+	function alreadyGone(e: unknown): boolean {
+		return e instanceof Error && /^Failed to delete share: 404\b/.test(e.message);
+	}
+
+	/**
+	 * Flip between the whole vault and individual folders.
+	 *
+	 * The point of doing it here rather than leaving somebody to unshare by
+	 * hand is that both sides move together. Unsharing folders one at a time
+	 * used to leave the plugin syncing nothing and the server still holding
+	 * the shares, and nothing in either half noticed the disagreement.
+	 *
+	 * So the removals go first and the setting is written only once they have
+	 * all landed. A refusal stops the run: what was already removed stays
+	 * removed, the setting still says what is actually happening, and pressing
+	 * the toggle again picks up from there.
+	 */
+	async function setMode(next: VaultSyncMode) {
+		if (switching || next === mode) return;
+		const clients = shareClients();
+		if (!clients) {
+			error = "Sign in first.";
+			return;
+		}
+		error = "";
+
+		const mine: LocalShare[] = plugin.sharedFolders
+			.items()
+			.map((folder) => ({ id: folder.guid, isVaultScope: folder.isVaultScope }));
+		const plan = planModeSwitch(next, mine);
+
+		const agreed = await confirmDialog(
+			plugin.app,
+			switchConfirmation(next, plan.remove.length),
+		);
+		if (!agreed) return;
+
+		switching = true;
+		try {
+			for (const id of plan.remove) {
+				try {
+					await clients.deleteShare(KNAP_SERVER_ID, id);
+				} catch (e: unknown) {
+					if (!alreadyGone(e)) {
+						error = switchFailedLine(
+							next,
+							e instanceof Error ? e.message : "Knap did not answer",
+						);
+						return;
+					}
+				}
+				const local = plugin.sharedFolders.find((folder) => folder.guid === id);
+				if (local) {
+					plugin.sharedFolders.delete(local);
+				}
+			}
+			await persistMode(next);
+
+			vaultSyncing = false;
+			vaultPaused = false;
+			vaultLines = [];
+			if (plan.createVaultShare) {
+				await startSyncingTheVault(next);
+			} else {
+				vaultLines = [
+					foldersInsteadLine(
+						plugin.sharedFolders
+							.items()
+							.filter((folder) => !folder.isVaultScope).length,
+					),
+				];
+			}
+			new Notice(switchedNotice(next));
+		} finally {
+			// Whatever happened, the file explorer's marks are stale: the run
+			// removes shares one at a time and an abort halfway leaves some of
+			// them gone.
+			plugin.folderNavDecorations?.quickRefresh();
+			switching = false;
 		}
 	}
 
@@ -308,6 +429,34 @@
 				<button class="knap-btn" on:click={signOut}>Sign out</button>
 			</div>
 		</div>
+		<!-- The one thing there is to decide about this vault, and it lives here
+		     rather than on Knap's own page: everything about the vault is set in
+		     Obsidian (ADR-0031), and the page reports what came of it. -->
+		<div class="knap-mode">
+			<div
+				class="checkbox-container"
+				class:is-enabled={mode === "folders"}
+				class:is-disabled={switching}
+				role="switch"
+				aria-checked={mode === "folders"}
+				aria-label={FOLDERS_TOGGLE_LABEL}
+				tabindex="0"
+				on:click={() => {
+					void setMode(mode === "folders" ? "whole-vault" : "folders");
+				}}
+				on:keypress={(e) => {
+					if (e.key === "Enter" || e.key === " ") {
+						void setMode(mode === "folders" ? "whole-vault" : "folders");
+					}
+				}}
+			>
+				<div class="checkbox-toggle"></div>
+			</div>
+			<div class="knap-mode-text">
+				<div class="knap-mode-label">{FOLDERS_TOGGLE_LABEL}</div>
+				<div class="knap-mode-hint">{foldersToggleHint(mode)}</div>
+			</div>
+		</div>
 		{#if instruction}
 			<p class="knap-signin-hint">{instruction}</p>
 		{/if}
@@ -408,6 +557,34 @@
 		margin-left: auto;
 		display: flex;
 		gap: 6px;
+	}
+
+	.knap-mode {
+		display: flex;
+		align-items: flex-start;
+		gap: 12px;
+		width: 100%;
+	}
+
+	.knap-mode-text {
+		min-width: 0;
+	}
+
+	.knap-mode-label {
+		color: var(--text-normal);
+		font-size: var(--font-ui-small, 13px);
+	}
+
+	.knap-mode-hint {
+		margin-top: 2px;
+		color: var(--text-muted);
+		font-size: 12px;
+		max-width: 46em;
+	}
+
+	.knap-mode .checkbox-container.is-disabled {
+		opacity: 0.6;
+		pointer-events: none;
 	}
 
 	.knap-dot {

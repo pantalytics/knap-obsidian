@@ -8,8 +8,8 @@ This page is the design the fork is being cut down to. It was settled on
 2026-08-11 against an interactive mockup, and the decisions behind it live as
 ADRs in the private admin repository, `knap-mcp-admin/docs/adr/`: **0030**
 (sign-in), **0031** (one control surface), **0032** (whole vault by default),
-**0033** (one server), **0034** (permissions). Where this page and an ADR
-disagree, the ADR wins.
+**0033** (one server), **0034** (permissions), **0036** (individual folders is
+one toggle). Where this page and an ADR disagree, the ADR wins.
 
 ## The one rule
 
@@ -69,11 +69,11 @@ that belong to this device.
 
 ### 4. Shared folders instead
 
-Somebody who wants less unshares the vault and shares folders instead, **from the
-file explorer, the way this plugin already works**: right-click a folder,
-*Knap: share folder*, at any depth. `Clients` and `Personal/Reading list` are
-both ordinary cases, which is why the table shows the path rather than the leaf
-name.
+Somebody who wants less turns on **Sync individual folders**, the one setting on
+this screen, and then shares folders **from the file explorer, the way this
+plugin already works**: right-click a folder, *Knap: share folder*, at any depth.
+`Clients` and `Personal/Reading list` are both ordinary cases, which is why the
+table shows the path rather than the leaf name.
 
 The settings screen lists what exists. It never becomes a second way to create
 one.
@@ -81,8 +81,19 @@ one.
 **This is an either/or, not a preference**, and the code enforces it in both
 directions (`SharedFolder._new`): *syncing the whole vault cannot be combined
 with folder shares*, and *this vault is already synced whole, so a folder cannot
-be shared separately*. The copy has to say so where somebody would otherwise hunt
-for a checkbox, because otherwise they meet it as an error.
+be shared separately*. So the toggle is a switch between two states rather than
+a third one, and flipping it is a single act: the shares the old mode owned come
+off the server first, and the setting is written only once they have all gone.
+
+**That order is the point of it existing** (ADR-0036). Unsharing folders one at a
+time used to leave this plugin syncing nothing and the server still holding the
+shares, and neither half noticed. A refusal now stops the switch: what came off
+stays off, the setting still describes what is happening, and pressing the toggle
+again picks up from there.
+
+Both directions delete shares and make new ones, so both re-upload. The
+confirmation says that before anything moves, and says the notes on the device
+are not touched.
 
 ### 5. Signed out
 
