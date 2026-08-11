@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Notice } from "obsidian";
-	import { createEventDispatcher } from "svelte";
+	import { createEventDispatcher, onMount } from "svelte";
 	import type Live from "../main";
 	import type { RelayOnPremServer } from "../RelayOnPremConfig";
 	import {
@@ -11,6 +11,13 @@
 	} from "../RelayOnPremConfig";
 	import { RelayOnPremLoginModal } from "../ui/RelayOnPremLoginModal";
 	import { customFetch } from "../customFetch";
+	import {
+		decideVaultShare,
+		foldersInsteadLine,
+		FIRST_SYNC_LINES,
+		type ShareLike,
+	} from "../vaultShare";
+	import { RelayOnPremShareClientManager } from "../RelayOnPremShareClientManager";
 
 	// One button, because there is one server and one account (ADR-0030,
 	// ADR-0033). No address to type, nothing to choose, and no code to paste:
@@ -41,6 +48,9 @@
 	let signingIn = false;
 	let showOtherWays = false;
 	let error = "";
+	// What the vault is doing, once there is an account behind it. Empty until
+	// signing in has had its say about the whole vault.
+	let vaultLines: readonly string[] = [];
 
 	$: auth = getAuthStatus(authRefreshKey);
 
@@ -59,6 +69,100 @@
 	function refresh(signedIn: boolean) {
 		authRefreshKey = authRefreshKey + 1;
 		dispatch(signedIn ? "signedIn" : "signedOut");
+		if (signedIn) {
+			void startSyncingTheVault();
+		} else {
+			vaultLines = [];
+		}
+	}
+
+	// Signing in is the consent (ADR-0032), and this covers the person who
+	// signed in on an older build and has nothing shared yet: they are looking
+	// at this screen while it happens, with the copy under it. Somebody already
+	// syncing, whole or by folders, is left alone by the decision itself.
+	onMount(() => {
+		if (getAuthStatus(0).isSignedIn) {
+			void startSyncingTheVault();
+		}
+	});
+
+	/** The share clients, which only exist once somebody is signed in. */
+	function shareClients(): RelayOnPremShareClientManager | undefined {
+		if (!plugin.shareClientManager) {
+			const multiServerAuth = plugin.loginManager.getMultiServerAuthManager();
+			if (!multiServerAuth) return undefined;
+			plugin.shareClientManager = new RelayOnPremShareClientManager(
+				multiServerAuth,
+				settings.servers,
+			);
+		}
+		for (const s of settings.servers) {
+			if (!plugin.shareClientManager.getClient(s.id)) {
+				plugin.shareClientManager.addServer(s);
+			}
+		}
+		return plugin.shareClientManager;
+	}
+
+	/**
+	 * Sync the whole vault, without asking (ADR-0032).
+	 *
+	 * Signing in is the moment this happens, because a person who has just
+	 * signed in has not met a share or a folder picker yet, and asking them to
+	 * pick one is asking about a vault they have not seen us handle.
+	 */
+	async function startSyncingTheVault() {
+		const clients = shareClients();
+		if (!clients) return;
+
+		const vaultName = plugin.app.vault.getName();
+		const folders = plugin.sharedFolders.items();
+		const local = {
+			hasVaultShare: folders.some((folder) => folder.isVaultScope),
+			folderShareCount: folders.filter((folder) => !folder.isVaultScope).length,
+		};
+
+		let remote: ShareLike[] = [];
+		try {
+			remote = (await clients.listShares(KNAP_SERVER_ID)) as ShareLike[];
+		} catch (e: unknown) {
+			// Listing is how a second device finds the share it should adopt.
+			// Without it, creating one would risk a duplicate of the same
+			// vault, so say nothing happened rather than guess.
+			error = e instanceof Error ? e.message : "Could not reach Knap";
+			return;
+		}
+
+		const decision = decideVaultShare(vaultName, remote, local);
+		if (decision.action === "already-syncing") {
+			return;
+		}
+		if (decision.action === "folders-instead") {
+			vaultLines = [foldersInsteadLine(decision.count)];
+			return;
+		}
+
+		try {
+			const share =
+				decision.action === "adopt"
+					? decision.share
+					: await clients.createShare(KNAP_SERVER_ID, {
+							path: decision.path,
+							kind: "folder",
+							visibility: "private",
+						});
+
+			// The empty path is the vault root, and "vault" is the scope that
+			// makes every path in the share resolve without a prefix.
+			const folder = plugin.sharedFolders.new("", share.id, "relay-onprem", false, "vault");
+			if (folder?.settings) {
+				folder.settings.onpremServerId = KNAP_SERVER_ID;
+			}
+			plugin.folderNavDecorations?.quickRefresh();
+			vaultLines = FIRST_SYNC_LINES;
+		} catch (e: unknown) {
+			error = e instanceof Error ? e.message : "Could not start syncing this vault";
+		}
 	}
 
 	interface ServerFeatures {
@@ -174,6 +278,9 @@
 				<button class="knap-btn" on:click={signOut}>Sign out</button>
 			</div>
 		</div>
+		{#each vaultLines as line}
+			<p class="knap-signin-hint">{line}</p>
+		{/each}
 	{:else}
 		<p class="knap-signin-line">
 			Sign in with your Knap account. Then share this vault, or a folder in it.

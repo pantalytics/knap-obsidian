@@ -590,6 +590,14 @@ export default class Live extends Plugin {
 				this.shareClientManager,
 				this.webSyncManager,
 				hashManifestStore,
+				// Where a share lives here, which for a vault share is the
+				// root, whatever name it carries on the server.
+				(shareId: string) => {
+					const folder = this.sharedFolders.find(
+						(f) => f.guid === shareId && f.isVaultScope,
+					);
+					return folder ? "" : undefined;
+				},
 			);
 		}
 

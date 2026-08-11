@@ -544,6 +544,63 @@ describe("InboundFileDownloader", () => {
 			);
 		});
 
+		// A vault share's local root is the empty string, and its name on the
+		// server is the vault's own. The downloader takes the local root from
+		// the resolver it is handed, and falls back to the server's path.
+		describe("a vault share, whose root is the vault itself", () => {
+			let vaultDownloader: InboundFileDownloader;
+
+			beforeEach(() => {
+				vaultDownloader = new InboundFileDownloader(
+					vault,
+					clientManager as any,
+					webSyncManager as any,
+					new Map(),
+					() => "",
+				);
+			});
+
+			test("writes at the vault root rather than inside a folder named after the vault", async () => {
+				const content = new ArrayBuffer(4);
+				(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare());
+				(clientManager.getFilesIndex as jest.Mock).mockResolvedValue([
+					{ path: "Notes/a.md", sha256: "sha-ok", size: 4, updated_at: "2026-01-01T00:00:00Z", type: "sync-artifact" },
+				]);
+				(clientManager.downloadFile as jest.Mock).mockResolvedValue(content);
+				(vault.getAbstractFileByPath as jest.Mock).mockReturnValue(null);
+
+				await vaultDownloader.downloadShare(SHARE_ID, SERVER_ID);
+
+				expect(vault.adapter.writeBinary).toHaveBeenCalledWith("Notes/a.md", content);
+			});
+
+			test("still refuses the config directory, which no prefix is guarding any more", async () => {
+				(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare());
+				(clientManager.getFilesIndex as jest.Mock).mockResolvedValue([
+					{ path: ".obsidian/plugins/evil/main.js", sha256: "sha-evil", size: 4, updated_at: "2026-01-01T00:00:00Z", type: "sync-artifact" },
+				]);
+				(vault.getAbstractFileByPath as jest.Mock).mockReturnValue(null);
+
+				await vaultDownloader.downloadShare(SHARE_ID, SERVER_ID);
+
+				expect(clientManager.downloadFile).not.toHaveBeenCalled();
+				expect(vault.adapter.writeBinary).not.toHaveBeenCalled();
+			});
+
+			test("still refuses traversal out of the vault", async () => {
+				(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare());
+				(clientManager.getFilesIndex as jest.Mock).mockResolvedValue([
+					{ path: "../outside.md", sha256: "sha-evil", size: 4, updated_at: "2026-01-01T00:00:00Z", type: "sync-artifact" },
+				]);
+				(vault.getAbstractFileByPath as jest.Mock).mockReturnValue(null);
+
+				await vaultDownloader.downloadShare(SHARE_ID, SERVER_ID);
+
+				expect(clientManager.downloadFile).not.toHaveBeenCalled();
+				expect(vault.adapter.writeBinary).not.toHaveBeenCalled();
+			});
+		});
+
 		test("rejects traversal but still processes safe files in same batch", async () => {
 			const content = new ArrayBuffer(4);
 			(clientManager.getShare as jest.Mock).mockResolvedValue(makeShare());
