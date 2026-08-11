@@ -1,5 +1,6 @@
 import {
 	checkPath,
+	descendantsOf,
 	isExcludedPath,
 	sharePrefix,
 	toVaultPath,
@@ -118,5 +119,56 @@ describe("virtual path round trip", () => {
 		// The off-by-one this module exists to kill: slicing path.length + 1
 		// against an empty prefix would have returned "md".
 		expect(toVirtualPath("vault", "", "a.md")).toBe("a.md");
+	});
+});
+
+describe("what a deleted folder takes with it", () => {
+	// Deleting a folder in Obsidian has to delete it on every other device,
+	// which means the notes inside it come out of the sync store too. The
+	// entry for the folder alone is not enough: the notes stay in the store,
+	// so the other devices keep them and the folder comes back.
+	const store = [
+		"Projects",
+		"Projects/Acme.md",
+		"Projects/Acme/notes.md",
+		"Projects/Acme/diagram.png",
+		"ProjectsOld",
+		"ProjectsOld/a.md",
+		"Inbox/today.md",
+	];
+
+	it("takes every note under it", () => {
+		expect(descendantsOf("Projects", store)).toEqual([
+			"Projects",
+			"Projects/Acme.md",
+			"Projects/Acme/notes.md",
+			"Projects/Acme/diagram.png",
+		]);
+	});
+
+	it("leaves a sibling whose name merely begins the same way", () => {
+		const found = descendantsOf("Projects", store);
+		expect(found).not.toContain("ProjectsOld");
+		expect(found).not.toContain("ProjectsOld/a.md");
+	});
+
+	it("leaves everything outside it", () => {
+		expect(descendantsOf("Projects", store)).not.toContain("Inbox/today.md");
+	});
+
+	it("a single note takes only itself", () => {
+		expect(descendantsOf("Inbox/today.md", store)).toEqual(["Inbox/today.md"]);
+	});
+
+	it("clears out a folder whose own entry has already gone", () => {
+		// A store written by an older build, or a delete that stopped halfway.
+		// The notes are still there and still have to come out.
+		const orphaned = store.filter((path) => path !== "Projects");
+		expect(descendantsOf("Projects", orphaned)).toEqual([
+			"Projects",
+			"Projects/Acme.md",
+			"Projects/Acme/notes.md",
+			"Projects/Acme/diagram.png",
+		]);
 	});
 });

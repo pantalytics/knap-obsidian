@@ -5,7 +5,6 @@
 	import SignIn from "./SignIn.svelte";
 	import ShareListView from "./ShareListView.svelte";
 	import ShareDetailView from "./ShareDetailView.svelte";
-	import CreateShareView from "./CreateShareView.svelte";
 	import CreateInviteView from "./CreateInviteView.svelte";
 	import AgentKeysView from "./AgentKeysView.svelte";
 	import Breadcrumbs from "./Breadcrumbs.svelte";
@@ -14,7 +13,7 @@
 
 	// Navigation state. "home" is the sign-in screen, and everything else is
 	// reached from it once somebody is signed in.
-	type ViewType = "home" | "shares" | "shareDetail" | "createShare" | "createInvite" | "agentKeys";
+	type ViewType = "home" | "shares" | "shareDetail" | "createInvite" | "agentKeys";
 	let currentView: ViewType = "home";
 	let selectedServer: RelayOnPremServer | null = null;
 	let selectedShare: ShareWithServer | null = null;
@@ -39,11 +38,6 @@
 	function handleSelectShare(event: CustomEvent<{ share: ShareWithServer }>) {
 		selectedShare = event.detail.share;
 		currentView = "shareDetail";
-	}
-
-	function handleShareCreated() {
-		// Go back to shares list to see the new share
-		currentView = "shares";
 	}
 
 	function handleShareDeleted() {
@@ -82,14 +76,12 @@
 			// would be a hostname in a breadcrumb.
 			items.push({
 				type: "text",
-				text: "Folders",
+				text: "What syncs",
 				onClick: () => navigateTo("shares"),
 			});
 		}
 
-		if (view === "createShare") {
-			items.push({ type: "text", text: "Add a folder" });
-		} else if (view === "createInvite" && share) {
+		if (view === "createInvite" && share) {
 			items.push({
 				type: "text",
 				text: share.path,
@@ -147,7 +139,6 @@
 				{plugin}
 				server={selectedServer}
 				on:selectShare={handleSelectShare}
-				on:createShare={() => { currentView = "createShare"; }}
 			/>
 		{:else if currentView === "shareDetail" && selectedServer && selectedShare}
 			<ShareDetailView
@@ -157,13 +148,6 @@
 				on:createInvite={() => { currentView = "createInvite"; }}
 				on:deleted={handleShareDeleted}
 				on:agentKeys={handleOpenAgentKeys}
-			/>
-		{:else if currentView === "createShare" && selectedServer}
-			<CreateShareView
-				{plugin}
-				server={selectedServer}
-				on:created={handleShareCreated}
-				on:cancel={() => navigateTo("shares")}
 			/>
 		{:else if currentView === "createInvite" && selectedServer && selectedShare}
 			<CreateInviteView

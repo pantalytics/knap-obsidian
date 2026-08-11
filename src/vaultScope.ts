@@ -97,6 +97,34 @@ export function toVirtualPath(
 	return candidate.slice(sharePrefix(scope, path, sep).length);
 }
 
+/**
+ * A path and everything under it, out of the paths a share knows about.
+ *
+ * What deleting a folder means. A folder is an entry in the sync store like
+ * any other, so removing only its own entry left the notes inside it in the
+ * store, which is to say on every other device, and the folder came back the
+ * next time one of them wrote. `renameFile` already walks children this way
+ * for a `SyncFolder`; deleting has to walk the same set.
+ *
+ * The separator is appended before matching, so a sibling whose name merely
+ * begins the same way is not swept up with it: deleting "Archive" must not
+ * take "ArchiveOld/notes.md". The path itself comes first, and it is included
+ * whether or not it is in `paths`, so a folder whose own entry has already
+ * gone still clears out what is under it.
+ */
+export function descendantsOf(
+	vpath: string,
+	paths: Iterable<string>,
+	sep = "/",
+): string[] {
+	const prefix = vpath + sep;
+	const found = [vpath];
+	for (const path of paths) {
+		if (path.startsWith(prefix)) found.push(path);
+	}
+	return found;
+}
+
 /** The vault path for a share-relative path. The inverse of `toVirtualPath`. */
 export function toVaultPath(
 	scope: ShareScope,

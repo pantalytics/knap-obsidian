@@ -58,6 +58,7 @@ import { flags } from "./flagManager";
 import { findNestingConflictPath } from "./sharedFolderNesting";
 import {
 	checkPath as scopedCheckPath,
+	descendantsOf,
 	sharePrefix,
 	toVaultPath,
 	toVirtualPath,
@@ -2341,30 +2342,61 @@ export class SharedFolder extends HasProvider {
 		return this.pendingDeletes.has(vpath);
 	}
 
+	/**
+	 * Everything this path takes with it when it goes.
+	 *
+	 * A folder is an entry in the sync store like any other, and deleting only
+	 * that entry left its notes behind: they stayed in the store, so every
+	 * other device kept them and the folder came back the next time one of
+	 * them wrote. Deleting a folder has to remove what is inside it, which is
+	 * what somebody deleting a folder means and what every other sync does.
+	 *
+	 * `renameFile` already walks children this way for a `SyncFolder`. This is
+	 * the same walk, and it is done on the path rather than on the file's type
+	 * so a folder whose own entry is missing still clears out.
+	 */
+	deleteWithDescendants(vpath: string): string[] {
+		const paths: string[] = [];
+		this.syncStore.forEach((_meta, path) => {
+			paths.push(path);
+		});
+		return descendantsOf(vpath, paths, sep);
+	}
+
 	deleteFile(vpath: string) {
-		const guid = this.syncStore?.get(vpath);
-		if (guid) {
-			const doc = this.files.get(guid);
-			this.ydoc.transact(() => {
-				this.syncStore.delete(vpath);
-				if (doc) {
-					void doc.cleanup();
-					this.fset.delete(doc);
+		if (!this.syncStore?.get(vpath)) return;
+
+		// The folder's own entry and everything under it, resolved before the
+		// transaction opens so the walk never reads a half-emptied store.
+		const doomed: [string, string, IFile | undefined][] = [];
+		for (const path of this.deleteWithDescendants(vpath)) {
+			const guid = this.syncStore.get(path);
+			if (guid) doomed.push([path, guid, this.files.get(guid)]);
+		}
+
+		this.ydoc.transact(() => {
+			for (const [path, guid, file] of doomed) {
+				this.syncStore.delete(path);
+				if (file) {
+					void file.cleanup();
+					this.fset.delete(file);
 				}
 				this.files.delete(guid);
-			}, this);
-			// Fully tear down the Document/Canvas after removing from syncStore:
-			// cancel pending debounced saves, disconnect WebSocket, destroy Y.Doc.
-			// Without this, a stale requestSave debounce can re-create the file
-			// on disk after clearPendingDelete runs.
-			if (doc) {
-				if (isDocument(doc)) {
-					doc.requestSave.cancel();
-					doc._tfile = null;
-				}
-				doc.disconnect();
-				doc.destroy();
 			}
+		}, this);
+
+		// Fully tear down the Document/Canvas after removing from syncStore:
+		// cancel pending debounced saves, disconnect WebSocket, destroy Y.Doc.
+		// Without this, a stale requestSave debounce can re-create the file
+		// on disk after clearPendingDelete runs.
+		for (const [, , file] of doomed) {
+			if (!file) continue;
+			if (isDocument(file)) {
+				file.requestSave.cancel();
+				file._tfile = null;
+			}
+			file.disconnect();
+			file.destroy();
 		}
 	}
 

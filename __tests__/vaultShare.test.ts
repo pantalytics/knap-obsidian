@@ -1,13 +1,11 @@
 import {
 	decideVaultShare,
-	foldersInsteadLine,
-	foldersToggleHint,
-	planModeSwitch,
-	switchConfirmation,
-	switchedNotice,
-	switchFailedLine,
+	planFolderCleanup,
+	replaceFoldersConfirmation,
+	replaceFoldersFailedLine,
+	replaceFoldersLine,
 	FIRST_SYNC_LINES,
-	FOLDERS_TOGGLE_LABEL,
+	REPLACE_FOLDERS_LABEL,
 	type LocalShare,
 	type ShareLike,
 } from "../src/vaultShare";
@@ -18,9 +16,8 @@ const folderShare = (path: string, id = "s1"): ShareLike => ({
 	path,
 });
 
-/** The default state: nothing shared, and the setting untouched. */
+/** The default state, and the only one a new install can be in. */
 const fresh = {
-	mode: "whole-vault",
 	hasVaultShare: false,
 	folderShareCount: 0,
 } as const;
@@ -76,79 +73,52 @@ describe("what signing in does about the whole vault", () => {
 		).toEqual({ action: "already-syncing" });
 	});
 
-	test("folder shares exist: they win, and the vault is left as it is", () => {
+	test("folder shares from an older build ask to be replaced", () => {
 		// Whole vault and folder shares are exclusive both ways
-		// (SharedFolder._new). Creating the vault share here would throw, and
-		// somebody who set up folders did that on purpose.
+		// (SharedFolder._new), so creating the vault share on top of them would
+		// throw. Taking a share off deletes its documents, so the screen asks
+		// rather than doing it on sign-in.
 		expect(
 			decideVaultShare("Second Brain", [], { ...fresh, folderShareCount: 2 }),
-		).toEqual({ action: "folders-instead", count: 2 });
+		).toEqual({ action: "replace-folders", count: 2 });
 	});
 
-	test("the setting is on and nothing is shared yet: still no vault share", () => {
-		// The gap right after the switch. Creating a vault share into it would
-		// undo the thing somebody just asked for, and the old guard, folder
-		// count above zero, does not cover this.
-		expect(
-			decideVaultShare("Second Brain", [folderShare("Second Brain")], {
-				mode: "folders",
-				hasVaultShare: false,
-				folderShareCount: 0,
-			}),
-		).toEqual({ action: "folders-instead", count: 0 });
-	});
-
-	test("a vault share that exists is reported even when the setting says folders", () => {
-		// A half-finished switch. Saying already-syncing is what is true, and
-		// it is what stops the screen claiming folders while the whole vault
-		// is still going up.
+	test("a vault share beside a leftover folder is still already-syncing", () => {
+		// A clean-up that stopped halfway. Saying already-syncing is what is
+		// true, and it keeps the screen from offering to start something that
+		// is running.
 		expect(
 			decideVaultShare("Second Brain", [], {
-				mode: "folders",
 				hasVaultShare: true,
-				folderShareCount: 0,
+				folderShareCount: 1,
 			}),
 		).toEqual({ action: "already-syncing" });
 	});
 });
 
-describe("switching between the whole vault and folders", () => {
+describe("clearing folder shares out of the way", () => {
 	const vaultShare: LocalShare = { id: "v1", isVaultScope: true };
 	const clients: LocalShare = { id: "f1", isVaultScope: false };
 	const personal: LocalShare = { id: "f2", isVaultScope: false };
 
-	test("turning folders on removes the vault share and makes nothing", () => {
-		expect(planModeSwitch("folders", [vaultShare])).toEqual({
-			remove: ["v1"],
-			createVaultShare: false,
-		});
+	test("every folder share comes off", () => {
+		expect(planFolderCleanup([clients, personal])).toEqual(["f1", "f2"]);
 	});
 
-	test("turning folders off removes every folder share and makes the vault one", () => {
-		expect(planModeSwitch("whole-vault", [clients, personal])).toEqual({
-			remove: ["f1", "f2"],
-			createVaultShare: true,
-		});
+	test("a vault share is never in the list", () => {
+		expect(planFolderCleanup([vaultShare, clients])).toEqual(["f1"]);
 	});
 
-	test("nothing shared: the switch is a create, or nothing at all", () => {
-		expect(planModeSwitch("whole-vault", [])).toEqual({
-			remove: [],
-			createVaultShare: true,
-		});
-		expect(planModeSwitch("folders", [])).toEqual({
-			remove: [],
-			createVaultShare: false,
-		});
+	test("nothing to do is an empty list, not a create", () => {
+		expect(planFolderCleanup([])).toEqual([]);
+		expect(planFolderCleanup([vaultShare])).toEqual([]);
 	});
 
 	test("it plans from this vault's shares, so another vault's are untouched", () => {
 		// The list handed in is the local records, which exist only for shares
 		// this vault syncs. A share on the same account for a different vault
-		// has no record here and so cannot appear in remove.
-		const plan = planModeSwitch("whole-vault", [clients]);
-		expect(plan.remove).toEqual(["f1"]);
-		expect(plan.remove).not.toContain("someone-elses-share");
+		// has no record here and so cannot appear.
+		expect(planFolderCleanup([clients])).not.toContain("someone-elses-share");
 	});
 });
 
@@ -163,20 +133,12 @@ describe("the copy that goes with it", () => {
 	/** Every string this module puts in front of a person. */
 	const onScreen = (): string[] => [
 		...FIRST_SYNC_LINES,
-		FOLDERS_TOGGLE_LABEL,
-		foldersInsteadLine(0),
-		foldersInsteadLine(1),
-		foldersInsteadLine(4),
-		foldersToggleHint("folders"),
-		foldersToggleHint("whole-vault"),
-		switchConfirmation("folders", 0),
-		switchConfirmation("folders", 1),
-		switchConfirmation("whole-vault", 1),
-		switchConfirmation("whole-vault", 3),
-		switchedNotice("folders"),
-		switchedNotice("whole-vault"),
-		switchFailedLine("folders", "503"),
-		switchFailedLine("whole-vault", "503"),
+		REPLACE_FOLDERS_LABEL,
+		replaceFoldersLine(1),
+		replaceFoldersLine(4),
+		replaceFoldersConfirmation(1),
+		replaceFoldersConfirmation(3),
+		replaceFoldersFailedLine("503"),
 	];
 
 	test("no em-dashes anywhere in it", () => {
@@ -194,27 +156,20 @@ describe("the copy that goes with it", () => {
 		}
 	});
 
-	test("the folders line counts in words a person would use", () => {
-		expect(foldersInsteadLine(1)).toContain("one folder");
-		expect(foldersInsteadLine(3)).toContain("3 folders");
+	test("the leftover line counts in words a person would use", () => {
+		expect(replaceFoldersLine(1)).toContain("one folder");
+		expect(replaceFoldersLine(3)).toContain("3 folders");
 	});
 
-	test("the folders line says how to get back to everything", () => {
-		// Otherwise somebody hunts for a checkbox and meets the error instead.
-		expect(foldersInsteadLine(2).toLowerCase()).toContain("cannot be combined");
-		expect(foldersInsteadLine(2).toLowerCase()).toContain("turn the setting off");
+	test("the leftover line says what happens instead, not just what stops", () => {
+		// Otherwise it reads as Knap taking the sync away.
+		expect(replaceFoldersLine(2).toLowerCase()).toContain("everything syncs");
 	});
 
-	test("nothing shared yet reads as a next step, not as a count of zero", () => {
-		const line = foldersInsteadLine(0);
-		expect(line).not.toContain("0 folders");
-		expect(line.toLowerCase()).toContain("right-click");
-	});
-
-	test("both confirmations say the notes on the device are safe", () => {
+	test("the confirmation says the notes on the device are safe", () => {
 		for (const line of [
-			switchConfirmation("folders", 1),
-			switchConfirmation("whole-vault", 2),
+			replaceFoldersConfirmation(1),
+			replaceFoldersConfirmation(2),
 		]) {
 			expect(line.toLowerCase()).toContain("not touched");
 			expect(line.toLowerCase()).toContain("from scratch");
@@ -222,22 +177,15 @@ describe("the copy that goes with it", () => {
 	});
 
 	test("the confirmation counts what it is about to remove", () => {
-		expect(switchConfirmation("whole-vault", 1)).toContain("Your synced folder");
-		expect(switchConfirmation("whole-vault", 3)).toContain("Your 3 synced folders");
+		expect(replaceFoldersConfirmation(1)).toContain("Your synced folder");
+		expect(replaceFoldersConfirmation(3)).toContain("Your 3 synced folders");
 	});
 
-	test("with nothing to remove, the confirmation does not claim there is", () => {
-		const line = switchConfirmation("whole-vault", 0);
-		expect(line).not.toContain("stops syncing");
-		expect(line).not.toContain("stop syncing");
-		expect(line.toLowerCase()).toContain("uploads from scratch");
-	});
-
-	test("a refusal says the setting did not move, not that nothing happened", () => {
+	test("a refusal does not claim nothing happened", () => {
 		// With several folders to remove, some may have come off before the
 		// refusal. Claiming nothing happened would be the wrong half true.
-		const line = switchFailedLine("folders", "503").toLowerCase();
-		expect(line).toContain("the setting has not changed");
-		expect(line).not.toContain("nothing was");
+		const line = replaceFoldersFailedLine("503").toLowerCase();
+		expect(line).toContain("nothing else has changed");
+		expect(line).toContain("503");
 	});
 });

@@ -14,7 +14,6 @@
 
 	const dispatch = createEventDispatcher<{
 		selectShare: { share: ShareWithServer };
-		createShare: void;
 	}>();
 
 	let shares: ShareWithServer[] = [];
@@ -90,11 +89,10 @@
 </script>
 
 <div class="evc-share-list">
+	<!-- One vault is one entry, so there is nothing to add here and no button
+	     to add it with (ADR-0042). What is left is who can read it. -->
 	<div class="evc-share-list-header">
-		<div class="evc-section-title">Synced folders</div>
-		<button class="mod-cta" on:click={() => dispatch('createShare')}>
-			Add a folder
-		</button>
+		<div class="evc-section-title">What syncs</div>
 	</div>
 
 	{#if loading}
@@ -103,7 +101,7 @@
 		<div class="evc-error">{error}</div>
 	{:else if shares.length === 0}
 		<div class="evc-empty">
-			<p>Nothing syncs yet. Add a folder and it starts.</p>
+			<p>Nothing syncs yet. Sign in on the screen behind this one and the whole vault starts.</p>
 		</div>
 	{:else}
 		<div class="evc-share-items">

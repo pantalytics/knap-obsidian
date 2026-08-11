@@ -109,12 +109,10 @@ import {
 import type { IAuthProvider } from "./auth/IAuthProvider";
 import { RelayOnPremShareClient, type FolderItem } from "./RelayOnPremShareClient";
 import { RelayOnPremShareClientManager, type ShareWithServer } from "./RelayOnPremShareClientManager";
-import { QuickShareModal } from "./ui/QuickShareModal";
 // ShareManagementModal only imports main.ts for its type, which erases at
 // compile time, so there is no runtime cycle for a plain import to trip over.
 // It was being pulled in with require() at three call sites instead.
 import { ShareManagementModal } from "./ui/ShareManagementModal";
-import { confirmDialog } from "./ui/dialogs";
 import { LocalStorage } from "./LocalStorage";
 
 interface DebugSettings {
@@ -767,25 +765,11 @@ export default class Live extends Plugin {
 							(sharedFolder) => sharedFolder.path === file.path,
 						);
 						if (!folder) {
-							// Folder is not shared yet - offer to share in relay-onprem mode,
-							// unless it's nested with an existing share (TR-30): Relay doesn't
-							// support overlapping shares, so don't even offer the option.
-							const nestingConflict = this.sharedFolders.findNestingConflict(file.path);
-							if (
-								!nestingConflict &&
-								this.loginManager.isRelayOnPremMode() &&
-								this.loginManager.isLoggedInToAnyServer()
-							) {
-								menu.addItem((item) => {
-									item
-										.setTitle("Knap Sync: sync this folder")
-										.setIcon("share-2")
-										.onClick(() => {
-											const modal = new QuickShareModal(this.app, this, file.path);
-											modal.open();
-										});
-								});
-							}
+							// Nothing to offer. A vault syncs whole (ADR-0042), so every
+							// folder in it is already syncing and the item that used to
+							// sit here would be asking somebody to sync a folder twice.
+							// Deleting or renaming a folder is how it stops or moves,
+							// the way it works in every other sync.
 							return;
 						}
 						if (folder.relayId) {
@@ -835,39 +819,6 @@ export default class Live extends Plugin {
 										}
 									});
 							});
-							// Add Unshare option for relay-onprem folders
-							if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
-								menu.addItem((item) => {
-									item
-										.setTitle("Knap Sync: stop syncing this folder")
-										.setIcon("folder-x")
-										.onClick(async () => {
-											const confirmed = await confirmDialog(
-												this.app,
-												`Stop syncing "${folder.path}"?\n\nThe folder stays in your vault. It stops syncing on every device, and Knap can no longer read it.`
-											);
-											if (!confirmed) return;
-
-											try {
-												// Delete from server
-												if (this.shareClientManager && folder.guid) {
-													await this.shareClientManager.deleteShare(
-														folder.settings.onpremServerId!,
-														folder.guid
-													);
-												}
-												// Remove local shared folder
-												this.sharedFolders.delete(folder);
-												this.folderNavDecorations?.quickRefresh();
-												new Notice(`"${folder.path}" no longer syncs`);
-											} catch (error: unknown) {
-												new Notice(
-													`Could not stop syncing: ${error instanceof Error ? error.message : "Unknown error"}`
-												);
-											}
-										});
-								});
-							}
 						}
 						if (folder.relayId && folder.connected) {
 							menu.addItem((item) => {
@@ -1672,11 +1623,16 @@ export default class Live extends Plugin {
 				if (folder) {
 					vaultLog("Delete", file.path);
 					const vpath = folder.getVirtualPath(file.path);
-					folder.markPendingDelete(vpath);
+					// A folder goes with everything in it, so everything in it is
+					// pending too. Without the children on the list, an inbound
+					// event for one of them arriving mid-delete would write the
+					// note back to a folder that is on its way out.
+					const pending = folder.deleteWithDescendants(vpath);
+					pending.forEach((path) => folder.markPendingDelete(path));
 					void folder.whenReady().then((folder) => {
 						folder.proxy.deleteFile(file.path);
 					}).finally(() => {
-						folder.clearPendingDelete(vpath);
+						pending.forEach((path) => folder.clearPendingDelete(path));
 					});
 				}
 				// Update web_folder_items for auto-sync folder shares
