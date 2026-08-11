@@ -9,7 +9,6 @@
 		isServerVersionSupported,
 		serverCompatMessage,
 	} from "../RelayOnPremConfig";
-	import { RelayOnPremLoginModal } from "../ui/RelayOnPremLoginModal";
 	import { customFetch } from "../customFetch";
 	import {
 		decideVaultShare,
@@ -31,9 +30,10 @@
 	// pressing Sign in opens a browser, and the callback comes back through
 	// obsidian://knap-sync/oauth-callback.
 	//
-	// Email and password are still here, behind Other ways to sign in, for the
-	// day the identity service is unreachable. They are not what a new person
-	// is shown.
+	// There is one way in and this is it. The email and password form that used
+	// to sit behind "Other ways to sign in" is gone: an account made through the
+	// identity service has no password to type unless an admin sets one, so the
+	// second button was a door with nothing behind it.
 
 	export let plugin: Live;
 
@@ -53,7 +53,6 @@
 	// store, so the state below is recomputed rather than subscribed to.
 	let authRefreshKey = 0;
 	let signingIn = false;
-	let showOtherWays = false;
 	let error = "";
 	// What the vault is doing, once there is an account behind it. Empty until
 	// signing in has had its say about the whole vault.
@@ -225,17 +224,6 @@
 		return KNAP_CONTROL_PLANE_URL || server?.controlPlaneUrl || "";
 	}
 
-	function openPasswordSignIn() {
-		error = "";
-		const modal = new RelayOnPremLoginModal(
-			plugin.app,
-			plugin.loginManager,
-			() => refresh(true),
-			KNAP_SERVER_ID,
-		);
-		modal.open();
-	}
-
 	async function signIn() {
 		error = "";
 		signingIn = true;
@@ -257,9 +245,10 @@
 				: null;
 
 			if (!provider) {
-				// Nothing to open a browser for. Email and password are the
-				// way in, so go straight there instead of failing first.
-				openPasswordSignIn();
+				// Nothing to open a browser for, and there is no second way in
+				// to offer instead. Say so plainly: this is the server's side
+				// of it, not something to fix on this end.
+				error = "Sign-in is not available right now. Try again in a few minutes.";
 				return;
 			}
 
@@ -341,24 +330,6 @@
 				there.
 			</p>
 		{/if}
-
-		<div class="knap-other">
-			<button
-				class="knap-link-btn"
-				aria-expanded={showOtherWays}
-				on:click={() => (showOtherWays = !showOtherWays)}
-			>
-				Other ways to sign in
-			</button>
-			{#if showOtherWays}
-				<p class="knap-signin-hint">
-					Email and password still work, for a day the sign-in page will not load.
-				</p>
-				<button class="knap-btn" on:click={openPasswordSignIn}>
-					Use email and password
-				</button>
-			{/if}
-		</div>
 	{/if}
 
 	{#if error}
@@ -445,29 +416,6 @@
 	.knap-btn:disabled {
 		cursor: default;
 		opacity: 0.6;
-	}
-
-	.knap-other {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 8px;
-		padding-top: 4px;
-	}
-
-	.knap-link-btn {
-		padding: 0;
-		background: transparent;
-		border: none;
-		box-shadow: none;
-		font-size: 12px;
-		color: var(--text-muted);
-		cursor: pointer;
-	}
-
-	.knap-link-btn:hover {
-		background: transparent;
-		color: var(--text-normal);
 	}
 
 	.knap-form-error {

@@ -435,17 +435,3 @@
 	font-size: 0.85em;
 	padding: 2px 8px;
 }
-
-/* OAuth section divider */
-.evc-oauth-section {
-	margin-top: 20px;
-	padding-top: 20px;
-	border-top: 1px solid var(--background-modifier-border);
-}
-
-/* OAuth label above buttons */
-.evc-oauth-label {
-	margin-bottom: 10px;
-	text-align: center;
-	color: var(--text-muted);
-}
