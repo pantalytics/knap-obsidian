@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Notice, Platform } from "obsidian";
-	import { createEventDispatcher } from "svelte";
+	import { Notice } from "obsidian";
+	import { createEventDispatcher, onMount } from "svelte";
 	import type Live from "../main";
 	import type { RelayOnPremServer } from "../RelayOnPremConfig";
 	import {
@@ -14,6 +14,13 @@
 	import { RelayOnPremLoginModal } from "../ui/RelayOnPremLoginModal";
 	import { customFetch } from "../customFetch";
 	import { confirmDialog } from "../ui/dialogs";
+
+	// The row has two states and no third one: closed is a dot, a name and
+	// where it stands; open is everything you can do to it, editing included.
+	// Opening the row IS editing it, so there is no separate Edit button to
+	// press and no second panel to get lost in. Same shape as the servers
+	// screen in Knap's own panel, on purpose: a person who has seen one of
+	// these has seen both.
 
 	export let plugin: Live;
 
@@ -32,14 +39,15 @@
 	$: servers = settings.servers || [];
 	$: defaultServerId = settings.defaultServerId;
 
-	// Editing state
-	let editingServer: RelayOnPremServer | null = null;
+	// Which row is open. One at a time: two open rows is a list of forms.
+	let openServerId: string | null = null;
 	let isAddingServer = false;
 
-	// New server form
-	let newServerName = "";
-	let newControlPlaneUrl = "";
-	let newRelayServerUrl = "";
+	// The open row's fields, and the add form's. Only one of the two is on
+	// screen at a time, so they share the same three variables.
+	let formName = "";
+	let formControlPlaneUrl = "";
+	let formRelayServerUrl = "";
 	let formError = "";
 
 	// Testing state
@@ -51,7 +59,10 @@
 	// Refresh key to force auth status recalculation
 	let authRefreshKey = 0;
 
-	function getAuthStatus(serverId: string, _refreshKey: number): { isLoggedIn: boolean; email?: string } {
+	function getAuthStatus(
+		serverId: string,
+		_refreshKey: number,
+	): { isLoggedIn: boolean; email?: string } {
 		const lm = plugin.loginManager;
 		if (!lm || typeof lm.isLoggedInToServer !== "function") {
 			return { isLoggedIn: false };
@@ -73,39 +84,56 @@
 			if (serverBillingSupport[s.id] !== undefined) continue;
 			const info = await fetchServerInfo(s.controlPlaneUrl);
 			if (info) {
-				serverBillingSupport[s.id] = info.edition === "enterprise" && info.features?.billing_enabled === true;
+				serverBillingSupport[s.id] =
+					info.edition === "enterprise" &&
+					info.features?.billing_enabled === true;
 				serverBillingSupport = serverBillingSupport; // trigger reactivity
 			}
 		}
 	}
 
 	// Run on component init
-	import { onMount } from "svelte";
-	onMount(() => { checkBillingSupport(); });
+	onMount(() => {
+		checkBillingSupport();
+	});
+
+	function toggleServer(server: RelayOnPremServer) {
+		if (openServerId === server.id) {
+			openServerId = null;
+			formError = "";
+			return;
+		}
+		isAddingServer = false;
+		openServerId = server.id;
+		formName = server.name;
+		formControlPlaneUrl = server.controlPlaneUrl;
+		formRelayServerUrl = server.relayServerUrl || "";
+		formError = "";
+	}
 
 	function startAddServer() {
 		isAddingServer = true;
-		editingServer = null;
-		newServerName = "";
-		newControlPlaneUrl = "";
-		newRelayServerUrl = "";
+		openServerId = null;
+		formName = "";
+		formControlPlaneUrl = "";
+		formRelayServerUrl = "";
 		formError = "";
 	}
 
-	function startEditServer(server: RelayOnPremServer) {
-		editingServer = { ...server };
+	function cancelAdd() {
 		isAddingServer = false;
-		newServerName = server.name;
-		newControlPlaneUrl = server.controlPlaneUrl;
-		newRelayServerUrl = server.relayServerUrl || "";
 		formError = "";
 	}
 
-	function cancelEdit() {
-		isAddingServer = false;
-		editingServer = null;
-		formError = "";
-	}
+	// Whether the open row's fields still match what is saved. Save stays
+	// disabled until they do not, so the button never asks for a round trip
+	// that would change nothing.
+	$: openServer = servers.find((s) => s.id === openServerId) || null;
+	$: isDirty = openServer
+		? formName.trim() !== openServer.name ||
+			formControlPlaneUrl.trim() !== openServer.controlPlaneUrl ||
+			formRelayServerUrl.trim() !== (openServer.relayServerUrl || "")
+		: false;
 
 	interface ServerFeatures {
 		multi_user: boolean;
@@ -159,31 +187,33 @@
 				return false;
 			}
 		} catch (error: unknown) {
-			new Notice(`Connection failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+			new Notice(
+				`Connection failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+			);
 			return false;
 		} finally {
 			testingServerId = null;
 		}
 	}
 
-	async function saveServer() {
+	async function saveServer(existing: RelayOnPremServer | null) {
 		formError = "";
 
 		// Validate inputs
-		if (!newControlPlaneUrl.trim()) {
-			formError = "Control Plane URL is required";
+		if (!formControlPlaneUrl.trim()) {
+			formError = "The server address is required";
 			return;
 		}
 
 		// Test connection first
-		const connectionOk = await testConnection(newControlPlaneUrl.trim());
+		const connectionOk = await testConnection(formControlPlaneUrl.trim());
 		if (!connectionOk) {
 			formError = "Cannot connect to server";
 			return;
 		}
 
 		// Try to fetch server info for auto-configuration
-		const serverInfo = await fetchServerInfo(newControlPlaneUrl.trim());
+		const serverInfo = await fetchServerInfo(formControlPlaneUrl.trim());
 
 		// TR-57: reject a server below this plugin's compatibility floor here,
 		// at connect time — otherwise it saves fine and only fails later with
@@ -202,19 +232,20 @@
 		}
 
 		// Use server info or fallback to user input
-		const serverName = newServerName.trim() || serverInfo?.name || new URL(newControlPlaneUrl).hostname;
-		const relayUrl = newRelayServerUrl.trim() || serverInfo?.relay_url || undefined;
+		const serverName =
+			formName.trim() || serverInfo?.name || new URL(formControlPlaneUrl).hostname;
+		const relayUrl = formRelayServerUrl.trim() || serverInfo?.relay_url || undefined;
 
 		// Generate or use existing ID (prefer server's own ID if available)
-		const serverId = editingServer?.id || serverInfo?.id || generateServerId(newControlPlaneUrl);
+		const serverId = existing?.id || serverInfo?.id || generateServerId(formControlPlaneUrl);
 
 		// Reject adding a server that duplicates an existing one (same id or
 		// same URL under a different id) — editing an existing entry is exempt,
 		// it's expected to keep its own id.
-		if (!editingServer) {
-			const duplicate = findDuplicateServer(servers, serverId, newControlPlaneUrl);
+		if (!existing) {
+			const duplicate = findDuplicateServer(servers, serverId, formControlPlaneUrl);
 			if (duplicate) {
-				formError = `"${duplicate.name}" already uses this URL. Edit that server instead of adding a duplicate.`;
+				formError = `"${duplicate.name}" already uses this address. Open that server instead of adding a second one.`;
 				return;
 			}
 		}
@@ -222,11 +253,11 @@
 		const serverConfig: RelayOnPremServer = {
 			id: serverId,
 			name: serverName,
-			controlPlaneUrl: newControlPlaneUrl.trim(),
+			controlPlaneUrl: formControlPlaneUrl.trim(),
 			relayServerUrl: relayUrl,
 			isValidated: true,
 			lastValidated: Date.now(),
-			lastUserEmail: editingServer?.lastUserEmail,
+			lastUserEmail: existing?.lastUserEmail,
 		};
 
 		// Validate server config
@@ -240,9 +271,9 @@
 		await relayOnPremSettings.update((current) => {
 			const newServers = [...(current.servers || [])];
 
-			if (editingServer) {
+			if (existing) {
 				// Update existing
-				const index = newServers.findIndex((s) => s.id === editingServer!.id);
+				const index = newServers.findIndex((s) => s.id === existing.id);
 				if (index >= 0) {
 					newServers[index] = serverConfig;
 				}
@@ -253,7 +284,8 @@
 
 			// If this is the first server, make it default
 			const newDefaultServerId =
-				current.defaultServerId || (newServers.length === 1 ? serverConfig.id : current.defaultServerId);
+				current.defaultServerId ||
+				(newServers.length === 1 ? serverConfig.id : current.defaultServerId);
 
 			return {
 				...current,
@@ -263,15 +295,19 @@
 		});
 
 		// Update LoginManager
-		if (editingServer) {
+		if (existing) {
 			plugin.loginManager.updateServer(serverConfig);
 		} else {
 			plugin.loginManager.addServer(serverConfig);
 		}
 
-		cancelEdit();
+		isAddingServer = false;
+		formError = "";
+		// A saved row stays open on the server it just wrote, so whatever came
+		// next (signing in, testing) is still under the hand that saved it.
+		openServerId = existing ? serverConfig.id : null;
 		dispatch("serversChanged");
-		new Notice(editingServer ? "Server updated" : "Server added");
+		new Notice(existing ? "Server updated" : "Server added");
 	}
 
 	async function removeServer(serverId: string) {
@@ -279,7 +315,12 @@
 		if (!server) return;
 
 		// Confirm removal
-		if (!(await confirmDialog(plugin.app, `Remove server "${server.name}"? This will also log you out from this server.`))) {
+		if (
+			!(await confirmDialog(
+				plugin.app,
+				`Remove server "${server.name}"? This will also log you out from this server.`,
+			))
+		) {
 			return;
 		}
 
@@ -303,6 +344,7 @@
 		// Remove from LoginManager
 		plugin.loginManager.removeServer(serverId);
 
+		if (openServerId === serverId) openServerId = null;
 		dispatch("serversChanged");
 		new Notice(`Server "${server.name}" removed`);
 	}
@@ -314,7 +356,9 @@
 
 		// Track billing support for this server
 		if (serverInfo) {
-			serverBillingSupport[server.id] = serverInfo.edition === "enterprise" && serverInfo.features?.billing_enabled === true;
+			serverBillingSupport[server.id] =
+				serverInfo.edition === "enterprise" &&
+				serverInfo.features?.billing_enabled === true;
 		}
 
 		// If OAuth is enabled, try OAuth-first flow. TR-27: OAuthCallbackServer
@@ -323,14 +367,19 @@
 		// "OAuth failed: ... only supported on the desktop app" Notice before
 		// falling back. Skip straight to the password modal instead, which
 		// already explains SSO isn't available on mobile.
-		if (
-			serverInfo?.features?.oauth_enabled &&
-			serverInfo.features.oauth_provider
-		) {
-			console.log("[RelayOnPrem] OAuth enabled, provider:", serverInfo.features.oauth_provider);
+		if (serverInfo?.features?.oauth_enabled && serverInfo.features.oauth_provider) {
+			console.log(
+				"[RelayOnPrem] OAuth enabled, provider:",
+				serverInfo.features.oauth_provider,
+			);
 
 			const authProvider = plugin.loginManager.getAuthProviderForServer(server.id);
-			console.log("[RelayOnPrem] Auth provider for server:", server.id, "exists:", !!authProvider);
+			console.log(
+				"[RelayOnPrem] Auth provider for server:",
+				server.id,
+				"exists:",
+				!!authProvider,
+			);
 
 			if (authProvider) {
 				try {
@@ -339,14 +388,19 @@
 					// this.user gets set and notifyListeners() fires — see TR-10,
 					// #e7bca9fb — otherwise main.ts's post-login hook never runs and
 					// shares/live-sync don't start until the plugin is reloaded.
-					await plugin.loginManager.loginWithOAuth2(serverInfo.features.oauth_provider, server.id);
+					await plugin.loginManager.loginWithOAuth2(
+						serverInfo.features.oauth_provider,
+						server.id,
+					);
 					new Notice(`Logged in to ${server.name}`);
 					refreshAuthStatus();
 					return;
 				} catch (error: unknown) {
 					// OAuth failed, fall back to password login
 					console.error("[RelayOnPrem] OAuth login failed:", error);
-					new Notice(`OAuth failed: ${error instanceof Error ? error.message : "Unknown error"}. Falling back to password.`);
+					new Notice(
+						`OAuth failed: ${error instanceof Error ? error.message : "Unknown error"}. Falling back to password.`,
+					);
 				}
 			} else {
 				console.warn("[RelayOnPrem] No auth provider found for server:", server.id);
@@ -362,7 +416,7 @@
 				new Notice(`Logged in to ${server.name}`);
 				refreshAuthStatus();
 			},
-			server.id
+			server.id,
 		);
 		modal.open();
 	}
@@ -373,327 +427,454 @@
 			new Notice("Logged out");
 			refreshAuthStatus();
 		} catch (error: unknown) {
-			new Notice(`Logout failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+			new Notice(
+				`Logout failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+			);
 		}
 	}
 
 	function openSharesForServer(server: RelayOnPremServer) {
-		dispatch('openShares', { server });
+		dispatch("openShares", { server });
 	}
 
-	async function toggleDefaultServer(serverId: string, isCurrentlyDefault: boolean) {
-		if (isCurrentlyDefault) {
-			// Unset default
-			await relayOnPremSettings.update((current) => ({
-				...current,
-				defaultServerId: undefined,
-			}));
-			new Notice("Default server cleared");
-		} else {
-			// Set as default
-			await relayOnPremSettings.update((current) => ({
-				...current,
-				defaultServerId: serverId,
-			}));
-			new Notice("Default server set");
-		}
+	// The closed row says which server it is without being opened, and the
+	// scheme is noise there: everything here is https and nobody is choosing
+	// between two of the same host.
+	function shortHost(url: string): string {
+		return url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+	}
+
+	async function makeDefault(serverId: string) {
+		await relayOnPremSettings.update((current) => ({
+			...current,
+			defaultServerId: serverId,
+		}));
+		new Notice("Default server set");
 		dispatch("serversChanged");
 	}
 </script>
 
-<div class="relay-server-list">
-	{#if servers.length === 0 && !isAddingServer}
-		<div class="relay-server-empty">
-			<p>No relay servers configured. Add a server to get started.</p>
-		</div>
-	{/if}
-
+<div class="knap-server-list">
 	{#each servers as server (server.id)}
 		{@const authStatus = getAuthStatus(server.id, authRefreshKey)}
-		<div class="relay-server-item" class:is-default={server.id === defaultServerId}>
-			<div class="relay-server-info">
-				<div class="relay-server-name">
-					<span class="relay-status-dot" class:is-connected={authStatus.isLoggedIn}></span>
-					{server.name}
-					{#if server.id === defaultServerId}
-						<span class="relay-server-badge default">Default</span>
+		{@const isOpen = openServerId === server.id}
+		{@const isTesting = testingServerId === server.id}
+		<div class="knap-server-card" class:is-open={isOpen}>
+			<button
+				type="button"
+				class="knap-server-head"
+				aria-expanded={isOpen}
+				on:click={() => toggleServer(server)}
+			>
+				<span
+					class="knap-dot"
+					class:is-on={authStatus.isLoggedIn}
+					class:is-busy={isTesting}
+				></span>
+				<span class="knap-server-name">{server.name}</span>
+				<span class="knap-server-host">{shortHost(server.controlPlaneUrl)}</span>
+				{#if servers.length > 1 && server.id === defaultServerId}
+					<span class="knap-chip">Default</span>
+				{/if}
+				<span class="knap-server-state" class:is-on={authStatus.isLoggedIn}>
+					{#if isTesting}
+						Testing
+					{:else if authStatus.isLoggedIn}
+						{authStatus.email || "Signed in"}
+					{:else}
+						Not signed in
 					{/if}
-				</div>
-				<div class="relay-server-url">{server.controlPlaneUrl}</div>
-				{#if authStatus.isLoggedIn && authStatus.email}
-					<div class="relay-server-user">As: {authStatus.email}</div>
-				{/if}
-			</div>
-			<div class="relay-server-actions">
-				{#if authStatus.isLoggedIn}
-					<button class="relay-server-btn" on:click={() => logoutFromServer(server.id)}>
-						Logout
-					</button>
-				{:else}
-					<button class="relay-server-btn mod-cta" on:click={() => loginToServer(server)}>
-						Login
-					</button>
-				{/if}
-				<button
-					class="relay-server-btn"
-					on:click={() => testConnection(server.controlPlaneUrl, server.id)}
-					disabled={testingServerId === server.id}
+				</span>
+				<svg
+					class="knap-chev"
+					class:is-open={isOpen}
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
 				>
-					{testingServerId === server.id ? "..." : "Test"}
-				</button>
-				{#if authStatus.isLoggedIn}
-					<button class="relay-server-btn" on:click={() => openSharesForServer(server)}>
-						Shares
-					</button>
-					{#if serverBillingSupport[server.id]}
-						<button class="relay-server-btn" on:click={() => dispatch('openBilling', { server })}>
-							Plan & Usage
+					<path d="M19 9l-7 7-7-7" />
+				</svg>
+			</button>
+
+			{#if isOpen}
+				<div class="knap-server-body">
+					<div class="knap-actions">
+						{#if authStatus.isLoggedIn}
+							<button class="knap-btn" on:click={() => logoutFromServer(server.id)}>
+								Sign out
+							</button>
+						{:else}
+							<button class="knap-btn mod-cta" on:click={() => loginToServer(server)}>
+								Sign in
+							</button>
+						{/if}
+						<button
+							class="knap-btn"
+							on:click={() => testConnection(server.controlPlaneUrl, server.id)}
+							disabled={isTesting}
+						>
+							{isTesting ? "Testing" : "Test"}
 						</button>
-					{/if}
-					<button class="relay-server-btn" on:click={() => dispatch('openAgentKeys', { server })}>
-						Agent Keys
-					</button>
-				{/if}
-				<button class="relay-server-btn" on:click={() => startEditServer(server)}>
-					Edit
-				</button>
-				{#if server.id !== EVC_SERVER_ID}
-					<button class="relay-server-btn mod-warning" on:click={() => removeServer(server.id)}>
-						Remove
-					</button>
-				{/if}
-			</div>
-			<div class="relay-server-default">
-				<label class="relay-default-checkbox">
-					<input
-						type="checkbox"
-						checked={server.id === defaultServerId}
-						on:change={() => toggleDefaultServer(server.id, server.id === defaultServerId)}
-					/>
-					<span>Default</span>
-				</label>
-			</div>
+						{#if authStatus.isLoggedIn}
+							<button class="knap-btn" on:click={() => openSharesForServer(server)}>
+								Shares
+							</button>
+							{#if serverBillingSupport[server.id]}
+								<button class="knap-btn" on:click={() => dispatch("openBilling", { server })}>
+									Plan and usage
+								</button>
+							{/if}
+							<button class="knap-btn" on:click={() => dispatch("openAgentKeys", { server })}>
+								Agent keys
+							</button>
+						{/if}
+					</div>
+
+					<div class="knap-fields">
+						<div class="knap-field">
+							<label for="cp-url-{server.id}">Server address</label>
+							<input
+								id="cp-url-{server.id}"
+								type="text"
+								placeholder="https://cp.example.com"
+								bind:value={formControlPlaneUrl}
+							/>
+						</div>
+						<div class="knap-field">
+							<label for="name-{server.id}">Name</label>
+							<input
+								id="name-{server.id}"
+								type="text"
+								placeholder="Leave empty to use the server's own name"
+								bind:value={formName}
+							/>
+						</div>
+						<div class="knap-field">
+							<label for="relay-url-{server.id}">Sync address</label>
+							<input
+								id="relay-url-{server.id}"
+								type="text"
+								placeholder="Leave empty and the server will say where to sync"
+								bind:value={formRelayServerUrl}
+							/>
+						</div>
+
+						{#if formError}
+							<div class="knap-form-error">{formError}</div>
+						{/if}
+
+						<button
+							class="knap-btn"
+							class:mod-cta={isDirty}
+							disabled={!isDirty}
+							on:click={() => saveServer(server)}
+						>
+							Save changes
+						</button>
+					</div>
+
+					<div class="knap-server-footer">
+						{#if server.id === defaultServerId}
+							<span class="knap-footer-note">Used by default for new shares</span>
+						{:else}
+							<button class="knap-link-btn" on:click={() => makeDefault(server.id)}>
+								Make default
+							</button>
+						{/if}
+						{#if server.id !== EVC_SERVER_ID}
+							<button class="knap-link-btn is-warning" on:click={() => removeServer(server.id)}>
+								Remove
+							</button>
+						{/if}
+					</div>
+				</div>
+			{/if}
 		</div>
 	{/each}
 
-	{#if isAddingServer || editingServer}
-		<div class="relay-server-form">
-			<h4>{editingServer ? "Edit Server" : "Add Server"}</h4>
+	{#if isAddingServer}
+		<div class="knap-server-card is-open">
+			<div class="knap-server-body knap-add-form">
+				<div class="knap-fields">
+					<div class="knap-field">
+						<label for="new-cp-url">Server address</label>
+						<input
+							id="new-cp-url"
+							type="text"
+							placeholder="https://cp.example.com"
+							bind:value={formControlPlaneUrl}
+						/>
+					</div>
+					<div class="knap-field">
+						<label for="new-name">Name</label>
+						<input
+							id="new-name"
+							type="text"
+							placeholder="Leave empty to use the server's own name"
+							bind:value={formName}
+						/>
+					</div>
+					<div class="knap-field">
+						<label for="new-relay-url">Sync address</label>
+						<input
+							id="new-relay-url"
+							type="text"
+							placeholder="Leave empty and the server will say where to sync"
+							bind:value={formRelayServerUrl}
+						/>
+					</div>
 
-			<div class="relay-server-form-field">
-				<label for="control-plane-url">Control Plane URL</label>
-				<input
-					id="control-plane-url"
-					type="text"
-					placeholder="https://cp.example.com"
-					bind:value={newControlPlaneUrl}
-				/>
-			</div>
+					{#if formError}
+						<div class="knap-form-error">{formError}</div>
+					{/if}
 
-			<div class="relay-server-form-field">
-				<label for="server-name">Server Name (auto-detected if empty)</label>
-				<input
-					id="server-name"
-					type="text"
-					placeholder="Leave empty to auto-detect"
-					bind:value={newServerName}
-				/>
-			</div>
-
-			<div class="relay-server-form-field">
-				<label for="relay-server-url">Relay Server URL (auto-detected if empty)</label>
-				<input
-					id="relay-server-url"
-					type="text"
-					placeholder="Leave empty to auto-detect"
-					bind:value={newRelayServerUrl}
-				/>
-			</div>
-
-			{#if formError}
-				<div class="relay-server-form-error">{formError}</div>
-			{/if}
-
-			<div class="relay-server-form-actions">
-				<button class="mod-cta" on:click={saveServer}>
-					{editingServer ? "Save Changes" : "Add Server"}
-				</button>
-				<button on:click={cancelEdit}>Cancel</button>
+					<div class="knap-actions">
+						<button class="knap-btn mod-cta" on:click={() => saveServer(null)}>
+							Add server
+						</button>
+						<button class="knap-btn" on:click={cancelAdd}>Cancel</button>
+					</div>
+				</div>
 			</div>
 		</div>
 	{:else}
-		<button class="relay-server-add-btn" on:click={startAddServer}>
-			+ Add Server
-		</button>
+		<!-- The dashed button is the empty state. A paragraph explaining the
+		     absence of a row would be saying the same thing twice. -->
+		<button class="knap-add-btn" on:click={startAddServer}> + Add server </button>
 	{/if}
 </div>
 
 <style>
-	.relay-server-list {
+	.knap-server-list {
 		display: flex;
 		flex-direction: column;
-		gap: 10px;
-	}
-
-	.relay-server-empty {
-		padding: 20px;
-		text-align: center;
-		color: var(--text-muted);
-		border: 1px dashed var(--background-modifier-border);
-		border-radius: 6px;
-	}
-
-	.relay-server-item {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 12px;
-		background: var(--background-secondary);
-		border-radius: 6px;
-		border: 1px solid var(--background-modifier-border);
-	}
-
-	.relay-server-item.is-default {
-		border-color: var(--interactive-accent);
-	}
-
-	.relay-server-info {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.relay-server-name {
-		font-weight: 600;
-		display: flex;
-		align-items: center;
 		gap: 8px;
-		flex-wrap: wrap;
 	}
 
-	.relay-status-dot {
+	.knap-server-card {
+		border: 1px solid var(--background-modifier-border);
+		border-radius: var(--radius-m, 8px);
+		background: var(--background-secondary);
+		overflow: hidden;
+	}
+
+	.knap-server-card.is-open {
+		border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
+	}
+
+	/* Closed row: a dot, a name, where it stands, a chevron. */
+	.knap-server-head {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		width: 100%;
+		padding: 12px 14px;
+		background: transparent;
+		border: none;
+		border-radius: 0;
+		box-shadow: none;
+		text-align: left;
+		cursor: pointer;
+		font-size: var(--font-ui-small, 13px);
+	}
+
+	.knap-server-head:hover {
+		background: var(--background-modifier-hover);
+	}
+
+	.knap-dot {
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;
 		background: var(--text-faint);
-		flex-shrink: 0;
+		flex: none;
 	}
 
-	.relay-status-dot.is-connected {
+	.knap-dot.is-on {
 		background: var(--color-green, #28a745);
 	}
 
-	.relay-server-badge {
-		font-size: 0.75em;
-		padding: 2px 6px;
-		border-radius: 4px;
+	.knap-dot.is-busy {
+		background: var(--interactive-accent);
+		animation: knap-pulse 1.2s ease-in-out infinite;
+	}
+
+	@keyframes knap-pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.35;
+		}
+	}
+
+	.knap-server-name {
+		font-weight: 600;
+		color: var(--text-normal);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.knap-server-host {
+		color: var(--text-muted);
+		font-size: 12px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.knap-chip {
+		flex: none;
+		padding: 1px 6px;
+		border-radius: var(--radius-s, 4px);
+		background: var(--background-modifier-border);
+		color: var(--text-muted);
+		font-size: 10px;
 		font-weight: 500;
 	}
 
-	.relay-server-badge.default {
-		background: var(--interactive-accent);
-		color: var(--text-on-accent);
-	}
-
-	.relay-server-url {
-		font-size: 0.85em;
+	.knap-server-state {
+		margin-left: auto;
+		flex: none;
 		color: var(--text-muted);
-		word-break: break-all;
-		margin-top: 4px;
+		font-size: 12px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 45%;
 	}
 
-	.relay-server-user {
-		font-size: 0.85em;
-		color: var(--text-muted);
-		margin-top: 2px;
+	.knap-chev {
+		flex: none;
+		width: 16px;
+		height: 16px;
+		color: var(--text-faint);
+		transition: transform 0.15s ease;
 	}
 
-	.relay-server-actions {
+	.knap-chev.is-open {
+		transform: rotate(180deg);
+	}
+
+	/* Open row: the facts, then everything you can do to it. */
+	.knap-server-body {
+		border-top: 1px solid var(--background-modifier-border);
+		padding: 12px 14px 14px;
 		display: flex;
-		gap: 6px;
-		flex-wrap: wrap;
-		margin-left: 12px;
+		flex-direction: column;
+		gap: 12px;
 	}
 
-	.relay-server-btn {
-		padding: 4px 8px;
-		font-size: 0.85em;
+	.knap-add-form {
+		border-top: none;
+	}
+
+	.knap-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.knap-btn {
+		padding: 4px 10px;
+		font-size: 12px;
 		cursor: pointer;
 	}
 
-	.relay-server-form {
-		padding: 16px;
-		background: var(--background-secondary);
-		border-radius: 6px;
-		border: 1px solid var(--background-modifier-border);
+	.knap-btn:disabled {
+		cursor: default;
+		opacity: 0.6;
 	}
 
-	.relay-server-form h4 {
-		margin: 0 0 12px 0;
+	.knap-fields {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding-top: 12px;
+		border-top: 1px solid var(--background-modifier-border);
 	}
 
-	.relay-server-form-field {
-		margin-bottom: 12px;
+	.knap-add-form .knap-fields {
+		padding-top: 0;
+		border-top: none;
 	}
 
-	.relay-server-form-field label {
+	.knap-field label {
 		display: block;
 		margin-bottom: 4px;
-		font-size: 0.9em;
+		font-size: 12px;
 		color: var(--text-muted);
 	}
 
-	.relay-server-form-field input {
+	.knap-field input {
 		width: 100%;
 	}
 
-	.relay-server-form-error {
+	.knap-form-error {
 		color: var(--text-error);
-		font-size: 0.9em;
-		margin-bottom: 12px;
+		font-size: 12px;
 	}
 
-	.relay-server-form-actions {
+	.knap-fields > .knap-btn {
+		align-self: flex-start;
+	}
+
+	.knap-server-footer {
 		display: flex;
-		gap: 8px;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		padding-top: 12px;
+		border-top: 1px solid var(--background-modifier-border);
 	}
 
-	.relay-server-add-btn {
-		padding: 12px;
-		background: var(--background-secondary);
-		border: 1px dashed var(--background-modifier-border);
-		border-radius: 6px;
-		cursor: pointer;
+	.knap-footer-note {
+		font-size: 12px;
 		color: var(--text-muted);
-		transition: all 0.15s ease;
 	}
 
-	.relay-server-add-btn:hover {
-		background: var(--background-secondary-alt);
+	.knap-link-btn {
+		padding: 0;
+		background: transparent;
+		border: none;
+		box-shadow: none;
+		font-size: 12px;
+		color: var(--text-muted);
+		cursor: pointer;
+	}
+
+	.knap-link-btn:hover {
+		background: transparent;
 		color: var(--text-normal);
 	}
 
-	.relay-server-default {
-		margin-left: 12px;
-		display: flex;
-		align-items: center;
+	.knap-link-btn.is-warning:hover {
+		color: var(--text-error);
 	}
 
-	.relay-default-checkbox {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		font-size: 0.85em;
+	.knap-add-btn {
+		padding: 12px;
+		background: transparent;
+		border: 1px dashed var(--background-modifier-border);
+		border-radius: var(--radius-m, 8px);
+		box-shadow: none;
+		cursor: pointer;
 		color: var(--text-muted);
-		cursor: pointer;
+		font-size: 13px;
+		transition:
+			color 0.15s ease,
+			border-color 0.15s ease;
 	}
 
-	.relay-default-checkbox input {
-		margin: 0;
-		cursor: pointer;
-	}
-
-	.relay-default-checkbox input:checked + span {
-		color: var(--interactive-accent);
-		font-weight: 500;
+	.knap-add-btn:hover {
+		background: transparent;
+		border-color: var(--text-muted);
+		color: var(--text-normal);
 	}
 </style>
