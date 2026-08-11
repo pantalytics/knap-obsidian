@@ -1,13 +1,15 @@
 <script lang="ts">
 	import { Satellite, Layers } from "lucide-svelte";
-	import type { ConnectionStatus } from "src/HasProvider";
-	import type { RemoteSharedFolder } from "src/Relay";
-	export let status: ConnectionStatus = "disconnected";
-	export let relayId: string | undefined;
-	export let remote: RemoteSharedFolder | undefined;
-	export let progress = 0;
-	export let syncStatus: "pending" | "running" | "completed" | "failed" =
-		"pending";
+	import type { Readable } from "svelte/store";
+	import type { PillState } from "src/ui/FolderNav";
+
+	// One store rather than five props. FolderNav pushes connection state and
+	// sync progress from plain TypeScript, where the $set this replaces is gone
+	// and runes are unavailable. Named `pill` because `state` and `props` would
+	// collide with the $state and $props runes.
+	export let pill: Readable<PillState>;
+
+	$: ({ status, relayId, remote, progress, syncStatus } = $pill);
 
 	// Always show progress during any active state
 	$: showProgress =

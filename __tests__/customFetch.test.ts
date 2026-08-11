@@ -114,10 +114,11 @@ describe("customFetch — retry behavior", () => {
 		expect(mockRequestUrl).toHaveBeenCalledTimes(1);
 	});
 
-	// #14: the method is a default, not a fact. The control plane's OAuth
-	// callback exchange is a GET that burns a one-time code and mints a
-	// 30-day session, so replaying it is exactly the duplicate TR-29 set out
-	// to prevent — the caller has to be able to say so.
+	// #14: the method is a default, not a fact. A GET that burns a one-time
+	// code and mints a 30-day session is one replay away from the duplicate
+	// TR-29 set out to prevent, and only the caller knows. No caller needs
+	// this today — the OAuth callback exchange it was written for moved to
+	// the control plane (#17) — so these two hold the contract on their own.
 	test("does NOT retry a GET marked replayable: false", async () => {
 		mockRequestUrl.mockRejectedValueOnce(retryableError());
 

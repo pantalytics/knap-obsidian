@@ -173,9 +173,9 @@ export class InboundFileDownloader {
 					serverHash: serverSha256,
 				});
 				new Notice(
-					`Team Relay: skipped syncing "${relativePath}" — local changes ` +
-						`would have been overwritten by the relay version. Resolve ` +
-						`manually, then it will sync normally.`,
+					`Knap Sync: skipped "${relativePath}". The relay version would ` +
+						`have overwritten changes you made here. Merge them yourself ` +
+						`and it syncs normally again.`,
 					0,
 				);
 				return;

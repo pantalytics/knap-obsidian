@@ -1,3 +1,4 @@
+import { mount, unmount } from "svelte";
 import { App, Modal } from "obsidian";
 import type { Relay } from "src/Relay";
 import type { SharedFolder, SharedFolders } from "src/SharedFolder";
@@ -5,7 +6,7 @@ import type { RelayManager } from "src/RelayManager";
 import ShareFolderModalContent from "../components/ShareFolderModalContent.svelte";
 
 export class ShareFolderModal extends Modal {
-	private component?: ShareFolderModalContent;
+	private component?: Record<string, unknown>;
 
 	constructor(
 		app: App,
@@ -28,7 +29,7 @@ export class ShareFolderModal extends Modal {
 		// Set initial title using Obsidian's native method
 		this.setTitle("Share a folder");
 
-		this.component = new ShareFolderModalContent({
+		this.component = mount(ShareFolderModalContent, {
 			target: contentEl,
 			props: {
 				app: this.app,
@@ -58,7 +59,7 @@ export class ShareFolderModal extends Modal {
 	onClose() {
 		const { contentEl } = this;
 		contentEl.empty();
-		this.component?.$destroy();
+		if (this.component) void unmount(this.component);
 	}
 
 	destroy() {

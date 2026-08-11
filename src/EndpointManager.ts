@@ -391,7 +391,7 @@ export class EndpointManager {
 				errorMessage.includes('ECONNREFUSED')) {
 				errorMessage = `Unable to connect to ${tenantUrl}. Please check the URL and ensure the server is running.`;
 			} else if (errorMessage.includes('404')) {
-				errorMessage = `No tenant license found at ${tenantUrl}. This may not be a valid Enterprise Relay tenant.`;
+				errorMessage = `No tenant license found at ${tenantUrl}. This may not be a valid enterprise relay tenant.`;
 			} else if (errorMessage.includes('License fetch failed')) {
 				// Keep the existing error message as it's already user-friendly
 			}

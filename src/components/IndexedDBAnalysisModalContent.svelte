@@ -71,7 +71,7 @@
 	});
 </script>
 
-<div class="modal-title">Relay database analysis</div>
+<div class="modal-title">Knap Sync database analysis</div>
 <div class="system3-indexeddb-analysis">
 	<div class="setting-item">
 		<div class="setting-item-info">

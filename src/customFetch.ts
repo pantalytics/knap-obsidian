@@ -12,7 +12,7 @@ if (window.Response === undefined || window.Headers === undefined) {
 	// https://github.com/electron/electron/pull/42419
 	try {
 		console.warn(
-			"[Relay] Polyfilling Fetch API (Electron Bug: https://github.com/electron/electron/pull/42419)",
+			"[Knap Sync] Polyfilling Fetch API (Electron Bug: https://github.com/electron/electron/pull/42419)",
 		);
 		const windowRecord = window as unknown as Record<string, unknown>;
 		if (windowRecord["blinkfetch"]) {
@@ -30,10 +30,10 @@ if (window.Response === undefined || window.Headers === undefined) {
 if ((window as unknown as Record<string, unknown>)["EventSource"] === undefined) {
 	if (Platform.isMobile) {
 		console.warn(
-			"[Relay] Polyfilling EventSource API required, but unable to polyfill on Mobile",
+			"[Knap Sync] Polyfilling EventSource API required, but unable to polyfill on Mobile",
 		);
 	} else {
-		console.warn("[Relay] Polyfilling EventSource API");
+		console.warn("[Knap Sync] Polyfilling EventSource API");
 		// eventsource v4 exports { ErrorEvent, EventSource }, so the module object
 		// is not itself a constructor. Assigning it whole left window.EventSource
 		// as a plain object and `new EventSource(...)` would have thrown.
@@ -51,11 +51,16 @@ export type CustomFetchInit = RequestInit & {
 	 * Whether this request may be replayed after a transient network error.
 	 *
 	 * Defaults to the HTTP method: GET/HEAD yes, everything else no (TR-29).
-	 * Pass `false` on a GET that is not actually idempotent. The control
-	 * plane's OAuth callback exchange is one: it is a GET, but it burns a
-	 * one-time authorization code and mints a 30-day session, so a replay
-	 * after an RST_STREAM costs a second session the user never asked for
-	 * (#14). Method alone cannot tell those apart — the caller can.
+	 * Pass `false` on a GET that is not actually idempotent, or `true` on a
+	 * write the server deduplicates. Method alone cannot tell those apart —
+	 * the caller can.
+	 *
+	 * Nothing passes it today. It was written for the OAuth callback
+	 * exchange, a GET that burned a one-time code and minted a 30-day
+	 * session, so a replay after an RST_STREAM cost a session the user never
+	 * asked for (#14); that request left the plugin when the control plane
+	 * took over the exchange (#17). The default remains a heuristic about
+	 * the verb, not a fact about the endpoint, so the knob stays.
 	 */
 	replayable?: boolean;
 };

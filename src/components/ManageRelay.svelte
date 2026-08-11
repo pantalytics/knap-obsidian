@@ -848,7 +848,7 @@
 		{:else}
 			<SettingItem
 				name={`Plan: ${$relay.plan}`}
-				description={$relay.cta || "Thanks for supporting Relay development"}
+				description={$relay.cta || "Thanks for supporting this relay"}
 			>
 				<button
 					class="mod-cta"

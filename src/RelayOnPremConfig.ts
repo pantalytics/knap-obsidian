@@ -1,13 +1,13 @@
 /**
- * Relay On-Premise Configuration
+ * Knap Sync server configuration
  *
  * Configuration options for connecting to self-hosted relay-onprem instances
  * Supports multiple servers with independent authentication
  */
 
 /** Well-known Knap relay server */
-export const EVC_SERVER_ID = "knap-sync";
-export const EVC_CP_URL = "https://cp.knap.pantalytics.com";
+export const KNAP_SERVER_ID = "knap-sync";
+export const KNAP_CP_URL = "https://cp.knap.pantalytics.com";
 
 /**
  * Generate a unique server ID from URL
@@ -103,13 +103,13 @@ export const DEFAULT_RELAY_ONPREM_SETTINGS: RelayOnPremSettings = {
 	enabled: true,
 	servers: [
 		{
-			id: EVC_SERVER_ID,
+			id: KNAP_SERVER_ID,
 			name: "Knap Sync",
-			controlPlaneUrl: EVC_CP_URL,
+			controlPlaneUrl: KNAP_CP_URL,
 			isValidated: false,
 		},
 	],
-	defaultServerId: EVC_SERVER_ID,
+	defaultServerId: KNAP_SERVER_ID,
 };
 
 /**
@@ -117,7 +117,7 @@ export const DEFAULT_RELAY_ONPREM_SETTINGS: RelayOnPremSettings = {
  */
 export interface MigrationResult {
 	settings: RelayOnPremSettings;
-	/** If an existing server was adopted as EVC, this is the old server ID */
+	/** If an existing server was adopted as the well-known Knap server, this is the old server ID */
 	renamedServerId?: string;
 	/** Whether any changes were made */
 	changed: boolean;
@@ -144,65 +144,65 @@ export function migrateRelayOnPremSettings(
 		let servers = orig.servers.map((s) => ({ ...s }));
 		let defaultServerId = orig.defaultServerId;
 
-		const evcByIdIdx = servers.findIndex((s) => s.id === EVC_SERVER_ID);
-		// Find the BEST EVC-URL server: prefer one with isValidated or lastValidated (has auth)
-		const evcByUrlIdxAll = servers
+		const knapByIdIdx = servers.findIndex((s) => s.id === KNAP_SERVER_ID);
+		// Find the BEST well-known-URL server: prefer one with isValidated or lastValidated (has auth)
+		const knapByUrlIdxAll = servers
 			.map((s, i) => ({ s, i }))
-			.filter(({ s }) => s.controlPlaneUrl === EVC_CP_URL && s.id !== EVC_SERVER_ID);
+			.filter(({ s }) => s.controlPlaneUrl === KNAP_CP_URL && s.id !== KNAP_SERVER_ID);
 
-		if (evcByIdIdx >= 0 && evcByUrlIdxAll.length > 0) {
-			// Dedup: EVC by id exists AND there are duplicate(s) with same URL but different id.
-			// Keep the richer duplicate (the one with auth/validation) under the EVC_SERVER_ID,
+		if (knapByIdIdx >= 0 && knapByUrlIdxAll.length > 0) {
+			// Dedup: the well-known id exists AND there are duplicate(s) with same URL but different id.
+			// Keep the richer duplicate (the one with auth/validation) under the KNAP_SERVER_ID,
 			// remove the empty stub.
-			const richest = evcByUrlIdxAll.reduce((best, cur) =>
-				(cur.s.isValidated || cur.s.lastValidated) ? cur : best, evcByUrlIdxAll[0]);
-			const evcStub = servers[evcByIdIdx];
+			const richest = knapByUrlIdxAll.reduce((best, cur) =>
+				(cur.s.isValidated || cur.s.lastValidated) ? cur : best, knapByUrlIdxAll[0]);
+			const knapStub = servers[knapByIdIdx];
 			const richServer = richest.s;
 
-			// Merge: take all fields from the rich server, set id to EVC_SERVER_ID
-			servers[evcByIdIdx] = {
+			// Merge: take all fields from the rich server, set id to KNAP_SERVER_ID
+			servers[knapByIdIdx] = {
 				...richServer,
-				id: EVC_SERVER_ID,
-				name: richServer.name || evcStub.name || "Knap Sync",
+				id: KNAP_SERVER_ID,
+				name: richServer.name || knapStub.name || "Knap Sync",
 			};
 			renamedServerId = richServer.id;
 
 			// Update defaultServerId if it pointed to the old id
 			if (defaultServerId === richServer.id) {
-				defaultServerId = EVC_SERVER_ID;
+				defaultServerId = KNAP_SERVER_ID;
 			}
 
-			// Remove all duplicate-URL entries (keep only the one we merged into evcByIdIdx)
-			const removeIds = new Set(evcByUrlIdxAll.map(({ s }) => s.id));
+			// Remove all duplicate-URL entries (keep only the one we merged into knapByIdIdx)
+			const removeIds = new Set(knapByUrlIdxAll.map(({ s }) => s.id));
 			servers = servers.filter((s) => !removeIds.has(s.id));
 			changed = true;
-		} else if (evcByIdIdx < 0) {
-			// No EVC server by id — check if there's one by URL to adopt
-			if (evcByUrlIdxAll.length > 0) {
-				const richest = evcByUrlIdxAll.reduce((best, cur) =>
-					(cur.s.isValidated || cur.s.lastValidated) ? cur : best, evcByUrlIdxAll[0]);
+		} else if (knapByIdIdx < 0) {
+			// No well-known server by id — check if there's one by URL to adopt
+			if (knapByUrlIdxAll.length > 0) {
+				const richest = knapByUrlIdxAll.reduce((best, cur) =>
+					(cur.s.isValidated || cur.s.lastValidated) ? cur : best, knapByUrlIdxAll[0]);
 				renamedServerId = richest.s.id;
-				servers[richest.i] = { ...richest.s, id: EVC_SERVER_ID };
-				if (!servers[richest.i].name || servers[richest.i].name === new URL(EVC_CP_URL).hostname) {
+				servers[richest.i] = { ...richest.s, id: KNAP_SERVER_ID };
+				if (!servers[richest.i].name || servers[richest.i].name === new URL(KNAP_CP_URL).hostname) {
 					servers[richest.i].name = "Knap Sync";
 				}
 				if (defaultServerId === renamedServerId) {
-					defaultServerId = EVC_SERVER_ID;
+					defaultServerId = KNAP_SERVER_ID;
 				}
 				// Remove other duplicates
-				if (evcByUrlIdxAll.length > 1) {
+				if (knapByUrlIdxAll.length > 1) {
 					const removeIds = new Set(
-						evcByUrlIdxAll.filter(({ i }) => i !== richest.i).map(({ s }) => s.id)
+						knapByUrlIdxAll.filter(({ i }) => i !== richest.i).map(({ s }) => s.id)
 					);
 					servers = servers.filter((s) => !removeIds.has(s.id));
 				}
 				changed = true;
 			} else {
-				// No EVC server at all — prepend it
+				// No well-known server at all — prepend it
 				servers.unshift({
-					id: EVC_SERVER_ID,
+					id: KNAP_SERVER_ID,
 					name: "Knap Sync",
-					controlPlaneUrl: EVC_CP_URL,
+					controlPlaneUrl: KNAP_CP_URL,
 					isValidated: false,
 				});
 				changed = true;
@@ -210,7 +210,7 @@ export function migrateRelayOnPremSettings(
 		}
 
 		if (!defaultServerId) {
-			defaultServerId = EVC_SERVER_ID;
+			defaultServerId = KNAP_SERVER_ID;
 			changed = true;
 		}
 

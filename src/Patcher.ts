@@ -4,7 +4,7 @@ import { HasLogging } from "./debug";
 // Extend window interface to include our debugging property
 declare global {
 	interface Window {
-		evcTeamRelayPatches?: Array<() => void>;
+		knapSyncPatches?: Array<() => void>;
 	}
 }
 
@@ -19,12 +19,12 @@ export class Patcher extends HasLogging {
 
 	private constructor() {
 		super("Patcher");
-		// Initialize window.evcTeamRelayPatches for debugging
+		// Initialize window.knapSyncPatches for debugging
 		if (typeof window !== "undefined") {
-			if (window.evcTeamRelayPatches && window.evcTeamRelayPatches.length > 0) {
-				console.warn(`Found ${window.evcTeamRelayPatches.length} existing unsubscribers on window.evcTeamRelayPatches at startup - possible memory leak or incomplete cleanup`);
+			if (window.knapSyncPatches && window.knapSyncPatches.length > 0) {
+				console.warn(`Found ${window.knapSyncPatches.length} existing unsubscribers on window.knapSyncPatches at startup - possible memory leak or incomplete cleanup`);
 			}
-			window.evcTeamRelayPatches = [];
+			window.knapSyncPatches = [];
 		}
 	}
 
@@ -74,8 +74,8 @@ export class Patcher extends HasLogging {
 		this.unsubscribes.push(unsubscribe);
 
 		// Also store on window for debugging
-		if (typeof window !== "undefined" && window.evcTeamRelayPatches) {
-			window.evcTeamRelayPatches.push(unsubscribe);
+		if (typeof window !== "undefined" && window.knapSyncPatches) {
+			window.knapSyncPatches.push(unsubscribe);
 		}
 		
 		this.debug("Applied monkeypatch", {
@@ -97,9 +97,9 @@ export class Patcher extends HasLogging {
 			if (index >= 0) this.unsubscribes.splice(index, 1);
 			
 			// Remove from window debugging
-			if (typeof window !== "undefined" && window.evcTeamRelayPatches) {
-				const windowIndex = window.evcTeamRelayPatches.indexOf(unsubscribe);
-				if (windowIndex >= 0) window.evcTeamRelayPatches.splice(windowIndex, 1);
+			if (typeof window !== "undefined" && window.knapSyncPatches) {
+				const windowIndex = window.knapSyncPatches.indexOf(unsubscribe);
+				if (windowIndex >= 0) window.knapSyncPatches.splice(windowIndex, 1);
 			}
 			
 			unsubscribe();
@@ -133,9 +133,9 @@ export class Patcher extends HasLogging {
 		});
 		this.unsubscribes.length = 0;
 
-		// Clear window.evcTeamRelayPatches as well
-		if (typeof window !== "undefined" && window.evcTeamRelayPatches) {
-			window.evcTeamRelayPatches.length = 0;
+		// Clear window.knapSyncPatches as well
+		if (typeof window !== "undefined" && window.knapSyncPatches) {
+			window.knapSyncPatches.length = 0;
 		}
 		
 		this.log("Completed cleanup of monkeypatches", { cleanedCount: count });
@@ -150,9 +150,9 @@ export class Patcher extends HasLogging {
 			Patcher.instance.cleanup();
 			Patcher.instance = null;
 		}
-		// Clear window.evcTeamRelayPatches even if instance is null
-		if (typeof window !== "undefined" && window.evcTeamRelayPatches) {
-			window.evcTeamRelayPatches.length = 0;
+		// Clear window.knapSyncPatches even if instance is null
+		if (typeof window !== "undefined" && window.knapSyncPatches) {
+			window.knapSyncPatches.length = 0;
 		}
 	}
 

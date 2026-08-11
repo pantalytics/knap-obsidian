@@ -263,7 +263,7 @@ export class LoginManager extends Observable<LoginManager> {
 
 		// Only initialize PocketBase if NOT in relay-onprem mode. Reaching this
 		// point at all requires relayOnPrem.enabled=false, which has no UI path —
-		// only a manual data.json edit. TR-58: the EVC build compiles API_URL/
+		// only a manual data.json edit. TR-58: this build compiles API_URL/
 		// AUTH_URL empty (this fork ships relay-onprem only, no System3 cloud),
 		// so unless a custom tenant URL was separately validated via
 		// validateAndApplyEndpoints(), getAuthUrl() is "" here — constructing

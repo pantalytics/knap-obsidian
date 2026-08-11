@@ -1,3 +1,5 @@
+import { mount, unmount } from "svelte";
+import { writable, type Writable } from "svelte/store";
 import {
 	TAbstractFile,
 	TFile,
@@ -19,6 +21,7 @@ import type { Unsubscriber } from "src/observable/Observable";
 import type { ObservableSet } from "src/observable/ObservableSet";
 import { SyncFile, isSyncFile } from "src/SyncFile";
 import { Canvas } from "src/Canvas";
+import type { RemoteSharedFolder } from "src/Relay";
 import { curryLog } from "src/debug";
 
 class SiblingWatcher {
@@ -151,10 +154,20 @@ class FolderBarVisitor extends BaseVisitor<FolderBar> {
 
 type Unsubscribe = () => void;
 
+/** The mutable half of Pill's props, pushed to it through a store. */
+export interface PillState {
+	status: ConnectionState["status"];
+	relayId: string | undefined;
+	remote: RemoteSharedFolder | undefined;
+	progress: number;
+	syncStatus: "pending" | "running" | "completed" | "failed";
+}
+
 class PillDecoration {
 	el: HTMLElement;
 	sharedFolder: SharedFolder;
-	pill: Pill;
+	pill: Record<string, unknown>;
+	pillState: Writable<PillState>;
 	unsubscribe: Unsubscribe;
 
 	constructor(el: HTMLElement, sharedFolder: SharedFolder) {
@@ -171,25 +184,27 @@ class PillDecoration {
 		this.el = el;
 		this.el.addClass("system3-pill");
 
-		this.pill = new Pill({
+		this.pillState = writable({
+			status: this.sharedFolder.state.status,
+			relayId: this.sharedFolder.relayId,
+			remote: this.sharedFolder.remote,
+			progress: 0,
+			syncStatus: "pending",
+		});
+		this.pill = mount(Pill, {
 			target: this.el,
-			props: {
-				status: this.sharedFolder.state.status,
-				relayId: this.sharedFolder.relayId,
-				remote: this.sharedFolder.remote,
-				progress: 0,
-				syncStatus: "pending",
-			},
+			props: { pill: this.pillState },
 		});
 
 		const unsubs: Unsubscribe[] = [];
 		unsubs.push(
 			this.sharedFolder.subscribe(this.el, (state: ConnectionState) => {
-				this.pill.$set({
+				this.pillState.update((current) => ({
+					...current,
 					status: state.status,
 					relayId: this.sharedFolder.relayId,
 					remote: this.sharedFolder.remote,
-				});
+				}));
 			}),
 		);
 
@@ -198,10 +213,11 @@ class PillDecoration {
 				this.sharedFolder,
 				(progress) => {
 					if (progress) {
-						this.pill.$set({
+						this.pillState.update((current) => ({
+							...current,
 							progress: progress.percent,
 							syncStatus: progress.status,
-						});
+						}));
 					}
 				},
 			),
@@ -210,7 +226,7 @@ class PillDecoration {
 	}
 
 	destroy() {
-		this.pill.$destroy();
+		void unmount(this.pill);
 		this.unsubscribe();
 		this.el.removeClass("system3-pill");
 	}
@@ -316,7 +332,8 @@ class QueueWatcherVisitor extends BaseVisitor<QueueWatcher> {
 }
 
 class FilePillDecoration {
-	pill?: TextPill;
+	pill?: Record<string, unknown>;
+	private readonly tag: Writable<string> = writable("");
 	unsubscribes: Unsubscriber[] = [];
 
 	constructor(
@@ -339,19 +356,15 @@ class FilePillDecoration {
 			return;
 		}
 		if (this.file.inMeta) {
-			this.pill?.$destroy();
+			if (this.pill) void unmount(this.pill);
+			this.pill = undefined;
 			return;
 		}
+		this.tag.set(this.file.tag);
 		if (!this.pill) {
-			this.pill = new UploadPill({
+			this.pill = mount(UploadPill, {
 				target: this.el,
-				props: {
-					text: this.file.tag,
-				},
-			});
-		} else {
-			this.pill.$set({
-				text: this.file.tag,
+				props: { text: this.tag },
 			});
 		}
 	}
@@ -361,7 +374,8 @@ class FilePillDecoration {
 		this.el.querySelectorAll(".system3-uploadpill").forEach((el) => {
 			el.remove();
 		});
-		this.pill?.$destroy();
+		if (this.pill) void unmount(this.pill);
+		this.pill = undefined;
 		this.file = null as unknown as SyncFile;
 	}
 }
@@ -402,7 +416,7 @@ class FilePillVisitor extends BaseVisitor<FilePillDecoration> {
 }
 
 class NotSyncedPillDecoration {
-	pill: TextPill;
+	pill: Record<string, unknown>;
 	unsubscribe?: () => void;
 
 	constructor(private el: HTMLElement) {
@@ -410,7 +424,7 @@ class NotSyncedPillDecoration {
 			el.remove();
 		});
 		// TODO: Ensure the not-synced pill comes last
-		this.pill = new TextPill({
+		this.pill = mount(TextPill, {
 			target: this.el,
 			props: {
 				text: "NOT SYNCED",
@@ -420,7 +434,7 @@ class NotSyncedPillDecoration {
 	}
 
 	destroy() {
-		this.pill.$destroy();
+		void unmount(this.pill);
 		this.el.querySelectorAll(".system3-filepill").forEach((el) => {
 			el.remove();
 		});

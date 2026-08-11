@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createEventDispatcher, onMount } from "svelte";
+	import { onMount } from "svelte";
 	import SettingItem from "./SettingItem.svelte";
 	import SettingItemHeading from "./SettingItemHeading.svelte";
 	import type Live from "../main";
@@ -7,7 +7,10 @@
 
 	export let plugin: Live;
 
-	const dispatch = createEventDispatcher();
+	// Callback props rather than createEventDispatcher: mount()'s `events`
+	// option is deprecated in Svelte 5 and goes away in 6.
+	export let onapply: () => void = () => {};
+	export let onclose: () => void = () => {};
 
 	let newTenantUrl = "";
 	let isValidating = false;
@@ -201,7 +204,7 @@
 
 <div class="endpoint-config-modal">
 	<div class="setting-item-description" style="margin-bottom: 16px;">
-		<p>Manage your organization's enterprise Relay tenants. Add tenants to switch between different enterprise deployments.</p>
+		<p>Manage your organization's enterprise relay tenants. Add tenants to switch between different enterprise deployments.</p>
 	</div>
 
 
@@ -309,7 +312,7 @@
 
 	<!-- Apply Button -->
 	<div class="apply-section">
-		<button class="mod-cta apply-btn" on:click={() => { if (hasChanges) dispatch('apply'); else dispatch('close'); }}>Apply</button>
+		<button class="mod-cta apply-btn" on:click={() => { if (hasChanges) onapply(); else onclose(); }}>Apply</button>
 	</div>
 </div>
 

@@ -97,7 +97,7 @@ import { EndpointManager, type EndpointSettings } from "./EndpointManager";
 import { SelfHostModal } from "./ui/SelfHostModal";
 import {
 	DEFAULT_RELAY_ONPREM_SETTINGS,
-	EVC_SERVER_ID,
+	KNAP_SERVER_ID,
 	type RelayOnPremSettings,
 	type RelayOnPremServer,
 	migrateRelayOnPremSettings,
@@ -395,10 +395,10 @@ export default class Live extends Plugin {
 		);
 		this.notifier = new ObsidianNotifier();
 
-		this.debug = curryLog("[System 3][Relay]", "debug");
-		this.log = curryLog("[System 3][Relay]", "log");
-		this.warn = curryLog("[System 3][Relay]", "warn");
-		this.error = curryLog("[System 3][Relay]", "error");
+		this.debug = curryLog("[Knap Sync]", "debug");
+		this.log = curryLog("[Knap Sync]", "log");
+		this.warn = curryLog("[Knap Sync]", "warn");
+		this.error = curryLog("[Knap Sync]", "error");
 
 		this.settings = new Settings<RelaySettings>(this, DEFAULT_SETTINGS);
 		await this.settings.load();
@@ -412,7 +412,8 @@ export default class Live extends Plugin {
 				relayOnPrem: migration.settings,
 			}));
 		}
-		// If an existing server was adopted as EVC, migrate its localStorage auth key
+		// If an existing server was adopted as the well-known Knap server, migrate
+		// its localStorage auth key
 		// and update all shared folder settings that reference the old server ID
 		if (migration.renamedServerId) {
 			const oldId = migration.renamedServerId;
@@ -420,7 +421,7 @@ export default class Live extends Plugin {
 			// keyed by appId (stable across vault renames), not vault display name.
 			const prefix = "knap-sync_onprem_auth_";
 			const oldKey = `${prefix}${this.appId}_${oldId}`;
-			const newKey = `${prefix}${this.appId}_${EVC_SERVER_ID}`;
+			const newKey = `${prefix}${this.appId}_${KNAP_SERVER_ID}`;
 			try {
 				const oldData = window.localStorage.getItem(oldKey);
 				if (oldData && !window.localStorage.getItem(newKey)) {
@@ -438,7 +439,7 @@ export default class Live extends Plugin {
 				const updated = folders.map((f) => {
 					if (f.onpremServerId === oldId) {
 						folderChanged = true;
-						return { ...f, onpremServerId: EVC_SERVER_ID };
+						return { ...f, onpremServerId: KNAP_SERVER_ID };
 					}
 					return f;
 				});
@@ -535,7 +536,7 @@ export default class Live extends Plugin {
 
 		this.addCommand({
 			id: "reload",
-			name: "Reload relay",
+			name: "Reload plugin",
 			callback: async () => await (this.app as unknown as ObsidianApp).reloadRelay?.(),
 		});
 
@@ -868,7 +869,7 @@ export default class Live extends Plugin {
 							) {
 								menu.addItem((item) => {
 									item
-										.setTitle("Relay: share folder")
+										.setTitle("Knap Sync: share folder")
 										.setIcon("share-2")
 										.onClick(() => {
 											const modal = new QuickShareModal(this.app, this, file.path);
@@ -881,7 +882,7 @@ export default class Live extends Plugin {
 						if (folder.relayId) {
 							menu.addItem((item) => {
 								item
-									.setTitle("Relay: relay settings")
+									.setTitle("Knap Sync: relay settings")
 									.setIcon("gear")
 									.onClick(() => {
 										void this.openSettings(`/relays?id=${folder.relayId}`);
@@ -889,7 +890,7 @@ export default class Live extends Plugin {
 							});
 							menu.addItem((item) => {
 								item
-									.setTitle("Relay: share settings")
+									.setTitle("Knap Sync: share settings")
 									.setIcon("settings")
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
@@ -902,7 +903,7 @@ export default class Live extends Plugin {
 							menu.addItem((item) => {
 								item
 									.setTitle(
-										folder.connected ? "Relay: disconnect" : "Relay: connect",
+										folder.connected ? "Knap Sync: disconnect" : "Knap Sync: connect",
 									)
 									.setIcon("satellite")
 									.onClick(() => {
@@ -919,7 +920,7 @@ export default class Live extends Plugin {
 						} else {
 							menu.addItem((item) => {
 								item
-									.setTitle("Relay: share settings")
+									.setTitle("Knap Sync: share settings")
 									.setIcon("settings")
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
@@ -933,7 +934,7 @@ export default class Live extends Plugin {
 							if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
 								menu.addItem((item) => {
 									item
-										.setTitle("Relay: unshare folder")
+										.setTitle("Knap Sync: unshare folder")
 										.setIcon("folder-x")
 										.onClick(async () => {
 											const confirmed = await confirmDialog(
@@ -966,7 +967,7 @@ export default class Live extends Plugin {
 						if (folder.relayId && folder.connected) {
 							menu.addItem((item) => {
 								item
-									.setTitle("Relay: sync")
+									.setTitle("Knap Sync: sync")
 									.setIcon("folder-sync")
 									.onClick(async () => {
 										void folder.netSync();
@@ -995,7 +996,7 @@ export default class Live extends Plugin {
 						if (ifile && isSyncFile(ifile)) {
 							menu.addItem((item) => {
 								item
-									.setTitle("Relay: download")
+									.setTitle("Knap Sync: download")
 									.setIcon("cloud-download")
 									.onClick(async () => {
 										await ifile.pull();
@@ -1005,7 +1006,7 @@ export default class Live extends Plugin {
 							if (this.debugSettings.get().debugging) {
 								menu.addItem((item) => {
 									item
-										.setTitle("Relay: verify upload")
+										.setTitle("Knap Sync: verify upload")
 										.setIcon("search-check")
 										.onClick(async () => {
 											const present = await ifile.verifyUpload();
@@ -1017,7 +1018,7 @@ export default class Live extends Plugin {
 							}
 							menu.addItem((item) => {
 								item
-									.setTitle("Relay: upload")
+									.setTitle("Knap Sync: upload")
 									.setIcon("cloud-upload")
 									.onClick(async () => {
 										await ifile.push(true);
@@ -1720,7 +1721,7 @@ export default class Live extends Plugin {
 			}),
 		);
 
-		const vaultLog = curryLog("[System 3][Relay][Vault]", "log");
+		const vaultLog = curryLog("[Knap Sync][Vault]", "log");
 
 		const handlePromiseRejection = (event: PromiseRejectionEvent): void => {
 			//event.preventDefault();

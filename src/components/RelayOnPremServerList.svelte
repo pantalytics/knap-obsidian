@@ -4,7 +4,7 @@
 	import type Live from "../main";
 	import type { RelayOnPremServer } from "../RelayOnPremConfig";
 	import {
-		EVC_SERVER_ID,
+		KNAP_SERVER_ID,
 		generateServerId,
 		validateServerConfig,
 		findDuplicateServer,
@@ -585,7 +585,7 @@
 								Make default
 							</button>
 						{/if}
-						{#if server.id !== EVC_SERVER_ID}
+						{#if server.id !== KNAP_SERVER_ID}
 							<button class="knap-link-btn is-warning" on:click={() => removeServer(server.id)}>
 								Remove
 							</button>

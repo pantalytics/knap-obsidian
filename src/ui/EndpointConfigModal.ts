@@ -1,9 +1,10 @@
+import { mount, unmount } from "svelte";
 import { App, Modal } from "obsidian";
 import EndpointConfigModalContent from "../components/EndpointConfigModalContent.svelte";
 import type Live from "../main";
 
 export class EndpointConfigModal extends Modal {
-	private component?: EndpointConfigModalContent;
+	private component?: Record<string, unknown>;
 
 	constructor(
 		app: App,
@@ -17,32 +18,29 @@ export class EndpointConfigModal extends Modal {
 	onOpen() {
 		const { contentEl } = this;
 
-		this.component = new EndpointConfigModalContent({
+		this.component = mount(EndpointConfigModalContent, {
 			target: contentEl,
 			props: {
 				plugin: this.plugin,
 				reload: this.reload,
+				onclose: () => {
+					this.close();
+				},
+				onapply: () => {
+					this.close();
+					// Reload the plugin to apply changes
+					window.setTimeout(() => {
+						this.reload();
+					}, 100);
+				},
 			},
-		});
-
-		// Listen for close event from component
-		this.component.$on("close", () => {
-			this.close();
-		});
-
-		// Listen for apply event from component
-		this.component.$on("apply", () => {
-			this.close();
-			// Reload the plugin to apply changes
-			window.setTimeout(() => {
-				this.reload();
-			}, 100);
 		});
 	}
 
 	onClose() {
 		const { contentEl } = this;
 		contentEl.empty();
-		this.component?.$destroy();
+		if (this.component) void unmount(this.component);
+		this.component = undefined;
 	}
 }
