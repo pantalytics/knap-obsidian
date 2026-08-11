@@ -67,6 +67,15 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 	private _restored = false;
 	/** Memoized result of expiryBuffer(), keyed by the token it was computed for. */
 	private expiryBufferCache?: { token: string; buffer: number };
+	/**
+	 * How long the access token we currently hold was minted to live.
+	 *
+	 * Known whenever we saw the token minted — the control plane states it as
+	 * `expires_in` on both the login and the refresh response, and we already
+	 * read it to compute `tokenExpiresAt`. Undefined for a token restored from
+	 * localStorage, where the mint is out of view. See expiryBuffer().
+	 */
+	private tokenLifetimeMs?: number;
 
 	/** Longest we will ever consider a token "about to expire". */
 	private static readonly MAX_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
@@ -129,6 +138,9 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 			this.token = authData.token;
 			this.tokenExpiresAt = authData.expiresAt;
 			this.storedRefreshToken = authData.refreshToken;
+			// Restored, not minted: the lifetime it was issued with is not
+			// recoverable from what we stored, only from the token itself.
+			this.rememberTokenLifetime(undefined);
 
 			// Check if token is still valid
 			if (this.isTokenValid()) {
@@ -270,22 +282,58 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 	 * rotates leaves another 30-day session behind (#14). A quarter of the
 	 * lifetime keeps the proactive-refresh behaviour at any TTL.
 	 *
-	 * Falls back to the flat cap when the token is not a JWT or carries no
-	 * `iat`, which is the only case the old code could handle at all.
+	 * The lifetime is read from the JWT's `iat`/`exp` where both are present,
+	 * and otherwise from `tokenLifetimeMs` — what the control plane said when
+	 * it minted this token. Reading `iat` alone is not enough: `iat` is an
+	 * optional claim (RFC 7519 §4.1.6), and a control plane that omits it, or
+	 * an access token that is not a JWT at all, would put the buffer straight
+	 * back to the flat five minutes this exists to bound — leaving #14
+	 * unfixed for exactly the short-lived token it is about. `expires_in` is
+	 * the same number from a source that is always there.
+	 *
+	 * Falls back to the flat cap only when neither is available, which after
+	 * a login or a refresh means neither was offered. A token restored from
+	 * localStorage lands here too; it refreshes once and the replacement
+	 * arrives with its lifetime stated.
 	 */
 	private expiryBuffer(token: string): number {
 		if (this.expiryBufferCache?.token === token) {
 			return this.expiryBufferCache.buffer;
 		}
 
-		let buffer = RelayOnPremAuthProvider.MAX_EXPIRY_BUFFER_MS;
+		let lifetimeMs: number | undefined;
 		const { exp, iat } = this.decodeToken(token);
 		if (exp !== undefined && iat !== undefined && exp > iat) {
-			buffer = Math.min(buffer, Math.floor(((exp - iat) * 1000) / 4));
+			lifetimeMs = (exp - iat) * 1000;
+		} else if (this.tokenLifetimeMs !== undefined) {
+			lifetimeMs = this.tokenLifetimeMs;
 		}
+
+		const buffer =
+			lifetimeMs === undefined
+				? RelayOnPremAuthProvider.MAX_EXPIRY_BUFFER_MS
+				: Math.min(RelayOnPremAuthProvider.MAX_EXPIRY_BUFFER_MS, Math.floor(lifetimeMs / 4));
 
 		this.expiryBufferCache = { token, buffer };
 		return buffer;
+	}
+
+	/**
+	 * Record the lifetime the control plane minted the current access token
+	 * with, and drop the memoized buffer computed without it.
+	 *
+	 * Call this at every site that assigns `this.token`. A non-positive or
+	 * unknown lifetime is stored as undefined rather than as a zero buffer:
+	 * "we were not told" has to stay distinguishable from "it lives no time
+	 * at all", or a malformed response would make every token permanently
+	 * valid instead of falling back to the flat cap.
+	 */
+	private rememberTokenLifetime(lifetimeMs: number | undefined): void {
+		this.tokenLifetimeMs =
+			lifetimeMs !== undefined && Number.isFinite(lifetimeMs) && lifetimeMs > 0
+				? lifetimeMs
+				: undefined;
+		this.expiryBufferCache = undefined;
 	}
 
 	async loginWithPassword(email: string, password: string): Promise<AuthResponse> {
@@ -342,6 +390,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 				// Default to 1 hour
 				this.tokenExpiresAt = Date.now() + 3600 * 1000;
 			}
+			this.rememberTokenLifetime(this.tokenExpiresAt - Date.now());
 
 			// Step 2: Get user information
 			const meResponse = await customFetch(`${this.normalizedUrl}/auth/me`, {
@@ -431,6 +480,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 			this.token = authResponse.token.token;
 			this.tokenExpiresAt = authResponse.token.expiresAt;
 			this.storedRefreshToken = authResponse.refreshToken;
+			this.rememberTokenLifetime(this.tokenExpiresAt - Date.now());
 
 			// Persist auth
 			this.persistAuth();
@@ -462,13 +512,19 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 	 * Refresh the access token, at most one refresh in flight at a time.
 	 *
 	 * The single-flight guard lives here rather than in ensureTokenRefreshed()
-	 * because three other callers reach refreshToken() directly and used to
-	 * miss it entirely: restoreAuth() on plugin start, MultiServerAuthManager.
-	 * refreshTokenForServer(), and LoginManager.reAuthForSensitiveAction().
-	 * Two of those racing a getValidToken() sent two POSTs carrying the same
-	 * refresh token, and a control plane that rotates on refresh answers both
-	 * — one login, two sessions (#14). Joining the in-flight refresh gives
-	 * every caller the same fresh token it was going to get anyway.
+	 * because other callers reach refreshToken() directly and used to miss it
+	 * entirely: restoreAuth() on plugin start and LoginManager.
+	 * reAuthForSensitiveAction() (plus MultiServerAuthManager.
+	 * refreshTokenForServer(), which nothing calls today). One of those
+	 * racing a getValidToken() sent two POSTs carrying the same refresh
+	 * token, and a control plane that rotates on refresh answers both —
+	 * two sessions where there should be one. Joining the in-flight refresh
+	 * gives every caller the same fresh token it was going to get anyway.
+	 *
+	 * This is hardening, not the cause of #14: none of these callers fire
+	 * during a plain sign-in, and a race lands its duplicates milliseconds
+	 * apart rather than seconds. See isTokenValid()/expiryBuffer() for the
+	 * path the measurement on that issue actually walked.
 	 */
 	async refreshToken(): Promise<AuthResponse> {
 		if (this.refreshInProgress) {
@@ -519,6 +575,7 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 				this.token = refreshData.access_token;
 				this.storedRefreshToken = refreshData.refresh_token;
 				this.tokenExpiresAt = Date.now() + refreshData.expires_in * 1000;
+				this.rememberTokenLifetime(refreshData.expires_in * 1000);
 
 				// Fetch updated user info
 				const meResponse = await customFetch(`${this.normalizedUrl}/auth/me`, {

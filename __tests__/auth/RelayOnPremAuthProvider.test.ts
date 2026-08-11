@@ -974,6 +974,112 @@ describe("RelayOnPremAuthProvider", () => {
 		});
 	});
 
+	// #14, the measurement itself: five user_sessions rows in 67 seconds off
+	// one sign-in — 08:09:27, :45, 08:10:02, :09, :34 — every one of them a
+	// 30-day credential. The gaps (18s, 17s, 7s, 25s) are the cadence of the
+	// plugin's own control-plane traffic, not of any retry it can run: every
+	// retry path is capped at three attempts and finishes within seconds.
+	//
+	// What produces one row per operation is this class. Every control-plane
+	// request re-derives its bearer token through getValidToken(), which mints
+	// a new session whenever isTokenValid() says no — and a flat five-minute
+	// buffer said no for the entire life of a token that lives five minutes.
+	describe("#14: one sign-in, one session", () => {
+		/** 08:09:27 on the day of the measurement — the first row. */
+		const SIGN_IN = Date.UTC(2026, 7, 11, 8, 9, 27);
+		/** The four later rows, as offsets in seconds from the sign-in. */
+		const LATER_ROWS = [18, 35, 42, 67];
+
+		function wireControlPlane(accessToken: string, expiresIn: number) {
+			mockFetch.mockImplementation((url) => {
+				const target = String(url);
+				if (target.includes("/auth/login")) {
+					return mockFetchResponse(200, {
+						access_token: accessToken,
+						token_type: "bearer",
+						refresh_token: "refresh_token",
+						expires_in: expiresIn,
+					});
+				}
+				if (target.includes("/v1/auth/refresh")) {
+					return mockFetchResponse(200, {
+						access_token: "rotated_access_token",
+						refresh_token: "rotated_refresh_token",
+						expires_in: expiresIn,
+					});
+				}
+				return mockFetchResponse(200, { id: "user-123", email: "test@example.com" });
+			});
+		}
+
+		const sessionsMinted = () =>
+			mockFetch.mock.calls.filter(([url]) => {
+				const target = String(url);
+				return target.includes("/auth/login") || target.includes("/v1/auth/refresh");
+			}).length;
+
+		test("operations across the measured 67 seconds mint one session, not five", async () => {
+			const clock = jest.spyOn(Date, "now").mockReturnValue(SIGN_IN);
+			try {
+				// A five-minute access token — the case a flat five-minute
+				// buffer cannot represent at all.
+				wireControlPlane("opaque_access_token", 300);
+
+				await provider.loginWithPassword("test@example.com", "password123");
+				expect(sessionsMinted()).toBe(1);
+
+				for (const offset of LATER_ROWS) {
+					clock.mockReturnValue(SIGN_IN + offset * 1000);
+					// Stands in for a control-plane operation: getHeaders() in
+					// RelayOnPremShareClient and requestToken() in
+					// RelayOnPremTokenProvider both go through this call.
+					expect(await provider.getValidToken()).toBe("opaque_access_token");
+				}
+
+				expect(sessionsMinted()).toBe(1);
+			} finally {
+				clock.mockRestore();
+			}
+		});
+
+		test("the session is still refreshed once the token is genuinely near expiry", async () => {
+			const clock = jest.spyOn(Date, "now").mockReturnValue(SIGN_IN);
+			try {
+				wireControlPlane("opaque_access_token", 300);
+				await provider.loginWithPassword("test@example.com", "password123");
+
+				// Four minutes in: 60s left against a 75s buffer. Proactive
+				// refresh has to still happen, or the fix trades duplicate
+				// sessions for requests sent on an expiring token.
+				clock.mockReturnValue(SIGN_IN + 240 * 1000);
+				expect(await provider.getValidToken()).toBe("rotated_access_token");
+				expect(sessionsMinted()).toBe(2);
+			} finally {
+				clock.mockRestore();
+			}
+		});
+
+		// `iat` is optional (RFC 7519 §4.1.6). Scaling the buffer off it alone
+		// leaves every token that omits it on the flat five minutes, which is
+		// the bug — so the stated `expires_in` has to carry the same weight.
+		test("a token carrying no iat is bounded by its stated lifetime", async () => {
+			const clock = jest.spyOn(Date, "now").mockReturnValue(SIGN_IN);
+			try {
+				const noIat = jwt({ exp: Math.floor(SIGN_IN / 1000) + 300, sub: "user-123" });
+				wireControlPlane(noIat, 300);
+
+				await provider.loginWithPassword("test@example.com", "password123");
+
+				clock.mockReturnValue(SIGN_IN + 67 * 1000);
+				expect(provider.isTokenValid()).toBe(true);
+				expect(await provider.getValidToken()).toBe(noIat);
+				expect(sessionsMinted()).toBe(1);
+			} finally {
+				clock.mockRestore();
+			}
+		});
+	});
+
 	describe("logout()", () => {
 		test("P28: Success", async () => {
 			// Set up logged in state
