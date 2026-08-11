@@ -15,6 +15,9 @@
  * The other way round, the custom scheme reached the IdP and was refused. So
  * the token exchange happens on the control plane rather than here, and what
  * this file waits for is a session, not an authorization code.
+ *
+ * The plugin is not an OAuth client at the identity provider and holds no
+ * secret of its own; the control plane is the only client (ADR-0030).
  */
 
 import { curryLog } from "../debug";
@@ -39,9 +42,9 @@ export interface OAuthStartResult {
 
 export class OAuthHandler {
 	private normalizedUrl: string;
-	/** The state token issued by the control plane for the in-flight flow — verified against
-	 *  the loopback callback to reject any code/state a local process didn't legitimately
-	 *  receive from our own authorize request (session fixation, TR-21). */
+	/** The state token the control plane issued for the flow in flight. Anything on the
+	 *  machine can invoke a URL scheme, so a callback carrying a different state is
+	 *  rejected rather than used (session fixation, TR-21). */
 	private expectedState: string | null = null;
 
 	constructor(
@@ -54,7 +57,7 @@ export class OAuthHandler {
 
 	/**
 	 * Start OAuth flow - registers the return URL and returns the authorize URL
-	 * @param provider - OAuth provider name (e.g., "casdoor", "google", "github")
+	 * @param provider - OAuth provider name (e.g., "zitadel", "google", "github")
 	 * @returns Authorization URL and where the flow comes back
 	 */
 	async prepareOAuthFlow(provider: string): Promise<OAuthStartResult> {
@@ -85,7 +88,7 @@ export class OAuthHandler {
 
 			if (!response.ok) {
 				const errorText = await response.text();
-				this.stopCallbackServer();
+				this.cancelFlow();
 				throw new Error(`Failed to get authorize URL: ${response.status} ${errorText}`);
 			}
 
@@ -93,12 +96,12 @@ export class OAuthHandler {
 			const authorizeUrl = data.authorize_url;
 
 			if (!authorizeUrl) {
-				this.stopCallbackServer();
+				this.cancelFlow();
 				throw new Error("No authorize URL returned from control plane");
 			}
 
 			if (!data.state) {
-				this.stopCallbackServer();
+				this.cancelFlow();
 				throw new Error("No state token returned from control plane");
 			}
 
@@ -111,7 +114,7 @@ export class OAuthHandler {
 				returnUrl,
 			};
 		} catch (error: unknown) {
-			this.stopCallbackServer();
+			this.cancelFlow();
 			throw error;
 		}
 	}
@@ -160,12 +163,12 @@ export class OAuthHandler {
 			return authResponse;
 		} finally {
 			// Always drop the pending flow
-			this.stopCallbackServer();
+			this.cancelFlow();
 		}
 	}
 
 	/**
-	 * Complete OAuth flow - prepare, open browser, wait for callback, exchange
+	 * The whole flow: prepare, open the browser, wait for the deep link, exchange
 	 * @param provider - OAuth provider name
 	 * @param openBrowser - Function to open browser (e.g., window.open)
 	 * @returns Authentication response with user and token
@@ -188,17 +191,17 @@ export class OAuthHandler {
 	}
 
 	/**
-	 * Stop the callback server if running
+	 * Stop waiting for a deep link and forget the state token
 	 */
-	private stopCallbackServer(): void {
+	private cancelFlow(): void {
 		oauthDeepLinkReceiver.cancel();
 		this.expectedState = null;
 	}
 
 	/**
-	 * Cleanup - stop callback server
+	 * Cleanup
 	 */
 	destroy(): void {
-		this.stopCallbackServer();
+		this.cancelFlow();
 	}
 }

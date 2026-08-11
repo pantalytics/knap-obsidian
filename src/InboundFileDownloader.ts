@@ -8,6 +8,7 @@
 import { normalizePath, Notice, TFile, Vault } from "obsidian";
 import { dirname, join } from "path-browserify";
 import { curryLog } from "./debug";
+import { isExcludedPath } from "./vaultScope";
 import { generateHash } from "./hashing";
 import type { RelayOnPremShareClientManager } from "./RelayOnPremShareClientManager";
 import type { WebSyncManager } from "./WebSyncManager";
@@ -28,17 +29,25 @@ export class InboundFileDownloader {
 	private lastWrittenHash: Map<string, Record<string, string>>;
 	// Vault paths currently being written — echo-loop guard for vault "modify" events
 	private writingPaths: Set<string> = new Set();
+	// Where a share lives locally, which is not always where the server thinks
+	// it does. A vault share sits at the root and carries the vault's name on
+	// the server, so joining that name onto every path would file the whole
+	// vault inside a folder named after itself. Returns undefined when the
+	// caller has nothing to say, and the server's own path is used.
+	private localRootFor?: (shareId: string) => string | undefined;
 
 	constructor(
 		vault: Vault,
 		clientManager: RelayOnPremShareClientManager,
 		webSyncManager: WebSyncManager,
 		hashManifestStore: Map<string, Record<string, string>> = new Map(),
+		localRootFor?: (shareId: string) => string | undefined,
 	) {
 		this.vault = vault;
 		this.clientManager = clientManager;
 		this.webSyncManager = webSyncManager;
 		this.lastWrittenHash = hashManifestStore;
+		this.localRootFor = localRootFor;
 	}
 
 	/**
@@ -60,11 +69,19 @@ export class InboundFileDownloader {
 			return "skipped";
 		}
 
-		// Resolve share path (cached by clientManager for 5 min)
+		// Where this share lands locally. The share's own path is the server's
+		// answer; a vault share overrides it with the root.
 		let sharePath: string;
+		// Who said where the share lives matters. Our own resolver may answer
+		// with the root, because a vault share genuinely has no prefix. The
+		// server may not: an empty path from them is a bug or worse, and it
+		// still fails closed below.
+		let rootIsLocal = false;
 		try {
 			const share = await this.clientManager.getShare(serverId, shareId);
-			sharePath = share.path;
+			const localRoot = this.localRootFor?.(shareId);
+			rootIsLocal = localRoot !== undefined;
+			sharePath = rootIsLocal ? (localRoot as string) : share.path;
 		} catch (err: unknown) {
 			log("Failed to resolve share path", {
 				shareId,
@@ -97,7 +114,15 @@ export class InboundFileDownloader {
 		const shareManifest = { ...(this.lastWrittenHash.get(shareId) ?? {}) };
 
 		for (const item of syncItems) {
-			await this._downloadItem(item.path, item.sha256, shareId, serverId, sharePath, shareManifest);
+			await this._downloadItem(
+				item.path,
+				item.sha256,
+				shareId,
+				serverId,
+				sharePath,
+				shareManifest,
+				rootIsLocal,
+			);
 		}
 
 		this.lastWrittenHash.set(shareId, shareManifest);
@@ -111,24 +136,44 @@ export class InboundFileDownloader {
 		serverId: string,
 		sharePath: string,
 		shareManifest: Record<string, string>,
+		rootIsLocal: boolean,
 	): Promise<void> {
 		const vaultPath = normalizePath(join(sharePath, relativePath));
 
-		// Guard against path traversal: the resolved vault path must stay inside sharePath.
-		// A server-supplied relativePath like "../../.obsidian/plugins/evil.js" would resolve
-		// outside the share directory after join+normalize — reject it before any I/O.
+		// A server-supplied relativePath like "../../.obsidian/plugins/evil.js"
+		// must never reach the disk. Two guards, and which one applies depends
+		// on the scope.
+		//
+		// The exclusion list applies to both: no dot segment, no traversal. It
+		// used to be absent here, and an empty sharePath failed closed instead,
+		// which is right for a folder share and wrong for a vault share, whose
+		// root IS the empty string. A vault share would have downloaded
+		// nothing, silently.
+		if (isExcludedPath(vaultPath, this.vault.configDir)) {
+			log("Refusing a path outside what a share may touch", {
+				relativePath,
+				vaultPath,
+				shareId,
+			});
+			return;
+		}
+		// Containment on top, for a folder share, which is also protected by
+		// its own prefix. A vault share has no prefix, and the line above is
+		// what stands in for it.
 		const normalizedShare = normalizePath(sharePath);
-		if (normalizedShare.length === 0) {
-			// sharePath is server-supplied (share.path from clientManager.getShare()); an empty
-			// value would otherwise disable the containment check entirely. Fail closed.
+		if (sharePath === "" && !rootIsLocal) {
+			// share.path from the server, empty. Containment would be disabled
+			// entirely and nobody here asked for the root, so fail closed.
 			log("Path traversal rejected: empty sharePath", { relativePath, shareId });
 			return;
 		}
-		const withinShare =
-			vaultPath === normalizedShare || vaultPath.startsWith(normalizedShare + "/");
-		if (!withinShare) {
-			log("Path traversal rejected", { relativePath, vaultPath, sharePath });
-			return;
+		if (sharePath !== "") {
+			const withinShare =
+				vaultPath === normalizedShare || vaultPath.startsWith(normalizedShare + "/");
+			if (!withinShare) {
+				log("Path traversal rejected", { relativePath, vaultPath, sharePath });
+				return;
+			}
 		}
 
 		const lastHash = shareManifest[relativePath];

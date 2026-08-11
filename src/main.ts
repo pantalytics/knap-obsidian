@@ -60,7 +60,6 @@ import { SharedFolders } from "./SharedFolder";
 import { FolderNavigationDecorations } from "./ui/FolderNav";
 import { LiveSettingsTab } from "./ui/SettingsTab";
 import { LoginManager, type LoginSettings } from "./LoginManager";
-import { EndpointConfigModal } from "./ui/EndpointConfigModal";
 import {
 	curryLog,
 	setDebugging,
@@ -81,7 +80,7 @@ import {
 	VIEW_TYPE_DIFFERENCES,
 } from "./differ/differencesView";
 import { FeatureFlagDefaults, flag, type FeatureFlags } from "./flags";
-import { FeatureFlagManager, flags, withFlag } from "./flagManager";
+import { FeatureFlagManager, withFlag } from "./flagManager";
 import { PostOffice } from "./observable/Postie";
 import { BackgroundSync } from "./BackgroundSync";
 import { FeatureFlagToggleModal } from "./ui/FeatureFlagModal";
@@ -94,7 +93,6 @@ import { SyncSettingsManager } from "./SyncSettings";
 import { ContentAddressedFileStore, isSyncFile } from "./SyncFile";
 import { isDocument } from "./Document";
 import { EndpointManager, type EndpointSettings } from "./EndpointManager";
-import { SelfHostModal } from "./ui/SelfHostModal";
 import {
 	DEFAULT_RELAY_ONPREM_SETTINGS,
 	KNAP_SERVER_ID,
@@ -227,76 +225,6 @@ export default class Live extends Plugin {
 
 	buildApiUrl(path: string) {
 		return this.loginManager.getEndpointManager().getApiUrl() + path;
-	}
-
-	/**
-	 * Open endpoint configuration modal
-	 */
-	openEndpointConfigurationModal() {
-		const modal = new EndpointConfigModal(this.app, this, () => {
-			void this.reload();
-		});
-		modal.open();
-	}
-
-	/**
-	 * Validate and apply custom endpoints
-	 */
-	async validateAndApplyEndpoints() {
-		const settings = this.endpointSettings.get();
-
-		if (!settings.activeTenantId || !settings.tenants?.length) {
-			new Notice("Please configure an enterprise tenant first", 4000);
-			return;
-		}
-
-		const notice = new Notice("Validating endpoints...", 0);
-
-		try {
-			const result = await this.loginManager.validateAndApplyEndpoints();
-			notice.hide();
-
-			if (result.success) {
-				// Clear any previous validation errors on success
-				await this.endpointSettings.update((current) => ({
-					...current,
-					_lastValidationError: undefined,
-					_lastValidationAttempt: undefined,
-				}));
-				new Notice("Endpoints validated and applied successfully!", 5000);
-				if (result.licenseInfo) {
-					this.log("License validation successful:", result.licenseInfo);
-				}
-			} else {
-				// Store validation error for display in settings
-				await this.endpointSettings.update((current) => ({
-					...current,
-					_lastValidationError: result.error,
-					_lastValidationAttempt: Date.now(),
-				}));
-				new Notice(`❌ Validation failed: ${result.error}`, 8000);
-			}
-		} catch (error: unknown) {
-			notice.hide();
-			const errorMessage =
-				error instanceof Error ? error.message : "Unknown error";
-			// Store validation error for display in settings
-			await this.endpointSettings.update((current) => ({
-				...current,
-				_lastValidationError: errorMessage,
-				_lastValidationAttempt: Date.now(),
-			}));
-			new Notice(`❌ Validation error: ${errorMessage}`, 8000);
-		}
-	}
-
-	/**
-	 * Reset to default endpoints
-	 */
-	resetToDefaultEndpoints() {
-		this.loginManager.getEndpointManager().clearValidatedEndpoints();
-		void this.endpointSettings.update(() => ({}));
-		new Notice("Reset to default endpoints", 3000);
 	}
 
 	/**
@@ -548,33 +476,6 @@ export default class Live extends Plugin {
 			},
 		});
 
-		this.addCommand({
-			id: "configure-endpoints",
-			name: "Configure enterprise tenant",
-			callback: () => {
-				this.openEndpointConfigurationModal();
-			},
-		});
-
-		if (flags().enableSelfManageHosts) {
-			this.addCommand({
-				id: "register-host",
-				name: "Register self-hosted relay server",
-				callback: () => {
-					const modal = new SelfHostModal(
-						this.app,
-						this.relayManager,
-						(relay) => {
-							// Open relay settings after successful creation
-							void this.openSettings(`/relays?id=${relay.id}`);
-						},
-					);
-					this.openModals.push(modal);
-					modal.open();
-				},
-			});
-		}
-
 
 		this.vault = this.app.vault;
 		const vaultName = this.vault.getName();
@@ -689,6 +590,14 @@ export default class Live extends Plugin {
 				this.shareClientManager,
 				this.webSyncManager,
 				hashManifestStore,
+				// Where a share lives here, which for a vault share is the
+				// root, whatever name it carries on the server.
+				(shareId: string) => {
+					const folder = this.sharedFolders.find(
+						(f) => f.guid === shareId && f.isVaultScope,
+					);
+					return folder ? "" : undefined;
+				},
 			);
 		}
 
@@ -880,14 +789,10 @@ export default class Live extends Plugin {
 							return;
 						}
 						if (folder.relayId) {
-							menu.addItem((item) => {
-								item
-									.setTitle("Knap Sync: relay settings")
-									.setIcon("gear")
-									.onClick(() => {
-										void this.openSettings(`/relays?id=${folder.relayId}`);
-									});
-							});
+							// The item that used to sit here opened upstream's relay
+							// screen for a relay id our shares do not have, so it
+							// landed on the settings screen by accident. There is one
+							// server and nothing to configure about it (ADR-0033).
 							menu.addItem((item) => {
 								item
 									.setTitle("Knap Sync: share settings")

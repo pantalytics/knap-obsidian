@@ -476,10 +476,10 @@ export class SyncFile
 		}
 		try {
 			const content = await this.sharedFolder.cas.readFile(this);
-			await this.vault.adapter.writeBinary(
-				this.sharedFolder.getPath(this.path),
-				content,
-			);
+			// Through the share rather than straight at the adapter: this path
+			// came off the CRDT, and on a vault share nothing else stands
+			// between it and the config directory.
+			await this.sharedFolder.writeBinary(this.path, content);
 			await this.caf.hash();
 		} catch (e: unknown) {
 			this.log(e);

@@ -45,11 +45,17 @@ const tld = staging ? "dev" : "md";
 const obsidianPluginDir = process.env.OBSIDIAN_PLUGIN_DIR || "";
 
 // Knap Sync uses relay-onprem mode, no default System 3 URLs.
-// (Relay health-check URL is NOT build-time config — it's derived at runtime
-// from the relay-onprem settings' per-server controlPlaneUrl; see
-// healthUrlForServer() in src/main.ts, TR-26.)
 const apiUrl = "";
 const authUrl = "";
+
+// The one Knap server (ADR-0033). There is no server field and no second
+// server, so the address is build configuration rather than user input, and it
+// lives here rather than in a source file that ships. Set
+// KNAP_CONTROL_PLANE_URL to build against something else, a staging control
+// plane for instance.
+const controlPlaneUrl =
+	process.env.KNAP_CONTROL_PLANE_URL || "https://cp.knap.pantalytics.com";
+console.log("control plane:", controlPlaneUrl);
 console.log("git tag:", gitTag);
 
 const NotifyPlugin = {
@@ -114,6 +120,7 @@ const context = await esbuild.context({
 		GIT_TAG: `"${gitTag}"`,
 		API_URL: `"${apiUrl}"`,
 		AUTH_URL: `"${authUrl}"`,
+		CONTROL_PLANE_URL: JSON.stringify(controlPlaneUrl),
 		REPOSITORY: `"pantalytics/knap-obsidian"`,
 	},
 	treeShaking: true,

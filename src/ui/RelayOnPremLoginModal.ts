@@ -1,8 +1,8 @@
 /**
- * Knap Sync login modal
+ * Sign in with email and password.
  *
- * Modal dialog for email/password authentication with a relay-onprem control plane
- * Supports multi-server mode with optional serverId parameter
+ * The fallback behind "Other ways to sign in", for a day the identity provider
+ * is unreachable (ADR-0030). It is not what a new person is shown.
  */
 
 import { App, Modal, Notice } from "obsidian";
@@ -25,7 +25,7 @@ export class RelayOnPremLoginModal extends Modal {
 		private shareClient?: RelayOnPremShareClient,
 	) {
 		super(app);
-		this.setTitle("Knap Sync sign-in");
+		this.setTitle("Sign in with email");
 	}
 
 	onOpen() {
@@ -95,7 +95,7 @@ export class RelayOnPremLoginModal extends Modal {
 
 		// Login button
 		this.loginButton = buttonGroup.createEl("button", {
-			text: "Login",
+			text: "Sign in",
 			cls: "mod-cta",
 		});
 		this.loginButton.addEventListener("click", (e) => {
@@ -156,24 +156,24 @@ export class RelayOnPremLoginModal extends Modal {
 
 		// Validation
 		if (!email) {
-			this.showError("Please enter your email");
+			this.showError("Enter your email address.");
 			return;
 		}
 
 		if (!password) {
-			this.showError("Please enter your password");
+			this.showError("Enter your password.");
 			return;
 		}
 
 		// Basic email validation
 		if (!email.includes("@")) {
-			this.showError("Please enter a valid email address");
+			this.showError("That does not look like an email address.");
 			return;
 		}
 
 		// Password length validation (control plane requires min 8 characters)
 		if (password.length < 8) {
-			this.showError("Password must be at least 8 characters");
+			this.showError("Passwords here are at least 8 characters.");
 			return;
 		}
 
@@ -192,15 +192,15 @@ export class RelayOnPremLoginModal extends Modal {
 			this.close();
 			this.onSuccess();
 		} catch (error: unknown) {
-			const errorMessage = error instanceof Error ? error.message : "Login failed";
+			const errorMessage = error instanceof Error ? error.message : "Sign-in failed";
 			// Clean up error message for better UX
 			let displayMessage = errorMessage;
 			if (errorMessage.includes("401") || errorMessage.includes("Incorrect email or password")) {
 				displayMessage = "Incorrect email or password";
 			} else if (errorMessage.includes("400") || errorMessage.includes("Invalid data format")) {
-				displayMessage = "Invalid login data. Please check your email and password.";
+				displayMessage = "That was not a valid email address and password.";
 			} else if (errorMessage.includes("Network request failed") || errorMessage.includes("Failed to fetch")) {
-				displayMessage = "Network error. Please check your connection and control plane URL.";
+				displayMessage = "No connection. Check that you are online and try again.";
 			}
 			this.showError(displayMessage);
 			this.setLoading(false);
@@ -212,7 +212,7 @@ export class RelayOnPremLoginModal extends Modal {
 		this.loginButton.disabled = loading;
 		this.emailInput.disabled = loading;
 		this.passwordInput.disabled = loading;
-		this.loginButton.setText(loading ? "Logging in..." : "Login");
+		this.loginButton.setText(loading ? "Signing in" : "Sign in");
 	}
 
 	private showError(message: string) {
@@ -234,19 +234,19 @@ export class RelayOnPremLoginModal extends Modal {
 			// #e7bca9fb — otherwise main.ts's post-login hook never runs.
 			await this.loginManager.loginWithOAuth2(provider, this.serverId);
 
-			new Notice(`Successfully logged in with ${provider}!`);
+			new Notice("Signed in");
 			this.close();
 			this.onSuccess();
 		} catch (error: unknown) {
-			const errorMessage = error instanceof Error ? error.message : "OAuth login failed";
+			const errorMessage = error instanceof Error ? error.message : "Sign-in failed";
 			let displayMessage = errorMessage;
 
 			if (errorMessage.includes("timeout")) {
-				displayMessage = "Login timeout. Please try again.";
+				displayMessage = "Sign-in timed out. Try again, and finish in the browser window that opens.";
 			} else if (errorMessage.includes("Network request failed") || errorMessage.includes("Failed to fetch")) {
-				displayMessage = "Network error. Please check your connection and control plane URL.";
+				displayMessage = "No connection. Check that you are online and try again.";
 			} else if (errorMessage.includes("Cannot open browser")) {
-				displayMessage = "Unable to open browser. Please try manual login.";
+				displayMessage = "Obsidian could not open a browser. Sign in with your email and password instead.";
 			}
 
 			this.showError(displayMessage);

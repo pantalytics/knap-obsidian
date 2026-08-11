@@ -1,7 +1,7 @@
 {
 	"name": "knap-sync",
 	"version": "1.2.0",
-	"description": "Sync your vault to a relay you host yourself, a whole vault or one folder at a time, with real-time collaborative editing on what you share.",
+	"description": "Your vault on Knap: a whole vault or one folder at a time, on desktop and on phone, with real-time collaborative editing on whatever you share.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs watch",

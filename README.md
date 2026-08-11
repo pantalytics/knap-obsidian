@@ -1,31 +1,31 @@
 # Knap Sync
 
-**Sync your vault to a relay you run yourself.** A whole vault or one folder at
+**Your vault on Knap, on every device you use.** A whole vault or one folder at
 a time, on desktop and on phone, with real-time collaborative editing on
 whatever you share.
 
-Knap Sync keeps your notes as plain markdown in your vault. The relay holds a
-CRDT copy so two people can edit the same note without a merge conflict, and so
-a device that was offline catches up when it reconnects.
+Knap Sync keeps your notes as plain markdown in your vault. Knap holds a CRDT
+copy, so two people can edit the same note without a merge conflict and a device
+that was offline catches up when it reconnects.
 
 ---
 
 ## What it does
 
-- **Sync a whole vault, or pick folders.** Scope is set per server: point it at
-  everything, or share `Projects/` and leave the rest of the vault alone.
+- **Sync a whole vault, or pick folders.** Sync everything, or share
+  `Projects/` and leave the rest of the vault alone.
 - **Two people, one note.** Edits merge as you type. No conflict copies, no
   last-writer-wins.
-- **Offline is normal.** Edit on a plane, reconnect, and the relay catches up.
+- **Offline is normal.** Edit on a plane, reconnect, and Knap catches up.
 - **Attachments travel with the notes.** Images and PDFs sync alongside the
   markdown.
 - **Phone included.** `isDesktopOnly` is false, sign-in comes back over an
   `obsidian://` link rather than a local port, so iOS and Android work the same
   way the laptop does.
 
-Knap Sync is also the Obsidian half of [Knap](https://github.com/pantalytics),
-where the same vault is reachable by an AI assistant over MCP. You do not need
-any of that to use the plugin: point it at a relay, and it syncs.
+Knap Sync is the Obsidian half of [Knap](https://github.com/pantalytics), where
+the same vault is reachable by an AI assistant over MCP. You do not need to use
+that half: sign in, and the plugin syncs.
 
 ---
 
@@ -52,66 +52,53 @@ from GitHub and keeps them updated.
 
 ---
 
-## Connect
+## Sign in
 
-1. *Settings → Knap Sync → Relay Servers.* One server is configured out of the
-   box, at `https://cp.knap.pantalytics.com`. If you run your own relay, use
-   **Add Server** and give it your control plane URL. Leave the other two fields
-   empty and they are worked out for you.
-2. **No trailing slash on the control plane URL.** A slash on the end turns the
-   health check into a 404 that reads as *Connection failed*.
-3. Tick **Default** on the server you actually use. Online and offline detection
-   follows the default server, so a default pointing somewhere else makes the
-   connection light meaningless.
-4. Press **Login** on the server card. Email and password, or one of the sign-in
-   buttons if your relay offers them.
+*Settings → Knap Sync → Sign in.* A browser opens, you sign in with your Knap
+account, and Obsidian picks it up from there. There is no address to type and no
+code to paste, on a laptop or on a phone.
 
-Then share a folder, or set the scope to the whole vault, and the first sync
-starts.
+Email and password are still there, under *Other ways to sign in*, for a day the
+sign-in page will not load.
+
+Then share a folder, or sync the whole vault, and the first sync starts.
+
+There is one Knap server and the plugin talks to that one. If you want to run
+your own, [EVC Team Relay](https://github.com/entire-vc/evc-team-relay-obsidian-plugin)
+is the plugin for it, and this one is a fork of it.
 
 ---
 
 ## What it costs
 
-The plugin is free and MIT licensed. Nothing to buy, no licence key to enter.
-
-The relay is a different question, and whoever runs it decides the answer. Where
-a relay offers plans, Knap Sync shows them under *Settings, your server,
-Billing*, along with the one you are on, and the upgrade button hands you to
-that relay's own checkout. Plans carry limits, so a free one can run out of
-shares. Run your own relay without plans and the screen has nothing to show.
-
-**So whether Knap Sync costs you anything depends on the relay, not on the
-plugin.** The Billing screen of the server you actually use is the place to
-check.
+The plugin is free and MIT licensed. Nothing to buy in it, and no licence key to
+enter. What a Knap account costs is a question for Knap, not for the plugin.
 
 ---
 
 ## Network use
 
-**An account on a relay is required.** Knap Sync is a client, and with no relay
-to sign in to there is nothing for it to sync against. The account lives on the
-relay rather than with us, so if you run your own, you issue your own.
+**A Knap account is required.** Knap Sync is a client, and with nothing to sign
+in to there is nothing for it to sync against.
 
-Knap Sync talks to the servers configured in its settings, and to an identity
-provider only if you sign in through one.
+Knap Sync talks to Knap, and to an identity provider only while you are signing
+in through one.
 
 | Connection | Protocol | What for | When |
 |---|---|---|---|
 | Control plane | HTTPS | Sign-in, token refresh, listing and creating shares, inviting people | On login and on share operations |
-| Control plane | HTTPS | Issuing the short-lived token for a relay connection | Before opening a socket |
-| Relay server | WSS | The document sync itself | While a shared note is open, and while catching up |
-| Identity provider | HTTPS | The sign-in page itself, at Google, GitHub, Microsoft, Discord or your own OIDC provider | Only when your relay offers that provider and you choose it |
-| `obsidian://` callback | Obsidian URL scheme | Receiving the OAuth redirect, where the relay offers OAuth | During sign-in only |
+| Control plane | HTTPS | Issuing the short-lived token for a sync connection | Before opening a socket |
+| Sync server | WSS | The document sync itself | While a shared note is open, and while catching up |
+| Identity provider | HTTPS | The sign-in page itself | Only while you are signing in that way |
+| `obsidian://` callback | Obsidian URL scheme | Receiving the sign-in redirect | During sign-in only |
 
 The identity provider row is worth being precise about. Knap Sync never contacts
-Google or the others on its own account. It recognises the sign-in page your
-relay sent you to, so that it can catch the redirect coming back. Sign in with
-email and password and no third party is involved at all.
+an identity provider on its own account. It opens the sign-in page Knap sent it
+to, and catches the redirect coming back. Sign in with email and password and no
+third party is involved at all.
 
 **No telemetry.** The plugin does not phone home, count anything, or send your
-notes anywhere except the relay you pointed it at. The default server above is a
-default, not a requirement: remove it and the plugin has nowhere to talk to.
+notes anywhere except to Knap.
 
 ---
 
@@ -125,9 +112,9 @@ carried in [LICENSE](LICENSE), with the full attribution in [NOTICE](NOTICE).
 
 The fork exists for two things upstream does not do: vault-wide scope as a first
 class option, and a sign-in that survives an identity provider matching redirect
-URIs exactly, which is why the OAuth callback arrives over `obsidian://` instead
-of a loopback port. It speaks the same protocol as an EVC Team Relay server, so
-it works against one.
+URIs exactly, which is why the callback arrives over `obsidian://` instead of a
+loopback port. Upstream serves anybody running their own server, which this fork
+no longer does: it talks to Knap and nothing else.
 
 ---
 
