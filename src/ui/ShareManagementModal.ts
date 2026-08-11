@@ -11,6 +11,7 @@ import { RelayOnPremShareClient, type RelayOnPremShare, type ShareMember, type I
 import { RelayOnPremShareClientManager, type ShareWithServer } from "../RelayOnPremShareClientManager";
 import { FolderSuggestModal } from "./FolderSuggestModal";
 import { getDefaultServer, type RelayOnPremServer } from "../RelayOnPremConfig";
+import { findShareForPath } from "../shareDuplicates";
 import { S3RN } from "../S3RN";
 import { confirmDialog, promptDialog } from "./dialogs";
 import { withOutboundSyncGuard } from "../WebSyncManager";
@@ -1804,35 +1805,67 @@ export class ShareManagementModal extends Modal {
 				});
 			});
 
+		// What the form has to say stays in the form. A Notice is gone in a few
+		// seconds and leaves a refused create looking like a button that did
+		// nothing.
+		const errorEl = contentEl.createDiv({ cls: "relay-onprem-form-error" });
+		errorEl.addClass("evc-text-error", "evc-text-sm", "evc-mt-2", "evc-hidden");
+		const showError = (message: string) => {
+			errorEl.setText(message);
+			errorEl.removeClass("evc-hidden");
+		};
+
 		new Setting(contentEl).addButton((button) => {
 			button
 				.setButtonText("Create share")
 				.setCta()
 				.onClick(async () => {
+					errorEl.addClass("evc-hidden");
+
 					const path = selectedPath.trim();
 					const kind = kindSelect.value as "doc" | "folder";
 					const visibility = visibilitySelect.value as "private" | "public" | "protected";
 					const password = passwordInput?.value?.trim();
 
 					if (!path) {
-						new Notice("Please select a folder path");
+						showError("Pick a folder first.");
 						return;
 					}
 
 					if (!selectedServerId) {
-						new Notice("Please select a server");
+						showError("Pick a server first.");
 						return;
 					}
 
 					// Validate password for protected shares
 					if (visibility === "protected" && !password) {
-						new Notice("Password is required for protected shares");
+						showError("A protected share needs a password.");
 						return;
 					}
 
-					await this.createShare(path, kind, visibility, selectedServerId, password);
+					const duplicate = this.findExistingShare(path, selectedServerId);
+					if (duplicate) {
+						showError(
+							`${duplicate.path} is already shared on ${duplicate.serverName}. Open it from the share list instead.`,
+						);
+						return;
+					}
+
+					await this.createShare(path, kind, visibility, selectedServerId, password, showError);
 				});
 		});
+	}
+
+	/**
+	 * The share already covering this path on this server, if there is one.
+	 * Nothing stops the control plane accepting a second share on the same
+	 * folder, so the form refuses it here.
+	 */
+	private findExistingShare(path: string, serverId: string): ShareWithServer | undefined {
+		return findShareForPath(
+			this.shares.filter((share) => share.serverId === serverId),
+			path,
+		);
 	}
 
 	private async createShare(
@@ -1840,11 +1873,12 @@ export class ShareManagementModal extends Modal {
 		kind: "doc" | "folder",
 		visibility: "private" | "public" | "protected",
 		serverId: string,
-		password?: string
+		password?: string,
+		showError?: (message: string) => void,
 	) {
-		try {
-			let share: RelayOnPremShare;
+		let share: RelayOnPremShare | undefined;
 
+		try {
 			const createRequest = {
 				path,
 				kind,
@@ -1859,20 +1893,40 @@ export class ShareManagementModal extends Modal {
 			} else {
 				throw new Error("No share client available");
 			}
-
-			new Notice(`Share "${share.path}" created successfully!`);
-
-			// Create local SharedFolder for visual indicators and sync
-			if (kind === "folder") {
-				this.createLocalSharedFolder(share.path, share.id, serverId);
-			}
-
-			await this.loadShares();
-			this.renderContent();
 		} catch (error: unknown) {
-			new Notice(
-				`Failed to create share: ${error instanceof Error ? error.message : "Unknown error"}`,
-			);
+			// A create that throws has not always failed: the server can write the
+			// share and then the reply is what goes wrong. Ask it what it has
+			// before saying the share was not created.
+			await this.reloadSharesQuietly();
+			share = this.findExistingShare(path, serverId);
+
+			if (!share) {
+				const message = `The share was not created. ${error instanceof Error ? error.message : "The server gave no reason."}`;
+				if (showError) {
+					showError(message);
+				} else {
+					new Notice(message);
+				}
+				return;
+			}
+		}
+
+		new Notice(`Share "${share.path}" created successfully!`);
+
+		// Create local SharedFolder for visual indicators and sync
+		if (share.kind === "folder") {
+			this.createLocalSharedFolder(share.path, share.id, serverId);
+		}
+
+		await this.reloadSharesQuietly();
+		this.renderContent();
+	}
+
+	private async reloadSharesQuietly() {
+		try {
+			await this.loadShares();
+		} catch (error: unknown) {
+			console.warn("[RelayOnPrem] Could not reload the share list:", error);
 		}
 	}
 
