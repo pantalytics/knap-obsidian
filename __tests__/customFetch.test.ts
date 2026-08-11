@@ -113,4 +113,34 @@ describe("customFetch — retry behavior", () => {
 		).rejects.toThrow("some unrelated failure");
 		expect(mockRequestUrl).toHaveBeenCalledTimes(1);
 	});
+
+	// #14: the method is a default, not a fact. A GET that burns a one-time
+	// code and mints a 30-day session is one replay away from the duplicate
+	// TR-29 set out to prevent, and only the caller knows. No caller needs
+	// this today — the OAuth callback exchange it was written for moved to
+	// the control plane (#17) — so these two hold the contract on their own.
+	test("does NOT retry a GET marked replayable: false", async () => {
+		mockRequestUrl.mockRejectedValueOnce(retryableError());
+
+		const response = await customFetch("https://relay.example/v1/auth/oauth/x/callback", {
+			method: "GET",
+			replayable: false,
+		});
+
+		expect(response.status).toBe(503);
+		expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+	});
+
+	test("replayable: true opts a POST back into retrying", async () => {
+		mockRequestUrl.mockRejectedValueOnce(retryableError());
+		mockRequestUrl.mockResolvedValueOnce(okResponse());
+
+		const response = await customFetch("https://relay.example/v1/idempotent-write", {
+			method: "POST",
+			replayable: true,
+		});
+
+		expect(response.status).toBe(200);
+		expect(mockRequestUrl).toHaveBeenCalledTimes(2);
+	});
 });

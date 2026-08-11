@@ -59,6 +59,15 @@ function mockFetchResponse(status: number, data: any, ok = true) {
 	} as Response);
 }
 
+/**
+ * Minimal unsigned JWT. Only the payload is ever read (decodeToken), so the
+ * header and signature just need to be there for the split to line up.
+ */
+function jwt(payload: Record<string, unknown>): string {
+	const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
+	return `${b64({ alg: "none", typ: "JWT" })}.${b64(payload)}.signature`;
+}
+
 describe("RelayOnPremAuthProvider", () => {
 	const CONTROL_PLANE_URL = "https://cp.example.com";
 	const APP_ID = "test-app-id";
@@ -761,6 +770,313 @@ describe("RelayOnPremAuthProvider", () => {
 
 		test("Returns false if no token", () => {
 			expect(provider.isTokenValid()).toBe(false);
+		});
+
+		// #14: a flat 5-minute buffer is only safe while it is shorter than
+		// the token it guards. An access token with a 5-minute TTL was
+		// "expired" from the instant it was minted, so every caller asking for
+		// a token kicked off another refresh — and every rotation left another
+		// 30-day session behind on the control plane.
+		test("#14: a short-lived token is valid when freshly minted", async () => {
+			const nowSec = Math.floor(Date.now() / 1000);
+			const shortLived = jwt({ iat: nowSec, exp: nowSec + 300 }); // 5-minute TTL
+
+			mockStorage.set(
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				JSON.stringify({
+					user: { id: "user-123", email: "test@example.com" },
+					token: shortLived,
+					expiresAt: (nowSec + 300) * 1000,
+					refreshToken: "refresh_token",
+				}),
+			);
+
+			provider = new RelayOnPremAuthProvider({
+				controlPlaneUrl: CONTROL_PLANE_URL,
+				appId: APP_ID,
+				serverId: SERVER_ID,
+			});
+			await provider.waitForRestore();
+
+			expect(provider.isTokenValid()).toBe(true);
+		});
+
+		test("#14: a short-lived token still expires inside its final quarter", async () => {
+			const nowSec = Math.floor(Date.now() / 1000);
+			// Minted 4½ minutes ago with a 5-minute TTL: 30s left, buffer is 75s.
+			const shortLived = jwt({ iat: nowSec - 270, exp: nowSec + 30 });
+
+			mockStorage.set(
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				JSON.stringify({
+					user: { id: "user-123", email: "test@example.com" },
+					token: shortLived,
+					expiresAt: (nowSec + 30) * 1000,
+					refreshToken: "refresh_token",
+				}),
+			);
+
+			provider = new RelayOnPremAuthProvider({
+				controlPlaneUrl: CONTROL_PLANE_URL,
+				appId: APP_ID,
+				serverId: SERVER_ID,
+			});
+			await provider.waitForRestore();
+
+			expect(provider.isTokenValid()).toBe(false);
+		});
+
+		test("#14: a long-lived token keeps the flat 5-minute buffer", async () => {
+			const nowSec = Math.floor(Date.now() / 1000);
+			// 24-hour TTL: a quarter of that is way over the cap, so the cap wins.
+			// 4 minutes left is inside the 5-minute buffer.
+			const longLived = jwt({ iat: nowSec - 86_160, exp: nowSec + 240 });
+
+			mockStorage.set(
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				JSON.stringify({
+					user: { id: "user-123", email: "test@example.com" },
+					token: longLived,
+					expiresAt: (nowSec + 240) * 1000,
+					refreshToken: "refresh_token",
+				}),
+			);
+
+			provider = new RelayOnPremAuthProvider({
+				controlPlaneUrl: CONTROL_PLANE_URL,
+				appId: APP_ID,
+				serverId: SERVER_ID,
+			});
+			await provider.waitForRestore();
+
+			expect(provider.isTokenValid()).toBe(false);
+		});
+	});
+
+	// #14: one login, one session. Every one of these paths used to be able to
+	// put a second POST /v1/auth/refresh on the wire carrying the same refresh
+	// token, and a control plane that rotates on refresh answers both.
+	describe("refreshToken() single-flight (#14)", () => {
+		function loggedInStorage() {
+			mockStorage.set(
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				JSON.stringify({
+					user: { id: "user-123", email: "test@example.com" },
+					token: "token",
+					expiresAt: Date.now() + 3600000,
+					refreshToken: "refresh_token",
+				}),
+			);
+		}
+
+		test("concurrent callers share one refresh request", async () => {
+			loggedInStorage();
+			provider = new RelayOnPremAuthProvider({
+				controlPlaneUrl: CONTROL_PLANE_URL,
+				appId: APP_ID,
+				serverId: SERVER_ID,
+			});
+			await provider.waitForRestore();
+
+			mockFetch.mockImplementation((url) =>
+				String(url).includes("/v1/auth/refresh")
+					? mockFetchResponse(200, {
+							access_token: "new_access_token",
+							refresh_token: "new_refresh_token",
+							expires_in: 3600,
+						})
+					: mockFetchResponse(200, { id: "user-123", email: "test@example.com" }),
+			);
+
+			const [a, b, c] = await Promise.all([
+				provider.refreshToken(),
+				provider.refreshToken(),
+				provider.refreshToken(),
+			]);
+
+			const refreshCalls = mockFetch.mock.calls.filter(([url]) =>
+				String(url).includes("/v1/auth/refresh"),
+			);
+			expect(refreshCalls).toHaveLength(1);
+			// Everyone gets the same fresh token, not a stale or half-written one.
+			expect(a.token.token).toBe("new_access_token");
+			expect(b.token.token).toBe("new_access_token");
+			expect(c.token.token).toBe("new_access_token");
+		});
+
+		test("a later refresh is not blocked by an earlier finished one", async () => {
+			loggedInStorage();
+			provider = new RelayOnPremAuthProvider({
+				controlPlaneUrl: CONTROL_PLANE_URL,
+				appId: APP_ID,
+				serverId: SERVER_ID,
+			});
+			await provider.waitForRestore();
+
+			mockFetch.mockImplementation((url) =>
+				String(url).includes("/v1/auth/refresh")
+					? mockFetchResponse(200, {
+							access_token: "new_access_token",
+							refresh_token: "new_refresh_token",
+							expires_in: 3600,
+						})
+					: mockFetchResponse(200, { id: "user-123", email: "test@example.com" }),
+			);
+
+			await provider.refreshToken();
+			await provider.refreshToken();
+
+			const refreshCalls = mockFetch.mock.calls.filter(([url]) =>
+				String(url).includes("/v1/auth/refresh"),
+			);
+			expect(refreshCalls).toHaveLength(2);
+		});
+
+		test("getValidToken() does not replay a refresh that failed ambiguously", async () => {
+			// Expired access token + a refresh token: getValidToken() has to
+			// go to the network. This is the path that used to run
+			// refreshTokenWithRetry — 3 attempts at 0/1s/3s, retrying anything
+			// that was not a 401/403.
+			mockStorage.set(
+				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				JSON.stringify({
+					user: { id: "user-123", email: "test@example.com" },
+					token: "expired_token",
+					expiresAt: Date.now() - 1000,
+					refreshToken: "refresh_token",
+				}),
+			);
+
+			// A 503 is exactly the ambiguous case: customFetch turns a reset
+			// connection into one of these, and the rotation may already have
+			// been applied server-side before the reset. Replaying it mints a
+			// second 30-day session.
+			mockFetch.mockResolvedValue(
+				await mockFetchResponse(503, { error: "Service Unavailable" }, false),
+			);
+
+			provider = new RelayOnPremAuthProvider({
+				controlPlaneUrl: CONTROL_PLANE_URL,
+				appId: APP_ID,
+				serverId: SERVER_ID,
+			});
+			await provider.waitForRestore();
+
+			// restoreAuth() already tried once; count only what getValidToken does.
+			mockFetch.mockClear();
+
+			await provider.getValidToken();
+
+			const refreshCalls = mockFetch.mock.calls.filter(([url]) =>
+				String(url).includes("/v1/auth/refresh"),
+			);
+			expect(refreshCalls).toHaveLength(1);
+		});
+	});
+
+	// #14, the measurement itself: five user_sessions rows in 67 seconds off
+	// one sign-in — 08:09:27, :45, 08:10:02, :09, :34 — every one of them a
+	// 30-day credential. The gaps (18s, 17s, 7s, 25s) are the cadence of the
+	// plugin's own control-plane traffic, not of any retry it can run: every
+	// retry path is capped at three attempts and finishes within seconds.
+	//
+	// What produces one row per operation is this class. Every control-plane
+	// request re-derives its bearer token through getValidToken(), which mints
+	// a new session whenever isTokenValid() says no — and a flat five-minute
+	// buffer said no for the entire life of a token that lives five minutes.
+	describe("#14: one sign-in, one session", () => {
+		/** 08:09:27 on the day of the measurement — the first row. */
+		const SIGN_IN = Date.UTC(2026, 7, 11, 8, 9, 27);
+		/** The four later rows, as offsets in seconds from the sign-in. */
+		const LATER_ROWS = [18, 35, 42, 67];
+
+		function wireControlPlane(accessToken: string, expiresIn: number) {
+			mockFetch.mockImplementation((url) => {
+				const target = String(url);
+				if (target.includes("/auth/login")) {
+					return mockFetchResponse(200, {
+						access_token: accessToken,
+						token_type: "bearer",
+						refresh_token: "refresh_token",
+						expires_in: expiresIn,
+					});
+				}
+				if (target.includes("/v1/auth/refresh")) {
+					return mockFetchResponse(200, {
+						access_token: "rotated_access_token",
+						refresh_token: "rotated_refresh_token",
+						expires_in: expiresIn,
+					});
+				}
+				return mockFetchResponse(200, { id: "user-123", email: "test@example.com" });
+			});
+		}
+
+		const sessionsMinted = () =>
+			mockFetch.mock.calls.filter(([url]) => {
+				const target = String(url);
+				return target.includes("/auth/login") || target.includes("/v1/auth/refresh");
+			}).length;
+
+		test("operations across the measured 67 seconds mint one session, not five", async () => {
+			const clock = jest.spyOn(Date, "now").mockReturnValue(SIGN_IN);
+			try {
+				// A five-minute access token — the case a flat five-minute
+				// buffer cannot represent at all.
+				wireControlPlane("opaque_access_token", 300);
+
+				await provider.loginWithPassword("test@example.com", "password123");
+				expect(sessionsMinted()).toBe(1);
+
+				for (const offset of LATER_ROWS) {
+					clock.mockReturnValue(SIGN_IN + offset * 1000);
+					// Stands in for a control-plane operation: getHeaders() in
+					// RelayOnPremShareClient and requestToken() in
+					// RelayOnPremTokenProvider both go through this call.
+					expect(await provider.getValidToken()).toBe("opaque_access_token");
+				}
+
+				expect(sessionsMinted()).toBe(1);
+			} finally {
+				clock.mockRestore();
+			}
+		});
+
+		test("the session is still refreshed once the token is genuinely near expiry", async () => {
+			const clock = jest.spyOn(Date, "now").mockReturnValue(SIGN_IN);
+			try {
+				wireControlPlane("opaque_access_token", 300);
+				await provider.loginWithPassword("test@example.com", "password123");
+
+				// Four minutes in: 60s left against a 75s buffer. Proactive
+				// refresh has to still happen, or the fix trades duplicate
+				// sessions for requests sent on an expiring token.
+				clock.mockReturnValue(SIGN_IN + 240 * 1000);
+				expect(await provider.getValidToken()).toBe("rotated_access_token");
+				expect(sessionsMinted()).toBe(2);
+			} finally {
+				clock.mockRestore();
+			}
+		});
+
+		// `iat` is optional (RFC 7519 §4.1.6). Scaling the buffer off it alone
+		// leaves every token that omits it on the flat five minutes, which is
+		// the bug — so the stated `expires_in` has to carry the same weight.
+		test("a token carrying no iat is bounded by its stated lifetime", async () => {
+			const clock = jest.spyOn(Date, "now").mockReturnValue(SIGN_IN);
+			try {
+				const noIat = jwt({ exp: Math.floor(SIGN_IN / 1000) + 300, sub: "user-123" });
+				wireControlPlane(noIat, 300);
+
+				await provider.loginWithPassword("test@example.com", "password123");
+
+				clock.mockReturnValue(SIGN_IN + 67 * 1000);
+				expect(provider.isTokenValid()).toBe(true);
+				expect(await provider.getValidToken()).toBe(noIat);
+				expect(sessionsMinted()).toBe(1);
+			} finally {
+				clock.mockRestore();
+			}
 		});
 	});
 
