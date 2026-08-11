@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0
+- Svelte 5. This clears the last `npm audit` finding, svelte `<=5.55.6`, and with it GHSA-rcqx-6q8c-2c42, the one advisory of the six that could fire client-side. `npm audit --omit=dev` now reports nothing.
+- The 64 components did not need rewriting: Svelte 5 still runs Svelte 4 syntax, so `export let`, `$:`, `<slot>` and `createEventDispatcher` stay as they were. What changed is the host TypeScript, because Svelte 5 removed the client component API. `new Component({ target })` throws at runtime now, and it type-checks anyway, so a green build proved nothing here: every modal, pill and the settings tab would have thrown on open. Fifteen call sites moved to `mount()` and seventeen `$destroy()` calls to `unmount()`.
+- `$set` has no replacement, because props handed to `mount()` are only reactive when the props object is a `$state` rune, and runes do not exist in a plain `.ts` file. The four places that pushed updates from TypeScript now pass a store instead: the settings path (`SettingsTab`), the folder pill and its sync progress (`FolderNav`), the upload tag, and the per-view connection state (`LiveViews`). The store props are named `pill` and `actions` rather than `state` or `props`, which would collide with the `$state` and `$props` runes.
+- `EndpointConfigModalContent` uses callback props instead of `createEventDispatcher`. `mount()` still takes an `events` option, but it is deprecated and goes in Svelte 6.
+- `GenericSuggestModal` took a component class with a `new` signature. Svelte 5 components are functions, so it takes what `mount()` accepts.
+- Fixed while passing through: `FilePillDecoration.setText` destroyed its pill when a file moved into meta but left the reference set, so the next update called `$set` on a destroyed component.
+- Toolchain: `esbuild-svelte` to `^0.9.5`, `svelte-preprocess` to `^6`, the compiler's `css: true` to `css: "injected"` (Svelte 5 dropped the boolean form), and `Unsubscriber` imported from `svelte/store` rather than `svelte/motion`.
+
 ## 1.1.43
 - Catalog: `eslint-plugin-obsidianmd` was pinned at `^0.1.9` while the community directory scans every published version against the current ruleset. Bumped to `^0.4.1` and switched `eslint.config.mjs` to consume the plugin's own `recommended` config whole. Spreading it into a `rules` block, as before, dropped everything the config carries besides rule entries, which is why lint sat green on findings the directory would have reported.
 - Sync: `netSync()` did not await `addLocalDocs()`, so `syncFileTree()` could start while the divergent-guid claim was still running. The other caller already awaited it.

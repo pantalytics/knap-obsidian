@@ -1,3 +1,4 @@
+import { mount, unmount } from "svelte";
 import { HasLogging } from "./debug";
 import { MarkdownView } from "obsidian";
 import { Document } from "./Document";
@@ -8,7 +9,7 @@ export class AwarenessViewPlugin extends HasLogging {
 	view: LiveView<MarkdownView>;
 	doc: Document;
 	private destroyed = false;
-	private awarenessComponent?: UserAwareness;
+	private awarenessComponent?: Record<string, unknown>;
 	private targetElement?: HTMLElement;
 	private awarenessElement?: HTMLElement;
 	private relayUsersStore: unknown;
@@ -76,7 +77,7 @@ export class AwarenessViewPlugin extends HasLogging {
 
 		// Create and mount the Svelte component
 		try {
-			this.awarenessComponent = new UserAwareness({
+			this.awarenessComponent = mount(UserAwareness, {
 				target: this.awarenessElement,
 				props: {
 					awareness: provider.awareness,
@@ -95,7 +96,7 @@ export class AwarenessViewPlugin extends HasLogging {
 
 		if (this.awarenessComponent) {
 			try {
-				this.awarenessComponent.$destroy();
+				if (this.awarenessComponent) void unmount(this.awarenessComponent);
 				this.awarenessComponent = undefined;
 				this.log("Awareness component destroyed");
 			} catch (error: unknown) {

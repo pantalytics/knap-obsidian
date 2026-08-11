@@ -1,8 +1,9 @@
+import { mount, unmount } from "svelte";
 import { App, Modal } from "obsidian";
 import FeatureFlagModalContent from "../components/FeatureFlagModalContent.svelte";
 
 export class FeatureFlagToggleModal extends Modal {
-	private component?: FeatureFlagModalContent;
+	private component?: Record<string, unknown>;
 
 	constructor(
 		app: App,
@@ -14,7 +15,7 @@ export class FeatureFlagToggleModal extends Modal {
 	onOpen() {
 		const { contentEl } = this;
 
-		this.component = new FeatureFlagModalContent({
+		this.component = mount(FeatureFlagModalContent, {
 			target: contentEl,
 			props: {
 				reload: this.reload,
@@ -25,6 +26,6 @@ export class FeatureFlagToggleModal extends Modal {
 	onClose() {
 		const { contentEl } = this;
 		contentEl.empty();
-		this.component?.$destroy();
+		if (this.component) void unmount(this.component);
 	}
 }
