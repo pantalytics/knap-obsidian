@@ -3,6 +3,13 @@ name: Release
 # manifest.version (BARE semver, no 'v'), with main.js/manifest.json/styles.css as assets.
 # Closes the two recurring gaps (Pavel 2026-06-24): (1) no/v-prefixed release → not distributed,
 # (2) "assets missing GitHub artifact attestation" scorecard recommendation.
+#
+# Three ways in, one job. A tag push is the manual route and still works. The
+# other two are how CD reaches this file: cd.yml calls it when a version bump
+# lands on the default branch, and bump.yml calls it straight after making that
+# bump itself. Both have to call rather than push a tag, because a tag pushed
+# with GITHUB_TOKEN does not start a workflow run, so the tag-push trigger below
+# would never fire for anything automated.
 on:
   push:
     tags: ['[0-9]*.[0-9]*.[0-9]*']        # bare semver only — a 'v'-prefixed tag won't trigger
@@ -11,6 +18,12 @@ on:
       version:
         description: 'version tag to (re)build, attest and release (bare semver, e.g. 1.2.5)'
         required: true
+  workflow_call:
+    inputs:
+      version:
+        description: 'version to release (bare semver, must equal manifest.json)'
+        required: true
+        type: string
 permissions:
   contents: write
   id-token: write
@@ -19,6 +32,9 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # A dispatch names an existing tag and checks that out. A call comes from
+      # a run on the default branch, where the tag does not exist yet, so the
+      # caller's ref is what holds the bump.
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
@@ -34,7 +50,7 @@ jobs:
       - name: Resolve + verify version (bare, tag == manifest)
         id: v
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then TAG="${{ inputs.version }}"; else TAG="${GITHUB_REF_NAME}"; fi
+          TAG="${{ inputs.version || github.ref_name }}"
           VER=$(node -p "require('./manifest.json').version")
           case "$TAG" in v*) echo "::error::tag '$TAG' has a 'v' prefix — Obsidian needs bare semver"; exit 1;; esac
           if [ "$TAG" != "$VER" ]; then echo "::error::tag '$TAG' != manifest.version '$VER'"; exit 1; fi
@@ -56,5 +72,9 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" $ASSETS --clobber
           else
-            gh release create "$TAG" $ASSETS --title "$TAG" --notes "Release $TAG"
+            # --target pins the tag to the commit that was checked out and
+            # built. Not $GITHUB_SHA: when this workflow is called by another
+            # one, that is the caller's commit, which for bump.yml is the
+            # commit BEFORE the version bump.
+            gh release create "$TAG" $ASSETS --title "$TAG" --notes "Release $TAG" --target "$(git rev-parse HEAD)"
           fi
