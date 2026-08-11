@@ -43,9 +43,26 @@ if ((window as unknown as Record<string, unknown>)["EventSource"] === undefined)
 	}
 }
 
+/**
+ * `RequestInit` plus the one knob customFetch adds on top of it.
+ */
+export type CustomFetchInit = RequestInit & {
+	/**
+	 * Whether this request may be replayed after a transient network error.
+	 *
+	 * Defaults to the HTTP method: GET/HEAD yes, everything else no (TR-29).
+	 * Pass `false` on a GET that is not actually idempotent. The control
+	 * plane's OAuth callback exchange is one: it is a GET, but it burns a
+	 * one-time authorization code and mints a 30-day session, so a replay
+	 * after an RST_STREAM costs a second session the user never asked for
+	 * (#14). Method alone cannot tell those apart — the caller can.
+	 */
+	replayable?: boolean;
+};
+
 export const customFetch = async (
 	url: RequestInfo | URL,
-	config?: RequestInit,
+	config?: CustomFetchInit,
 ): Promise<Response> => {
 	// Convert URL object to string if necessary
 	const urlString = url instanceof URL ? url.toString() : (url as string);
@@ -68,9 +85,10 @@ export const customFetch = async (
 	// Retry logic for transient network errors (stale keep-alive connections, HTTP/2 RST_STREAM).
 	// Only retry idempotent methods: a mutating request (POST/PUT/PATCH/DELETE) may have already
 	// been applied server-side before the connection reset (e.g. RST after the record was
-	// written), so retrying it risks creating a duplicate (TR-29).
+	// written), so retrying it risks creating a duplicate (TR-29). A caller that knows its GET
+	// mutates anyway can opt out with `replayable: false` — the method is a default, not a fact.
 	const isIdempotentMethod = method === "GET" || method === "HEAD";
-	const maxRetries = isIdempotentMethod ? 2 : 0;
+	const maxRetries = (config?.replayable ?? isIdempotentMethod) ? 2 : 0;
 	let response: RequestUrlResponse | undefined = undefined;
 	let lastError: unknown = undefined;
 

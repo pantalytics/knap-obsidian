@@ -63,8 +63,13 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 	private serverId: string;
 	private restorePromise?: Promise<void>;
 	private normalizedUrl: string;
-	private refreshInProgress?: Promise<void>;
+	private refreshInProgress?: Promise<AuthResponse>;
 	private _restored = false;
+	/** Memoized result of expiryBuffer(), keyed by the token it was computed for. */
+	private expiryBufferCache?: { token: string; buffer: number };
+
+	/** Longest we will ever consider a token "about to expire". */
+	private static readonly MAX_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
 	constructor(private config: RelayOnPremAuthConfig) {
 		this.serverId = config.serverId;
@@ -220,57 +225,67 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 	}
 
 	/**
-	 * Ensure token is refreshed. Deduplicates concurrent refresh calls.
-	 * Retries up to 3 times with backoff for transient network failures.
+	 * Ensure the access token is refreshed, swallowing failure.
+	 *
+	 * There used to be a retry loop here (3 attempts, 0/1s/3s backoff) for
+	 * transient network failures. It has been removed: /v1/auth/refresh is a
+	 * POST that rotates the refresh token, and a transient failure does not
+	 * tell us whether the server already applied that rotation — the response
+	 * can be lost after the new session row was written. Replaying it then
+	 * mints a second 30-day session (#14). This is the same reasoning TR-29
+	 * used to stop customFetch retrying POSTs; an application-level retry on
+	 * top of it just reintroduced the problem one layer up. A refresh that
+	 * fails is retried by the *next* caller instead, on a fresh decision.
 	 */
 	private async ensureTokenRefreshed(): Promise<void> {
-		if (!this.refreshInProgress) {
-			this.refreshInProgress = this.refreshTokenWithRetry()
-				.finally(() => { this.refreshInProgress = undefined; });
-		}
 		try {
-			await this.refreshInProgress;
+			await this.refreshToken();
 		} catch {
 			// Refresh failed but don't propagate — caller handles stale token
 		}
 	}
 
-	private async refreshTokenWithRetry(): Promise<void> {
-		const delays = [0, 1000, 3000]; // immediate, 1s, 3s
-		for (let attempt = 0; attempt < delays.length; attempt++) {
-			if (attempt > 0) {
-				this.log(`Token refresh retry ${attempt}/${delays.length - 1} after ${delays[attempt]}ms`);
-				await new Promise(r => window.setTimeout(r, delays[attempt]));
-			}
-			try {
-				await this.refreshToken();
-				return;
-			} catch (error: unknown) {
-				const statusCode = (error as { statusCode?: number })?.statusCode;
-				// Don't retry auth errors (401/403) — token is truly invalid
-				if (statusCode === 401 || statusCode === 403) {
-					throw error;
-				}
-				if (attempt === delays.length - 1) {
-					throw error;
-				}
-				this.log(`Token refresh attempt ${attempt + 1} failed:`, error);
-			}
-		}
-	}
-
 	/**
-	 * Decode JWT token to get expiration time
+	 * Decode JWT token to get expiration and issue time
 	 */
-	private decodeToken(token: string): { exp?: number; sub?: string } {
+	private decodeToken(token: string): { exp?: number; iat?: number; sub?: string } {
 		try {
 			const [, payload] = token.split(".");
-			const decoded = JSON.parse(atob(payload)) as { exp?: number; sub?: string };
+			const decoded = JSON.parse(atob(payload)) as { exp?: number; iat?: number; sub?: string };
 			return decoded;
 		} catch (error: unknown) {
 			this.log("Failed to decode token:", error);
 			return {};
 		}
+	}
+
+	/**
+	 * How long before expiry a token should be treated as already expired.
+	 *
+	 * Capped at the token's own lifetime, not a flat five minutes. A flat
+	 * buffer is only safe while it is shorter than the token it guards: give
+	 * it an access token that lives five minutes or less and isTokenValid()
+	 * is false from the instant the token is minted, so every caller that
+	 * asks for a token triggers another refresh, and every refresh that
+	 * rotates leaves another 30-day session behind (#14). A quarter of the
+	 * lifetime keeps the proactive-refresh behaviour at any TTL.
+	 *
+	 * Falls back to the flat cap when the token is not a JWT or carries no
+	 * `iat`, which is the only case the old code could handle at all.
+	 */
+	private expiryBuffer(token: string): number {
+		if (this.expiryBufferCache?.token === token) {
+			return this.expiryBufferCache.buffer;
+		}
+
+		let buffer = RelayOnPremAuthProvider.MAX_EXPIRY_BUFFER_MS;
+		const { exp, iat } = this.decodeToken(token);
+		if (exp !== undefined && iat !== undefined && exp > iat) {
+			buffer = Math.min(buffer, Math.floor(((exp - iat) * 1000) / 4));
+		}
+
+		this.expiryBufferCache = { token, buffer };
+		return buffer;
 	}
 
 	async loginWithPassword(email: string, password: string): Promise<AuthResponse> {
@@ -443,7 +458,31 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 		}
 	}
 
+	/**
+	 * Refresh the access token, at most one refresh in flight at a time.
+	 *
+	 * The single-flight guard lives here rather than in ensureTokenRefreshed()
+	 * because three other callers reach refreshToken() directly and used to
+	 * miss it entirely: restoreAuth() on plugin start, MultiServerAuthManager.
+	 * refreshTokenForServer(), and LoginManager.reAuthForSensitiveAction().
+	 * Two of those racing a getValidToken() sent two POSTs carrying the same
+	 * refresh token, and a control plane that rotates on refresh answers both
+	 * — one login, two sessions (#14). Joining the in-flight refresh gives
+	 * every caller the same fresh token it was going to get anyway.
+	 */
 	async refreshToken(): Promise<AuthResponse> {
+		if (this.refreshInProgress) {
+			this.log("Refresh already in flight, joining it");
+			return this.refreshInProgress;
+		}
+
+		this.refreshInProgress = this._refreshToken().finally(() => {
+			this.refreshInProgress = undefined;
+		});
+		return this.refreshInProgress;
+	}
+
+	private async _refreshToken(): Promise<AuthResponse> {
 		if (!this.token || !this.user) {
 			throw new Error("No active session to refresh");
 		}
@@ -603,9 +642,8 @@ export class RelayOnPremAuthProvider implements IAuthProvider {
 			return false;
 		}
 
-		const now = Date.now();
-		// Add 5-minute buffer before expiration
-		const buffer = 5 * 60 * 1000;
-		return now < this.tokenExpiresAt - buffer;
+		// Refresh proactively, but never so proactively that a short-lived
+		// token is invalid for its whole life — see expiryBuffer().
+		return Date.now() < this.tokenExpiresAt - this.expiryBuffer(this.token);
 	}
 }

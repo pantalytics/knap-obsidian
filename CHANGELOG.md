@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Auth (#14): one sign-in could leave several 30-day sessions behind on the control plane. Three ways the plugin could put a second session-minting request on the wire are closed: the OAuth callback exchange is a GET that burns a one-time code and mints a session, and `customFetch` retried it like any other GET after a reset connection — it now opts out via `replayable: false`; `refreshTokenWithRetry` replayed `POST /v1/auth/refresh` up to three times on anything that was not a 401/403, which is the duplicate TR-29 removed from `customFetch` reintroduced one layer up — the retry is gone; and `refreshToken()` is now single-flight, so `restoreAuth()`, `refreshTokenForServer()` and `reAuthForSensitiveAction()` join an in-flight refresh instead of sending a second POST carrying the same refresh token. Separately, `isTokenValid()` subtracted a flat five minutes from expiry, so an access token with a TTL of five minutes or less was never valid and every caller asking for a token started another refresh; the buffer is now capped at a quarter of the token's own lifetime.
+
 ## 1.1.43
 - Catalog: `eslint-plugin-obsidianmd` was pinned at `^0.1.9` while the community directory scans every published version against the current ruleset. Bumped to `^0.4.1` and switched `eslint.config.mjs` to consume the plugin's own `recommended` config whole. Spreading it into a `rules` block, as before, dropped everything the config carries besides rule entries, which is why lint sat green on findings the directory would have reported.
 - Sync: `netSync()` did not await `addLocalDocs()`, so `syncFileTree()` could start while the divergent-guid claim was still running. The other caller already awaited it.

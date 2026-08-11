@@ -198,6 +198,10 @@ describe("OAuthHandler", () => {
 				),
 				expect.objectContaining({
 					method: "GET",
+					// #14: the exchange mints a 30-day session off a one-time
+					// code. customFetch retries GETs by default; replaying this
+					// one costs a second session, so it opts out.
+					replayable: false,
 				}),
 			);
 

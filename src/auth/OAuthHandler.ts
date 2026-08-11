@@ -138,8 +138,14 @@ export class OAuthHandler {
 			// Exchange code for tokens via control plane (GET with query params)
 			const callbackEndpoint = `${this.normalizedUrl}/v1/auth/oauth/${provider}/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
 
+			// replayable: false — this GET is not idempotent. It exchanges a
+			// one-time authorization code for a session, so replaying it after
+			// a transient network error either mints a second 30-day session or
+			// fails on a code the server has already spent (#14). customFetch
+			// retries GETs by default; this is the exception.
 			const response = await customFetch(callbackEndpoint, {
 				method: "GET",
+				replayable: false,
 				headers: {
 					"Accept": "application/json",
 				},
