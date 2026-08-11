@@ -6,7 +6,6 @@
 
 import { describe, test, expect, beforeEach, jest } from "@jest/globals";
 import { OAuthHandler } from "../../src/auth/OAuthHandler";
-import type { AuthResponse } from "../../src/auth/IAuthProvider";
 
 // Mock dependencies
 jest.mock("../../src/debug", () => ({
@@ -25,7 +24,7 @@ const mockFetch = customFetch as jest.MockedFunction<typeof customFetch>;
 
 jest.mock("../../src/auth/OAuthDeepLinkReceiver", () => ({
 	OAUTH_CALLBACK_ACTION: "knap-sync/oauth-callback",
-	OAUTH_REDIRECT_URI: "obsidian://knap-sync/oauth-callback",
+	OAUTH_RETURN_URL: "obsidian://knap-sync/oauth-callback",
 	oauthDeepLinkReceiver: {
 		waitForCallback: jest.fn(),
 		cancel: jest.fn(),
@@ -53,21 +52,40 @@ function mockFetchResponse(status: number, data: any, ok = true) {
 describe("OAuthHandler", () => {
 	const CONTROL_PLANE_URL = "https://cp.example.com";
 	const SERVER_ID = "test-server-123";
-	const PROVIDER = "casdoor";
+	const PROVIDER = "zitadel";
+
+	/** What the control plane hands back over the deep link once it has
+	 *  exchanged the code itself. */
+	const SESSION = {
+		state: "state_xyz",
+		accessToken: "access_token_abc",
+		expiresIn: 3600,
+		userId: "user-123",
+		userEmail: "test@example.com",
+		userName: "Test User",
+	};
 
 	let handler: OAuthHandler;
 
 	beforeEach(() => {
 		jest.clearAllMocks();
 
-		// Setup mock callback server
-
 		handler = new OAuthHandler(CONTROL_PLANE_URL, SERVER_ID);
 	});
 
+	async function prepare(state = "state_xyz") {
+		mockFetch.mockResolvedValueOnce(
+			await mockFetchResponse(200, {
+				authorize_url: "https://idp.example.com/oauth/v2/authorize",
+				state,
+			}),
+		);
+		return handler.prepareOAuthFlow(PROVIDER);
+	}
+
 	describe("prepareOAuthFlow()", () => {
 		test("P7: Calls authorize endpoint correctly", async () => {
-			const authorizeUrl = "https://casdoor.example.com/oauth/authorize?...";
+			const authorizeUrl = "https://idp.example.com/oauth/v2/authorize?...";
 			mockFetch.mockResolvedValue(
 				await mockFetchResponse(200, { authorize_url: authorizeUrl, state: "state_xyz" }),
 			);
@@ -87,11 +105,27 @@ describe("OAuthHandler", () => {
 			);
 			expect(result).toEqual({
 				authorizeUrl,
-				callbackUrl: "obsidian://knap-sync/oauth-callback",
+				returnUrl: "obsidian://knap-sync/oauth-callback",
 			});
 		});
 
-		test("P8: Error stops callback server", async () => {
+		test("The IdP is sent the control plane's callback, never the custom scheme", async () => {
+			// Measured 2026-08-11: Zitadel stores a custom scheme on a Web app
+			// and then refuses it at authorize time. So the custom scheme goes
+			// in return_url, which the control plane keeps to itself, and
+			// redirect_uri is an https URI the IdP already has registered.
+			await prepare();
+
+			const url = new URL(String(mockFetch.mock.calls[0][0]));
+			expect(url.searchParams.get("redirect_uri")).toBe(
+				`${CONTROL_PLANE_URL}/v1/auth/oauth/${PROVIDER}/callback`,
+			);
+			expect(url.searchParams.get("return_url")).toBe(
+				"obsidian://knap-sync/oauth-callback",
+			);
+		});
+
+		test("P8: Error stops the pending flow", async () => {
 			mockFetch.mockResolvedValue(
 				await mockFetchResponse(500, { error: "Server error" }, false),
 			);
@@ -116,7 +150,7 @@ describe("OAuthHandler", () => {
 		test("P9b-TR21: Missing state throws error (nothing to verify the callback against)", async () => {
 			mockFetch.mockResolvedValue(
 				await mockFetchResponse(200, {
-					authorize_url: "https://casdoor.example.com/oauth/authorize",
+					authorize_url: "https://idp.example.com/oauth/v2/authorize",
 				}),
 			);
 
@@ -139,7 +173,7 @@ describe("OAuthHandler", () => {
 
 			mockFetch.mockResolvedValue(
 				await mockFetchResponse(200, {
-					authorize_url: "https://casdoor.example.com/oauth/authorize",
+					authorize_url: "https://idp.example.com/oauth/v2/authorize",
 					state: "state_xyz",
 				}),
 			);
@@ -161,45 +195,18 @@ describe("OAuthHandler", () => {
 	});
 
 	describe("waitForCallbackAndExchange()", () => {
-		test("P10: Parses response correctly", async () => {
-			mockReceiver.waitForCallback.mockResolvedValue({
-				code: "auth_code_123",
-				state: "state_xyz",
-			});
+		test("P10: Turns the session into an AuthResponse", async () => {
+			mockReceiver.waitForCallback.mockResolvedValue(SESSION);
 
-			const mockUserData = {
-				user_id: "user-123",
-				user_email: "test@example.com",
-				user_name: "Test User",
-				access_token: "access_token_abc",
-				expires_in: 3600,
-			};
-
-			mockFetch.mockResolvedValue(await mockFetchResponse(200, mockUserData));
-
-			// Need to prepare first
-			mockFetch.mockResolvedValueOnce(
-				await mockFetchResponse(200, {
-					authorize_url: "https://casdoor.example.com/oauth/authorize",
-					state: "state_xyz",
-				}),
-			);
-			await handler.prepareOAuthFlow(PROVIDER);
-
+			await prepare();
 			mockFetch.mockClear();
-			mockFetch.mockResolvedValue(await mockFetchResponse(200, mockUserData));
 
 			const result = await handler.waitForCallbackAndExchange(PROVIDER);
 
 			expect(mockReceiver.waitForCallback).toHaveBeenCalledWith("state_xyz", 300000);
-			expect(mockFetch).toHaveBeenCalledWith(
-				expect.stringContaining(
-					`/v1/auth/oauth/${PROVIDER}/callback?code=auth_code_123&state=state_xyz`,
-				),
-				expect.objectContaining({
-					method: "GET",
-				}),
-			);
+			// The control plane exchanged the code before it redirected, so
+			// there is nothing left for this side to call.
+			expect(mockFetch).not.toHaveBeenCalled();
 
 			expect(result).toEqual({
 				user: {
@@ -216,35 +223,30 @@ describe("OAuthHandler", () => {
 			});
 		});
 
-		test("P11: Includes refresh_token if provided", async () => {
+		test("P11: Includes the refresh token if the callback carried one", async () => {
 			mockReceiver.waitForCallback.mockResolvedValue({
-				code: "auth_code_123",
-				state: "state_xyz",
+				...SESSION,
+				refreshToken: "refresh_token_xyz",
 			});
 
-			const mockUserData = {
-				user_id: "user-123",
-				user_email: "test@example.com",
-				access_token: "access_token_abc",
-				refresh_token: "refresh_token_xyz",
-				expires_in: 3600,
-			};
-
-			// Prepare
-			mockFetch.mockResolvedValueOnce(
-				await mockFetchResponse(200, {
-					authorize_url: "https://casdoor.example.com/oauth/authorize",
-					state: "state_xyz",
-				}),
-			);
-			await handler.prepareOAuthFlow(PROVIDER);
-
-			mockFetch.mockClear();
-			mockFetch.mockResolvedValue(await mockFetchResponse(200, mockUserData));
+			await prepare();
 
 			const result = await handler.waitForCallbackAndExchange(PROVIDER);
 
 			expect(result.refreshToken).toBe("refresh_token_xyz");
+		});
+
+		test("Falls back to the email when no display name comes back", async () => {
+			mockReceiver.waitForCallback.mockResolvedValue({
+				...SESSION,
+				userName: undefined,
+			});
+
+			await prepare();
+
+			const result = await handler.waitForCallbackAndExchange(PROVIDER);
+
+			expect(result.user.name).toBe("test@example.com");
 		});
 
 		test("P12: Handles callback error", async () => {
@@ -252,14 +254,7 @@ describe("OAuthHandler", () => {
 				new Error("OAuth callback timeout"),
 			);
 
-			// Prepare
-			mockFetch.mockResolvedValueOnce(
-				await mockFetchResponse(200, {
-					authorize_url: "https://casdoor.example.com/oauth/authorize",
-					state: "state_xyz",
-				}),
-			);
-			await handler.prepareOAuthFlow(PROVIDER);
+			await prepare();
 
 			await expect(
 				handler.waitForCallbackAndExchange(PROVIDER),
@@ -268,46 +263,10 @@ describe("OAuthHandler", () => {
 			expect(mockReceiver.cancel).toHaveBeenCalled();
 		});
 
-		test("Handles exchange API error", async () => {
-			mockReceiver.waitForCallback.mockResolvedValue({
-				code: "auth_code_123",
-				state: "state_xyz",
-			});
-
-			// Prepare
-			mockFetch.mockResolvedValueOnce(
-				await mockFetchResponse(200, {
-					authorize_url: "https://casdoor.example.com/oauth/authorize",
-					state: "state_xyz",
-				}),
-			);
-			await handler.prepareOAuthFlow(PROVIDER);
-
-			mockFetch.mockClear();
-			mockFetch.mockResolvedValue(
-				await mockFetchResponse(401, { error: "Invalid code" }, false),
-			);
-
-			await expect(
-				handler.waitForCallbackAndExchange(PROVIDER),
-			).rejects.toThrow("OAuth callback exchange failed");
-
-			expect(mockReceiver.cancel).toHaveBeenCalled();
-		});
-
 		test("P15: Cleanup on error (pending callback cancelled)", async () => {
-			// Prepare
-			mockFetch.mockResolvedValueOnce(
-				await mockFetchResponse(200, {
-					authorize_url: "https://casdoor.example.com/oauth/authorize",
-					state: "state_xyz",
-				}),
-			);
-			await handler.prepareOAuthFlow(PROVIDER);
+			await prepare();
 
-			mockReceiver.waitForCallback.mockRejectedValue(
-				new Error("Timeout"),
-			);
+			mockReceiver.waitForCallback.mockRejectedValue(new Error("Timeout"));
 
 			await expect(
 				handler.waitForCallbackAndExchange(PROVIDER),
@@ -326,31 +285,14 @@ describe("OAuthHandler", () => {
 	});
 
 	describe("completeOAuthFlow()", () => {
-		test("P13: Chains prepare + browser + exchange", async () => {
-			const authorizeUrl = "https://casdoor.example.com/oauth/authorize?...";
+		test("P13: Chains prepare + browser + callback", async () => {
+			const authorizeUrl = "https://idp.example.com/oauth/v2/authorize?...";
 			const openBrowser = jest.fn();
 
-			// Mock prepare
 			mockFetch.mockResolvedValueOnce(
 				await mockFetchResponse(200, { authorize_url: authorizeUrl, state: "state_xyz" }),
 			);
-
-			// Mock callback
-			mockReceiver.waitForCallback.mockResolvedValue({
-				code: "auth_code_123",
-				state: "state_xyz",
-			});
-
-			// Mock exchange
-			const mockUserData = {
-				user_id: "user-123",
-				user_email: "test@example.com",
-				access_token: "access_token_abc",
-				expires_in: 3600,
-			};
-			mockFetch.mockResolvedValueOnce(
-				await mockFetchResponse(200, mockUserData),
-			);
+			mockReceiver.waitForCallback.mockResolvedValue(SESSION);
 
 			const result = await handler.completeOAuthFlow(PROVIDER, openBrowser);
 
@@ -358,45 +300,11 @@ describe("OAuthHandler", () => {
 			expect(result.user.email).toBe("test@example.com");
 			expect(result.token.token).toBe("access_token_abc");
 		});
-
-		test("Opens browser with correct URL", async () => {
-			const authorizeUrl = "https://casdoor.example.com/oauth/authorize?client_id=123";
-			const openBrowser = jest.fn();
-
-			mockFetch.mockResolvedValueOnce(
-				await mockFetchResponse(200, { authorize_url: authorizeUrl, state: "state_xyz" }),
-			);
-
-			mockReceiver.waitForCallback.mockResolvedValue({
-				code: "code",
-				state: "state",
-			});
-
-			mockFetch.mockResolvedValueOnce(
-				await mockFetchResponse(200, {
-					user_id: "u1",
-					user_email: "test@test.com",
-					access_token: "token",
-					expires_in: 3600,
-				}),
-			);
-
-			await handler.completeOAuthFlow(PROVIDER, openBrowser);
-
-			expect(openBrowser).toHaveBeenCalledWith(authorizeUrl);
-		});
 	});
 
 	describe("destroy()", () => {
 		test("Cancels a pending callback", async () => {
-			mockFetch.mockResolvedValue(
-				await mockFetchResponse(200, {
-					authorize_url: "https://casdoor.example.com/oauth/authorize",
-					state: "state_xyz",
-				}),
-			);
-
-			await handler.prepareOAuthFlow(PROVIDER);
+			await prepare();
 
 			handler.destroy();
 

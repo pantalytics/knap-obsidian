@@ -2,12 +2,22 @@ import { describe, test, expect, beforeEach, jest } from "@jest/globals";
 import {
 	OAuthDeepLinkReceiver,
 	OAUTH_CALLBACK_ACTION,
-	OAUTH_REDIRECT_URI,
+	OAUTH_RETURN_URL,
 } from "../../src/auth/OAuthDeepLinkReceiver";
 
 jest.mock("../../src/debug", () => ({
 	curryLog: () => () => {},
 }));
+
+/** What the patched control plane appends to the return URL. */
+const SESSION = {
+	access_token: "access_abc",
+	refresh_token: "refresh_abc",
+	expires_in: "1800",
+	user_id: "user-1",
+	user_email: "someone@example.com",
+	user_name: "Someone",
+};
 
 describe("OAuthDeepLinkReceiver", () => {
 	let receiver: OAuthDeepLinkReceiver;
@@ -16,36 +26,41 @@ describe("OAuthDeepLinkReceiver", () => {
 		receiver = new OAuthDeepLinkReceiver();
 	});
 
-	test("the redirect URI is one fixed string", () => {
+	test("the return URL is one fixed string", () => {
 		// The whole point of the change: a loopback port varied per run and
-		// could not be registered at an IdP that matches exactly.
-		expect(OAUTH_REDIRECT_URI).toBe(`obsidian://${OAUTH_CALLBACK_ACTION}`);
-		expect(OAUTH_REDIRECT_URI).not.toMatch(/127\.0\.0\.1|localhost|:\d+/);
+		// could not be registered anywhere.
+		expect(OAUTH_RETURN_URL).toBe(`obsidian://${OAUTH_CALLBACK_ACTION}`);
+		expect(OAUTH_RETURN_URL).not.toMatch(/127\.0\.0\.1|localhost|:\d+/);
 	});
 
-	test("resolves with the code when the state matches", async () => {
+	test("resolves with the session when the state matches", async () => {
 		const waiting = receiver.waitForCallback("state_abc", 5000);
 		expect(receiver.isWaiting).toBe(true);
 
 		const consumed = receiver.handleCallback({
-			code: "code_xyz",
+			...SESSION,
 			state: "state_abc",
 		});
 
 		expect(consumed).toBe(true);
 		await expect(waiting).resolves.toEqual({
-			code: "code_xyz",
 			state: "state_abc",
+			accessToken: "access_abc",
+			refreshToken: "refresh_abc",
+			expiresIn: 1800,
+			userId: "user-1",
+			userEmail: "someone@example.com",
+			userName: "Someone",
 		});
 		expect(receiver.isWaiting).toBe(false);
 	});
 
 	test("P6-TR21: rejects a callback whose state does not match", async () => {
 		// Anything on the machine can open an obsidian:// URL, so a callback
-		// carrying the wrong state is somebody else's code or a forgery.
+		// carrying the wrong state is somebody else's session or a forgery.
 		const waiting = receiver.waitForCallback("state_ours", 5000);
 
-		receiver.handleCallback({ code: "code_theirs", state: "state_theirs" });
+		receiver.handleCallback({ ...SESSION, state: "state_theirs" });
 
 		await expect(waiting).rejects.toThrow("state mismatch");
 	});
@@ -61,14 +76,16 @@ describe("OAuthDeepLinkReceiver", () => {
 		await expect(waiting).rejects.toThrow("access_denied");
 	});
 
-	test("rejects a callback missing its code", async () => {
+	test("says so when the callback carries no session", async () => {
+		// An unpatched control plane redirects here with the token in a cookie
+		// this application cannot read, so the callback arrives empty.
 		const waiting = receiver.waitForCallback("state_abc", 5000);
 		receiver.handleCallback({ state: "state_abc" });
-		await expect(waiting).rejects.toThrow("missing code or state");
+		await expect(waiting).rejects.toThrow("without a session");
 	});
 
 	test("ignores a callback when nothing is waiting", () => {
-		expect(receiver.handleCallback({ code: "c", state: "s" })).toBe(false);
+		expect(receiver.handleCallback({ ...SESSION, state: "s" })).toBe(false);
 	});
 
 	test("refuses a second concurrent flow rather than orphaning the first", async () => {
@@ -78,11 +95,10 @@ describe("OAuthDeepLinkReceiver", () => {
 		);
 
 		// The first is still live and still the one that gets answered.
-		receiver.handleCallback({ code: "code_one", state: "state_one" });
-		await expect(first).resolves.toEqual({
-			code: "code_one",
-			state: "state_one",
-		});
+		receiver.handleCallback({ ...SESSION, state: "state_one" });
+		await expect(first).resolves.toEqual(
+			expect.objectContaining({ state: "state_one", accessToken: "access_abc" }),
+		);
 	});
 
 	test("times out", async () => {

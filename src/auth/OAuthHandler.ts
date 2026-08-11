@@ -1,15 +1,27 @@
 /**
  * OAuth Handler
  *
- * Orchestrates the OAuth flow for relay-onprem authentication.
- * Handles opening browser, callback server, and token exchange.
+ * Orchestrates the OAuth flow for relay-onprem authentication: opens the
+ * browser, waits for the deep link back, and turns it into a session.
+ *
+ * Two parameters carry the whole design, and swapping them is what made an
+ * IdP with exact redirect matching work at all:
+ *
+ *   redirect_uri  the control plane's own https callback -- the only URI the
+ *                 IdP ever sees, and one it already has registered
+ *   return_url    obsidian://knap-sync/oauth-callback -- where the control
+ *                 plane sends the finished session afterwards
+ *
+ * The other way round, the custom scheme reached the IdP and was refused. So
+ * the token exchange happens on the control plane rather than here, and what
+ * this file waits for is a session, not an authorization code.
  */
 
 import { curryLog } from "../debug";
 import { customFetch } from "../customFetch";
 import {
 	oauthDeepLinkReceiver,
-	OAUTH_REDIRECT_URI,
+	OAUTH_RETURN_URL,
 } from "./OAuthDeepLinkReceiver";
 import type { AuthResponse } from "./IAuthProvider";
 
@@ -18,20 +30,11 @@ interface OAuthAuthorizeApiResponse {
 	state: string;
 }
 
-interface OAuthCallbackApiResponse {
-	user_id: string;
-	user_email: string;
-	user_name?: string;
-	access_token: string;
-	expires_in?: number;
-	refresh_token?: string;
-}
-
 const log = curryLog("[OAuthHandler]");
 
 export interface OAuthStartResult {
 	authorizeUrl: string;
-	callbackUrl: string;
+	returnUrl: string;
 }
 
 export class OAuthHandler {
@@ -50,22 +53,26 @@ export class OAuthHandler {
 	}
 
 	/**
-	 * Start OAuth flow - prepares callback server and returns authorize URL
+	 * Start OAuth flow - registers the return URL and returns the authorize URL
 	 * @param provider - OAuth provider name (e.g., "casdoor", "google", "github")
-	 * @returns Authorization URL and callback info
+	 * @returns Authorization URL and where the flow comes back
 	 */
 	async prepareOAuthFlow(provider: string): Promise<OAuthStartResult> {
 		log(`Preparing OAuth flow for provider: ${provider}`);
 
-		// One fixed redirect URI, registered once at the IdP. It used to be a
-		// loopback URL on an OS-assigned port, which is why signing in against
-		// an IdP that matches redirect URIs exactly was impossible.
-		const callbackUrl = OAUTH_REDIRECT_URI;
+		// The IdP is told to come back to the control plane, which is the only
+		// URI it has registered. Where WE want the flow to end up is the
+		// return_url, which the control plane keeps to itself.
+		const redirectUri = `${this.normalizedUrl}/v1/auth/oauth/${provider}/callback`;
+		const returnUrl = OAUTH_RETURN_URL;
 
-		log(`Awaiting the callback on ${callbackUrl}`);
+		log(`Awaiting the sign-in on ${returnUrl}`);
 
 		// Get authorize URL from control plane
-		const authorizeUrlEndpoint = `${this.normalizedUrl}/v1/auth/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(callbackUrl)}`;
+		const authorizeUrlEndpoint =
+			`${this.normalizedUrl}/v1/auth/oauth/${provider}/authorize` +
+			`?redirect_uri=${encodeURIComponent(redirectUri)}` +
+			`&return_url=${encodeURIComponent(returnUrl)}`;
 
 		try {
 			const response = await customFetch(authorizeUrlEndpoint, {
@@ -101,7 +108,7 @@ export class OAuthHandler {
 
 			return {
 				authorizeUrl,
-				callbackUrl,
+				returnUrl,
 			};
 		} catch (error: unknown) {
 			this.stopCallbackServer();
@@ -110,9 +117,9 @@ export class OAuthHandler {
 	}
 
 	/**
-	 * Wait for OAuth callback and exchange code for tokens
+	 * Wait for the control plane to hand the finished session back
 	 * @param provider - OAuth provider name
-	 * @param timeoutMs - Maximum time to wait for callback (default 5 minutes)
+	 * @param timeoutMs - Maximum time to wait for the deep link (default 5 minutes)
 	 * @returns Authentication response with user and token
 	 */
 	async waitForCallbackAndExchange(
@@ -124,54 +131,35 @@ export class OAuthHandler {
 		}
 
 		try {
-			log("Waiting for OAuth callback...");
+			log("Waiting for the sign-in to come back...");
 
-			// Wait for callback with code and state, rejecting anything that doesn't carry
-			// the state token we were issued for this flow (TR-21)
-			const { code, state } = await oauthDeepLinkReceiver.waitForCallback(
+			// The control plane has already exchanged the code by now, so what
+			// arrives is a session. Anything not carrying the state token we
+			// were issued for this flow is rejected (TR-21).
+			const session = await oauthDeepLinkReceiver.waitForCallback(
 				this.expectedState,
 				timeoutMs,
 			);
 
-			log(`Received callback with code and state`);
+			log(`Signed in with ${provider}`);
 
-			// Exchange code for tokens via control plane (GET with query params)
-			const callbackEndpoint = `${this.normalizedUrl}/v1/auth/oauth/${provider}/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
-
-			const response = await customFetch(callbackEndpoint, {
-				method: "GET",
-				headers: {
-					"Accept": "application/json",
-				},
-			});
-
-			if (!response.ok) {
-				const errorText = await response.text();
-				throw new Error(`OAuth callback exchange failed: ${response.status} ${errorText}`);
-			}
-
-			const data = await response.json() as OAuthCallbackApiResponse;
-
-			log("OAuth token exchange successful");
-
-			// Parse response to AuthResponse format (server returns flat fields)
 			const authResponse: AuthResponse = {
 				user: {
-					id: data.user_id,
-					email: data.user_email,
-					name: data.user_name ?? data.user_email,
-					picture: undefined, // Server doesn't return picture in callback
+					id: session.userId ?? "",
+					email: session.userEmail ?? "",
+					name: session.userName || (session.userEmail ?? ""),
+					picture: undefined, // The callback carries no picture
 				},
 				token: {
-					token: data.access_token,
-					expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000,
+					token: session.accessToken,
+					expiresAt: Date.now() + (session.expiresIn ?? 3600) * 1000,
 				},
-				refreshToken: data.refresh_token,
+				refreshToken: session.refreshToken,
 			};
 
 			return authResponse;
 		} finally {
-			// Always stop the callback server
+			// Always drop the pending flow
 			this.stopCallbackServer();
 		}
 	}
