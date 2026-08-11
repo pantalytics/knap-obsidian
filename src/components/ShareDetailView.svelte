@@ -158,7 +158,7 @@
 			} else if (plugin.shareClient) {
 				await plugin.shareClient.updateMemberRole(share.id, userId, role);
 			}
-			new Notice(`Role changed to ${role}`);
+			new Notice(role === "editor" ? "They can edit now" : "They can read now");
 			members = await loadMembers();
 		} catch (e: unknown) {
 			new Notice(`Failed to change role: ${e instanceof Error ? e.message : "Unknown error"}`);
@@ -654,8 +654,8 @@
 										value={member.role}
 										on:change={(e) => changeMemberRole(member.user_id, e.currentTarget.value)}
 									>
-										<option value="viewer">Viewer</option>
-										<option value="editor">Editor</option>
+										<option value="viewer">Can read</option>
+										<option value="editor">Can edit</option>
 									</select>
 									<button class="evc-btn-danger" on:click={() => removeMember(member.user_id)}>Remove</button>
 								</div>
@@ -674,8 +674,8 @@
 						on:keypress={(e) => { if (e.key === 'Enter') addMember(); }}
 					/>
 					<select class="dropdown evc-role-select" bind:value={newMemberRole}>
-						<option value="viewer">Viewer</option>
-						<option value="editor">Editor</option>
+						<option value="viewer">Can read</option>
+						<option value="editor">Can edit</option>
 					</select>
 					<button class="mod-cta" on:click={addMember}>Add</button>
 				</div>

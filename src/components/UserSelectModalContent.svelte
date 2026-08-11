@@ -20,7 +20,7 @@
 	const selectedUsers = writable(new Set([...preSelectedUserIds]));
 	const searchQuery = writable("");
 
-	// Create derived store for users in this relay
+	// Everybody the folder's server knows about
 	const relayUsers = derived(
 		[relayManager.relayRoles],
 		([$relayRoles]) => {
@@ -129,13 +129,16 @@
 	}
 </script>
 
-<div class="modal-title">Invite users to this folder</div>
+<!-- The wire below still says role, because that is the control plane's word.
+     Nothing on this screen does: a person picks what somebody can do, and the
+     words for that are "can read" and "can edit" (docs/ui-ux.md, "The words"). -->
+<div class="modal-title">Who else should have this folder</div>
 
 <div class="modal-content user-select-modal">
 	<div class="search-container">
 		<input
 			type="text"
-			placeholder="Search users by name..."
+			placeholder="Search by name"
 			bind:value={$searchQuery}
 			class="search-input"
 		/>
@@ -144,7 +147,7 @@
 	<div class="user-list">
 		{#if $sortedUsers.length === 0}
 			<div class="no-users">
-				{$searchQuery ? "No users found" : "No users available"}
+				{$searchQuery ? "Nobody by that name" : "Nobody to add yet"}
 			</div>
 		{:else}
 			{#each $sortedUsers as userSelection}
@@ -190,7 +193,7 @@
 					</div>
 
 					{#if userSelection.hasAccess}
-						<div class="user-status">Already has access</div>
+						<div class="user-status">Already has it</div>
 					{:else if userSelection.isCurrentUser}
 						<div class="user-status">(You)</div>
 					{/if}
@@ -202,12 +205,12 @@
 	<div class="modal-button-container">
 		<span class="selection-count">
 			{$selectedCount === 0
-				? "No users selected"
-				: `${$selectedCount} user${$selectedCount === 1 ? "" : "s"} selected`}
+				? "Nobody picked yet"
+				: `${$selectedCount} ${$selectedCount === 1 ? "person" : "people"} picked`}
 		</span>
 
 		<button class="mod-cta" disabled={$selectedCount === 0} on:click={handleAdd}>
-			Add Users
+			{$selectedCount === 1 ? "Add them" : "Add them all"}
 		</button>
 	</div>
 </div>

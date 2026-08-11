@@ -13,7 +13,12 @@
 		cancel: void;
 	}>();
 
-	let role: "viewer" | "editor" = "editor";
+	// "can read" and "can edit" are what a person picks. The wire still calls
+	// them viewer and editor, because that is the control plane's word and not
+	// ours to change, and it stops here: no screen in this plugin says role,
+	// viewer or editor (docs/ui-ux.md, "The words").
+	let canEdit = true;
+	$: role = canEdit ? "editor" : "viewer";
 	let expiresInDays = "7";
 	let maxUses = "";
 	let creating = false;
@@ -21,7 +26,7 @@
 	async function handleCreate() {
 		const maxUsesNum = maxUses.trim() ? parseInt(maxUses.trim(), 10) : null;
 		if (maxUsesNum !== null && (isNaN(maxUsesNum) || maxUsesNum < 1)) {
-			new Notice("Max uses must be a positive number");
+			new Notice("That has to be a whole number, one or more.");
 			return;
 		}
 
@@ -49,10 +54,12 @@
 				throw new Error("No share client available");
 			}
 
-			new Notice("Invite link created!");
+			new Notice("Link ready. Send it to whoever should have it.");
 			dispatch("created");
 		} catch (e: unknown) {
-			new Notice(`Failed to create invite: ${e instanceof Error ? e.message : "Unknown error"}`);
+			new Notice(
+				`Could not make the link: ${e instanceof Error ? e.message : "Unknown error"}`,
+			);
 		} finally {
 			creating = false;
 		}
@@ -60,41 +67,48 @@
 </script>
 
 <div class="evc-create-invite">
-	<div class="evc-section-title">Create Invite Link</div>
-	<div class="evc-section-desc">for {share.path}</div>
-
-	<div class="evc-form-field">
-		<label for="evc-invite-role">Role</label>
-		<select id="evc-invite-role" class="dropdown" bind:value={role}>
-			<option value="viewer">Viewer</option>
-			<option value="editor">Editor</option>
-		</select>
+	<div class="evc-section-title">Invite somebody to {share.path}</div>
+	<div class="evc-section-desc">
+		You get a link to send them. Anyone who opens it joins this folder.
 	</div>
 
 	<div class="evc-form-field">
-		<label for="evc-invite-expiry">Expiration</label>
+		<label for="evc-invite-access">What they can do</label>
+		<select id="evc-invite-access" class="dropdown" bind:value={canEdit}>
+			<option value={true}>Can edit</option>
+			<option value={false}>Can read</option>
+		</select>
+		<p class="evc-field-note">
+			{canEdit
+				? "They can open these notes and change them, and you will see their edits as they type."
+				: "They can open these notes. Nothing they do changes what you have."}
+		</p>
+	</div>
+
+	<div class="evc-form-field">
+		<label for="evc-invite-expiry">The link stops working after</label>
 		<select id="evc-invite-expiry" class="dropdown" bind:value={expiresInDays}>
 			<option value="7">7 days</option>
 			<option value="14">14 days</option>
 			<option value="30">30 days</option>
-			<option value="0">No expiration</option>
+			<option value="0">Never</option>
 		</select>
 	</div>
 
 	<div class="evc-form-field">
-		<label for="evc-invite-maxuses">Max Uses (optional)</label>
+		<label for="evc-invite-maxuses">How many people can use it</label>
 		<input
 			id="evc-invite-maxuses"
 			type="number"
 			min="1"
-			placeholder="Unlimited"
+			placeholder="As many as you send it to"
 			bind:value={maxUses}
 		/>
 	</div>
 
 	<div class="evc-form-actions">
 		<button class="mod-cta" on:click={handleCreate} disabled={creating}>
-			{creating ? "Creating..." : "Create Invite Link"}
+			{creating ? "Making the link" : "Make a link"}
 		</button>
 		<button on:click={() => dispatch('cancel')}>Cancel</button>
 	</div>
@@ -116,6 +130,12 @@
 		font-size: 0.85em;
 		color: var(--text-muted);
 		margin-top: -8px;
+	}
+
+	.evc-field-note {
+		margin: 2px 0 0;
+		font-size: 12px;
+		color: var(--text-muted);
 	}
 
 	.evc-form-field {

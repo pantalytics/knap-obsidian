@@ -407,8 +407,8 @@ export class ShareManagementModal extends Modal {
 				if (this.isOwner) {
 					setting.addDropdown((dropdown) => {
 						dropdown
-							.addOption("viewer", "Viewer")
-							.addOption("editor", "Editor")
+							.addOption("viewer", "Can read")
+							.addOption("editor", "Can edit")
 							.setValue(member.role)
 							.onChange(async (value) => {
 								await this.changeMemberRole(member.user_id, value as "viewer" | "editor");
@@ -421,7 +421,9 @@ export class ShareManagementModal extends Modal {
 							.onClick(() => this.removeMember(member.user_id));
 					});
 				} else {
-					setting.setDesc(`Role: ${member.role} • ID: ${member.user_id.substring(0, 8)}...`);
+					setting.setDesc(
+						`${member.role === "editor" ? "Can edit" : "Can read"} • ID: ${member.user_id.substring(0, 8)}...`,
+					);
 				}
 			});
 		}
@@ -443,8 +445,8 @@ export class ShareManagementModal extends Modal {
 
 			new Setting(contentEl).setName("Role").addDropdown((dropdown) => {
 				roleSelect = dropdown.selectEl;
-				dropdown.addOption("viewer", "Viewer");
-				dropdown.addOption("editor", "Editor");
+				dropdown.addOption("viewer", "Can read");
+				dropdown.addOption("editor", "Can edit");
 				dropdown.setValue("editor");
 			});
 
@@ -1538,8 +1540,8 @@ export class ShareManagementModal extends Modal {
 			.setDesc("Access level for invited users")
 			.addDropdown((dropdown) => {
 				roleSelect = dropdown.selectEl;
-				dropdown.addOption("viewer", "Viewer");
-				dropdown.addOption("editor", "Editor");
+				dropdown.addOption("viewer", "Can read");
+				dropdown.addOption("editor", "Can edit");
 				dropdown.setValue("editor");
 			});
 
