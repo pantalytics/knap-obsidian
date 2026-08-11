@@ -18,6 +18,13 @@
 		type ShareLike,
 	} from "../vaultShare";
 	import { RelayOnPremShareClientManager } from "../RelayOnPremShareClientManager";
+	import {
+		hasSignInButton,
+		syncDot,
+		syncInstruction,
+		syncWord,
+		SIGNED_OUT,
+	} from "../syncStatus";
 
 	// One button, because there is one server and one account (ADR-0030,
 	// ADR-0033). No address to type, nothing to choose, and no code to paste:
@@ -53,6 +60,25 @@
 	let vaultLines: readonly string[] = [];
 
 	$: auth = getAuthStatus(authRefreshKey);
+
+	// The word comes off the shared list rather than being written here
+	// (status.py, mirrored in src/syncStatus.ts). What this side knows is
+	// whether there is an account and whether anything is still moving.
+	$: word = syncWord({
+		signedIn: auth.isSignedIn,
+		paused: vaultPaused,
+		syncing: vaultSyncing,
+	});
+	$: dot = syncDot(word);
+	$: instruction = syncInstruction(word);
+	// Somebody who has signed in here before is signed OUT, which is a state
+	// with its own words and its own button. Somebody who never has is simply
+	// new, and gets told what the button is for instead.
+	$: returning = Boolean(server?.lastUserEmail);
+
+	// Filled in by startSyncingTheVault, and by the folder it finds or makes.
+	let vaultPaused = false;
+	let vaultSyncing = false;
 
 	function getAuthStatus(_refreshKey: number): {
 		isSignedIn: boolean;
@@ -159,6 +185,8 @@
 				folder.settings.onpremServerId = KNAP_SERVER_ID;
 			}
 			plugin.folderNavDecorations?.quickRefresh();
+			vaultSyncing = true;
+			vaultPaused = folder ? folder.shouldConnect === false : false;
 			vaultLines = FIRST_SYNC_LINES;
 		} catch (e: unknown) {
 			error = e instanceof Error ? e.message : "Could not start syncing this vault";
@@ -252,6 +280,8 @@
 
 	async function signOut() {
 		error = "";
+		vaultSyncing = false;
+		vaultPaused = false;
 		try {
 			await plugin.loginManager.logoutFromServer(KNAP_SERVER_ID);
 			new Notice("Signed out");
@@ -265,9 +295,9 @@
 <div class="knap-signin">
 	{#if auth.isSignedIn}
 		<div class="knap-account">
-			<span class="knap-dot is-on"></span>
+			<span class="knap-dot knap-dot-{dot}"></span>
 			<span class="knap-account-text">
-				Signed in{auth.email ? ` as ${auth.email}` : ""}
+				{word}{auth.email ? ` as ${auth.email}` : ""}
 			</span>
 			<div class="knap-account-actions">
 				{#if server}
@@ -278,16 +308,33 @@
 				<button class="knap-btn" on:click={signOut}>Sign out</button>
 			</div>
 		</div>
+		{#if instruction}
+			<p class="knap-signin-hint">{instruction}</p>
+		{/if}
 		{#each vaultLines as line}
 			<p class="knap-signin-hint">{line}</p>
 		{/each}
 	{:else}
-		<p class="knap-signin-line">
-			Sign in with your Knap account. Then share this vault, or a folder in it.
-		</p>
-		<button class="knap-btn mod-cta" disabled={signingIn} on:click={signIn}>
-			{signingIn ? "Waiting for the browser" : "Sign in"}
-		</button>
+		{#if returning}
+			<div class="knap-account">
+				<span class="knap-dot knap-dot-{syncDot(SIGNED_OUT)}"></span>
+				<span class="knap-account-text">{SIGNED_OUT}</span>
+			</div>
+			<p class="knap-signin-hint">{syncInstruction(SIGNED_OUT)}</p>
+		{:else}
+			<p class="knap-signin-line">
+				Sign in with your Knap account. Then share this vault, or a folder in it.
+			</p>
+		{/if}
+		{#if hasSignInButton(SIGNED_OUT)}
+			<button class="knap-btn mod-cta" disabled={signingIn} on:click={signIn}>
+				{signingIn
+					? "Waiting for the browser"
+					: returning
+						? "Sign in again"
+						: "Sign in"}
+			</button>
+		{/if}
 		{#if signingIn}
 			<p class="knap-signin-hint">
 				Finish in the browser window that just opened. Obsidian picks it up from
@@ -371,8 +418,22 @@
 		flex: none;
 	}
 
-	.knap-dot.is-on {
+	/* One class per dot in the shared list, so the two screens can be held
+	   side by side and compared. */
+	.knap-dot-ok {
 		background: var(--color-green, #28a745);
+	}
+
+	.knap-dot-working {
+		background: var(--interactive-accent);
+	}
+
+	.knap-dot-wait {
+		background: var(--text-faint);
+	}
+
+	.knap-dot-error {
+		background: var(--text-error);
 	}
 
 	.knap-btn {
