@@ -1614,6 +1614,20 @@ export class SharedFolder extends HasProvider {
 		return this.vault.adapter.mkdir(normalizePath(vaultPath));
 	}
 
+	/**
+	 * Write an attachment's bytes, through the same guard as everything else.
+	 *
+	 * SyncFile used to reach `vault.adapter.writeBinary` itself with a vpath
+	 * that came off the CRDT. On a folder share the prefix made that harmless.
+	 * On a vault share it is the hole this class exists to close, so the write
+	 * comes back here rather than staying there.
+	 */
+	writeBinary(path: string, content: ArrayBuffer): Promise<void> {
+		this.assertWritableVPath(path);
+		const vaultPath = this.getPath(path);
+		return this.vault.adapter.writeBinary(normalizePath(vaultPath), content);
+	}
+
 	checkPath(path: string): boolean {
 		return scopedCheckPath(
 			this.scope,
