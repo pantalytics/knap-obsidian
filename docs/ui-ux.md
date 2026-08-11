@@ -37,8 +37,11 @@ The settings tab is a sentence and a button. No server field, no email, no
 password, no code to paste. Pressing it opens a browser, Zitadel asks, and the
 callback comes back through `obsidian://knap-sync/oauth-callback`.
 
-Email and password stay in the code behind *Other ways to sign in*, for the day
-the IdP is unreachable. They are not what a new person is shown.
+That button is the only way in. There is no *Other ways to sign in*, and no email
+and password form behind it: an account created through the identity service has
+no password until an admin sets one, so the second door opened onto nothing. A
+choice of two, where one of them cannot work for a new person, is worse than no
+choice at all.
 
 There is no server field because there is no second server (ADR-0033). The list,
 the default chip, the duplicate check, the connection test, the endpoint editor

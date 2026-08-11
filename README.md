@@ -58,8 +58,8 @@ from GitHub and keeps them updated.
 account, and Obsidian picks it up from there. There is no address to type and no
 code to paste, on a laptop or on a phone.
 
-Email and password are still there, under *Other ways to sign in*, for a day the
-sign-in page will not load.
+That button is the only way in. There is nothing else to try and nothing behind
+it to choose.
 
 The whole vault starts syncing on its own. To sync some folders instead, pick
 them in the same tab; it is one or the other, never a mixture.
@@ -90,13 +90,13 @@ in through one.
 | Control plane | HTTPS | Sign-in, token refresh, listing and adding folders, inviting people | On sign-in, and when a folder changes |
 | Control plane | HTTPS | Issuing the short-lived token for a sync connection | Before opening a socket |
 | Sync server | WSS | The document sync itself | While a synced note is open, and while catching up |
-| Identity provider | HTTPS | The sign-in page itself | Only while you are signing in that way |
+| Identity provider | HTTPS | The sign-in page itself | Only while you are signing in |
 | `obsidian://` callback | Obsidian URL scheme | Receiving the sign-in redirect | During sign-in only |
 
 The identity provider row is worth being precise about. Knap Sync never contacts
-an identity provider on its own account. It opens the sign-in page Knap sent it
-to, and catches the redirect coming back. Sign in with email and password and no
-third party is involved at all.
+an identity provider on its own account, and it holds no client id and no secret
+for one. It opens the sign-in page Knap sent it to, and catches the redirect
+coming back.
 
 **No telemetry.** The plugin does not phone home, count anything, or send your
 notes anywhere except to Knap.
