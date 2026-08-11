@@ -1,7 +1,7 @@
 /**
  * The context menu's "sync this folder", as a modal.
  *
- * The words on screen are ADR-0036's: a folder syncs, and there is no share
+ * The words on screen are ADR-0038's: a folder syncs, and there is no share
  * and no server. The class, the client and the API call keep upstream's names.
  */
 

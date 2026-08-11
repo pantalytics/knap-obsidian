@@ -115,7 +115,7 @@ side gets the button.
 
 ## The words
 
-Four of them, and no others. This is Knap's ADR-0036, and the admin repo's
+Four of them, and no others. This is Knap's ADR-0038, and the admin repo's
 `docs/nomenclature.md` carries the same table, because a person moves between
 the two applications in one sitting and matching up two vocabularies is not
 their job.

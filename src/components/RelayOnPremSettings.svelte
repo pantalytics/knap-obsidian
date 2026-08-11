@@ -78,7 +78,7 @@
 
 		if (server && view !== "home") {
 			// The crumb is what the screen behind it holds, not the machine it
-			// came from (ADR-0036). There is one account and naming it here
+			// came from (ADR-0038). There is one account and naming it here
 			// would be a hostname in a breadcrumb.
 			items.push({
 				type: "text",
