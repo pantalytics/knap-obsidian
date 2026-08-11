@@ -204,7 +204,7 @@
 
 <div class="endpoint-config-modal">
 	<div class="setting-item-description" style="margin-bottom: 16px;">
-		<p>Manage your organization's enterprise Relay tenants. Add tenants to switch between different enterprise deployments.</p>
+		<p>Manage your organization's enterprise relay tenants. Add tenants to switch between different enterprise deployments.</p>
 	</div>
 
 

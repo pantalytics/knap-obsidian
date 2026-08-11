@@ -42,9 +42,9 @@ export class ShareManagementModal extends Modal {
 		this.initialShareId = initialShareId;
 
 		if (serverName) {
-			this.setTitle(`Shares — ${serverName}`);
+			this.setTitle(`Shares on ${serverName}`);
 		} else {
-			this.setTitle("Relay on-premise shares");
+			this.setTitle("Knap Sync shares");
 		}
 	}
 

@@ -15,7 +15,7 @@
 		color: var(--text-normal);
 	}
 
-	.evc-text {
+	.knap-text {
 		font-weight: 600;
 		letter-spacing: 0.02em;
 		white-space: nowrap;

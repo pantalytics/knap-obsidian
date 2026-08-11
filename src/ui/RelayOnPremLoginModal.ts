@@ -1,7 +1,7 @@
 /**
- * Relay On-Premise Login Modal
+ * Knap Sync login modal
  *
- * Modal dialog for email/password authentication with relay-onprem control plane
+ * Modal dialog for email/password authentication with a relay-onprem control plane
  * Supports multi-server mode with optional serverId parameter
  */
 
@@ -25,7 +25,7 @@ export class RelayOnPremLoginModal extends Modal {
 		private shareClient?: RelayOnPremShareClient,
 	) {
 		super(app);
-		this.setTitle("Relay on-premise login");
+		this.setTitle("Knap Sync sign-in");
 	}
 
 	onOpen() {
@@ -188,7 +188,7 @@ export class RelayOnPremLoginModal extends Modal {
 			} else {
 				await this.loginManager.loginWithEmailAndPassword(email, password);
 			}
-			new Notice("Successfully logged in to relay-onprem!");
+			new Notice("Signed in");
 			this.close();
 			this.onSuccess();
 		} catch (error: unknown) {
