@@ -1,10 +1,15 @@
 import { describe, test, expect } from "@jest/globals";
-import { withUpdatedLastUserEmail, findDuplicateServer } from "../src/RelayOnPremConfig";
+import { withUpdatedLastUserEmail } from "../src/RelayOnPremConfig";
 import type { RelayOnPremSettings, RelayOnPremServer } from "../src/RelayOnPremConfig";
 import {
+	DEFAULT_RELAY_ONPREM_SETTINGS,
+	KNAP_CONTROL_PLANE_URL,
+	KNAP_SERVER_ID,
 	MIN_SUPPORTED_SERVER_VERSION,
 	compareSemver,
 	isServerVersionSupported,
+	knapServer,
+	migrateRelayOnPremSettings,
 	serverCompatMessage,
 } from "../src/RelayOnPremConfig";
 
@@ -13,7 +18,6 @@ function makeServer(overrides: Partial<RelayOnPremServer> = {}): RelayOnPremServ
 		id: "server-1",
 		name: "Server 1",
 		controlPlaneUrl: "https://cp.tr.entire.vc",
-		isValidated: true,
 		...overrides,
 	};
 }
@@ -76,58 +80,6 @@ describe("withUpdatedLastUserEmail", () => {
 
 		expect(updated.defaultServerId).toBe("server-1");
 		expect(updated.enabled).toBe(true);
-	});
-});
-
-describe("findDuplicateServer", () => {
-	test("finds a collision on matching generated id (same URL added twice)", () => {
-		const existing = [makeServer({ id: "cp-tr-entire-vc-443" })];
-
-		const duplicate = findDuplicateServer(
-			existing,
-			"cp-tr-entire-vc-443",
-			"https://cp.tr.entire.vc"
-		);
-
-		expect(duplicate).toBe(existing[0]);
-	});
-
-	test("finds a collision on matching URL under a different id", () => {
-		const existing = [
-			makeServer({ id: "server-custom-id", controlPlaneUrl: "https://cp.tr.entire.vc" }),
-		];
-
-		const duplicate = findDuplicateServer(
-			existing,
-			"cp-tr-entire-vc-443", // freshly generated id, differs from the stored custom id
-			"https://cp.tr.entire.vc"
-		);
-
-		expect(duplicate).toBe(existing[0]);
-	});
-
-	test("matches URLs that differ only by trailing slash or case", () => {
-		const existing = [makeServer({ controlPlaneUrl: "https://CP.tr.entire.vc/" })];
-
-		const duplicate = findDuplicateServer(existing, "some-new-id", "https://cp.tr.entire.vc");
-
-		expect(duplicate).toBe(existing[0]);
-	});
-
-	test("returns undefined when there's no collision", () => {
-		const existing = [makeServer({ id: "server-1", controlPlaneUrl: "https://cp.tr.entire.vc" })];
-
-		const duplicate = findDuplicateServer(
-			existing,
-			"other-host-443",
-			"https://other-host.example.com"
-		);
-
-		expect(duplicate).toBeUndefined();
-	});
-
-	test("returns undefined against an empty server list", () => {
-		expect(findDuplicateServer([], "any-id", "https://cp.tr.entire.vc")).toBeUndefined();
 	});
 });
 
@@ -199,12 +151,117 @@ describe("serverCompatMessage", () => {
 		const msg = serverCompatMessage("0.0.1");
 		expect(msg).toContain("0.0.1");
 		expect(msg).toContain(MIN_SUPPORTED_SERVER_VERSION);
-		expect(msg.toLowerCase()).toContain("update the server");
 	});
 
 	test("has a distinct message for a server reporting no version at all", () => {
 		const msg = serverCompatMessage(undefined);
-		expect(msg.toLowerCase()).toContain("doesn't report a version");
-		expect(msg.toLowerCase()).toContain("update the server");
+		expect(msg).toContain(MIN_SUPPORTED_SERVER_VERSION);
+		expect(msg).not.toContain("undefined");
+	});
+
+	test("does not ask the reader to update a server they do not run", () => {
+		expect(serverCompatMessage("0.0.1").toLowerCase()).not.toContain("update the server");
+	});
+});
+
+/**
+ * One server, and the plugin knows only that one (ADR-0033). The address is
+ * build-time configuration, so these assert against CONTROL_PLANE_URL as jest
+ * defines it rather than a literal.
+ */
+describe("the one server", () => {
+	test("the default settings hold exactly the Knap server, at the built address", () => {
+		expect(DEFAULT_RELAY_ONPREM_SETTINGS.servers).toEqual([
+			{ id: KNAP_SERVER_ID, name: "Knap Sync", controlPlaneUrl: KNAP_CONTROL_PLANE_URL },
+		]);
+		expect(DEFAULT_RELAY_ONPREM_SETTINGS.defaultServerId).toBe(KNAP_SERVER_ID);
+	});
+
+	test("the built address is what the build defined, not a literal in the source", () => {
+		// jest.config.js defines CONTROL_PLANE_URL as a test address. A source
+		// file that hardcoded the production one would fail here.
+		expect(KNAP_CONTROL_PLANE_URL).toBe("https://cp.knap.test");
+	});
+
+	test("knapServer carries an email through and leaves the key off without one", () => {
+		expect(knapServer("someone@example.com").lastUserEmail).toBe("someone@example.com");
+		expect(knapServer()).not.toHaveProperty("lastUserEmail");
+	});
+});
+
+describe("migrateRelayOnPremSettings", () => {
+	test("nothing stored yields the defaults", () => {
+		const result = migrateRelayOnPremSettings(undefined);
+		expect(result.settings).toEqual(DEFAULT_RELAY_ONPREM_SETTINGS);
+		expect(result.changed).toBe(true);
+		expect(result.renamedServerId).toBeUndefined();
+	});
+
+	test("settings already holding just the Knap server are left alone", () => {
+		const result = migrateRelayOnPremSettings(DEFAULT_RELAY_ONPREM_SETTINGS);
+		expect(result.changed).toBe(false);
+		expect(result.settings.servers).toHaveLength(1);
+	});
+
+	test("a stored address from an older build is replaced by the built one", () => {
+		const result = migrateRelayOnPremSettings({
+			enabled: true,
+			servers: [{ id: KNAP_SERVER_ID, name: "Knap Sync", controlPlaneUrl: "https://cp.old.example" }],
+			defaultServerId: KNAP_SERVER_ID,
+		});
+		expect(result.settings.servers[0].controlPlaneUrl).toBe(KNAP_CONTROL_PLANE_URL);
+		expect(result.changed).toBe(true);
+	});
+
+	test("extra servers are dropped and the Knap one is kept", () => {
+		const result = migrateRelayOnPremSettings({
+			enabled: true,
+			servers: [
+				makeServer({ id: "someone-elses-relay", controlPlaneUrl: "https://cp.example.com" }),
+				makeServer({ id: KNAP_SERVER_ID, controlPlaneUrl: KNAP_CONTROL_PLANE_URL, lastUserEmail: "me@example.com" }),
+			],
+			defaultServerId: "someone-elses-relay",
+		});
+		expect(result.settings.servers).toHaveLength(1);
+		expect(result.settings.servers[0].id).toBe(KNAP_SERVER_ID);
+		expect(result.settings.servers[0].lastUserEmail).toBe("me@example.com");
+		expect(result.settings.defaultServerId).toBe(KNAP_SERVER_ID);
+		expect(result.renamedServerId).toBeUndefined();
+	});
+
+	test("a server stored under a generated id is adopted, and reports its old id", () => {
+		// main.ts moves the stored credential and the shared folder records
+		// across on the strength of renamedServerId, so somebody signed in
+		// before the upgrade is still signed in after it.
+		const result = migrateRelayOnPremSettings({
+			enabled: true,
+			servers: [makeServer({ id: "cp-knap-test-443", controlPlaneUrl: KNAP_CONTROL_PLANE_URL, lastUserEmail: "me@example.com" })],
+			defaultServerId: "cp-knap-test-443",
+		});
+		expect(result.renamedServerId).toBe("cp-knap-test-443");
+		expect(result.settings.servers[0].id).toBe(KNAP_SERVER_ID);
+		expect(result.settings.servers[0].lastUserEmail).toBe("me@example.com");
+	});
+
+	test("the legacy single-server shape carries its email across", () => {
+		const result = migrateRelayOnPremSettings({
+			enabled: true,
+			controlPlaneUrl: "https://cp.old.example",
+			credentials: { email: "me@example.com" },
+		});
+		expect(result.settings.servers).toEqual([
+			{
+				id: KNAP_SERVER_ID,
+				name: "Knap Sync",
+				controlPlaneUrl: KNAP_CONTROL_PLANE_URL,
+				lastUserEmail: "me@example.com",
+			},
+		]);
+		expect(result.changed).toBe(true);
+	});
+
+	test("a disabled legacy shape still ends up on the Knap server", () => {
+		const result = migrateRelayOnPremSettings({ enabled: false, controlPlaneUrl: "" });
+		expect(result.settings).toEqual(DEFAULT_RELAY_ONPREM_SETTINGS);
 	});
 });

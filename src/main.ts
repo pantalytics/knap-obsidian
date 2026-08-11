@@ -60,7 +60,6 @@ import { SharedFolders } from "./SharedFolder";
 import { FolderNavigationDecorations } from "./ui/FolderNav";
 import { LiveSettingsTab } from "./ui/SettingsTab";
 import { LoginManager, type LoginSettings } from "./LoginManager";
-import { EndpointConfigModal } from "./ui/EndpointConfigModal";
 import {
 	curryLog,
 	setDebugging,
@@ -81,7 +80,7 @@ import {
 	VIEW_TYPE_DIFFERENCES,
 } from "./differ/differencesView";
 import { FeatureFlagDefaults, flag, type FeatureFlags } from "./flags";
-import { FeatureFlagManager, flags, withFlag } from "./flagManager";
+import { FeatureFlagManager, withFlag } from "./flagManager";
 import { PostOffice } from "./observable/Postie";
 import { BackgroundSync } from "./BackgroundSync";
 import { FeatureFlagToggleModal } from "./ui/FeatureFlagModal";
@@ -94,10 +93,9 @@ import { SyncSettingsManager } from "./SyncSettings";
 import { ContentAddressedFileStore, isSyncFile } from "./SyncFile";
 import { isDocument } from "./Document";
 import { EndpointManager, type EndpointSettings } from "./EndpointManager";
-import { SelfHostModal } from "./ui/SelfHostModal";
 import {
 	DEFAULT_RELAY_ONPREM_SETTINGS,
-	EVC_SERVER_ID,
+	KNAP_SERVER_ID,
 	type RelayOnPremSettings,
 	type RelayOnPremServer,
 	migrateRelayOnPremSettings,
@@ -230,76 +228,6 @@ export default class Live extends Plugin {
 	}
 
 	/**
-	 * Open endpoint configuration modal
-	 */
-	openEndpointConfigurationModal() {
-		const modal = new EndpointConfigModal(this.app, this, () => {
-			void this.reload();
-		});
-		modal.open();
-	}
-
-	/**
-	 * Validate and apply custom endpoints
-	 */
-	async validateAndApplyEndpoints() {
-		const settings = this.endpointSettings.get();
-
-		if (!settings.activeTenantId || !settings.tenants?.length) {
-			new Notice("Please configure an enterprise tenant first", 4000);
-			return;
-		}
-
-		const notice = new Notice("Validating endpoints...", 0);
-
-		try {
-			const result = await this.loginManager.validateAndApplyEndpoints();
-			notice.hide();
-
-			if (result.success) {
-				// Clear any previous validation errors on success
-				await this.endpointSettings.update((current) => ({
-					...current,
-					_lastValidationError: undefined,
-					_lastValidationAttempt: undefined,
-				}));
-				new Notice("Endpoints validated and applied successfully!", 5000);
-				if (result.licenseInfo) {
-					this.log("License validation successful:", result.licenseInfo);
-				}
-			} else {
-				// Store validation error for display in settings
-				await this.endpointSettings.update((current) => ({
-					...current,
-					_lastValidationError: result.error,
-					_lastValidationAttempt: Date.now(),
-				}));
-				new Notice(`❌ Validation failed: ${result.error}`, 8000);
-			}
-		} catch (error: unknown) {
-			notice.hide();
-			const errorMessage =
-				error instanceof Error ? error.message : "Unknown error";
-			// Store validation error for display in settings
-			await this.endpointSettings.update((current) => ({
-				...current,
-				_lastValidationError: errorMessage,
-				_lastValidationAttempt: Date.now(),
-			}));
-			new Notice(`❌ Validation error: ${errorMessage}`, 8000);
-		}
-	}
-
-	/**
-	 * Reset to default endpoints
-	 */
-	resetToDefaultEndpoints() {
-		this.loginManager.getEndpointManager().clearValidatedEndpoints();
-		void this.endpointSettings.update(() => ({}));
-		new Notice("Reset to default endpoints", 3000);
-	}
-
-	/**
 	 * Validate custom endpoints on startup if configured
 	 */
 	private async validateEndpointsOnStartup(
@@ -420,7 +348,7 @@ export default class Live extends Plugin {
 			// keyed by appId (stable across vault renames), not vault display name.
 			const prefix = "knap-sync_onprem_auth_";
 			const oldKey = `${prefix}${this.appId}_${oldId}`;
-			const newKey = `${prefix}${this.appId}_${EVC_SERVER_ID}`;
+			const newKey = `${prefix}${this.appId}_${KNAP_SERVER_ID}`;
 			try {
 				const oldData = window.localStorage.getItem(oldKey);
 				if (oldData && !window.localStorage.getItem(newKey)) {
@@ -438,7 +366,7 @@ export default class Live extends Plugin {
 				const updated = folders.map((f) => {
 					if (f.onpremServerId === oldId) {
 						folderChanged = true;
-						return { ...f, onpremServerId: EVC_SERVER_ID };
+						return { ...f, onpremServerId: KNAP_SERVER_ID };
 					}
 					return f;
 				});
@@ -546,33 +474,6 @@ export default class Live extends Plugin {
 				void this.openSettings();
 			},
 		});
-
-		this.addCommand({
-			id: "configure-endpoints",
-			name: "Configure enterprise tenant",
-			callback: () => {
-				this.openEndpointConfigurationModal();
-			},
-		});
-
-		if (flags().enableSelfManageHosts) {
-			this.addCommand({
-				id: "register-host",
-				name: "Register self-hosted relay server",
-				callback: () => {
-					const modal = new SelfHostModal(
-						this.app,
-						this.relayManager,
-						(relay) => {
-							// Open relay settings after successful creation
-							void this.openSettings(`/relays?id=${relay.id}`);
-						},
-					);
-					this.openModals.push(modal);
-					modal.open();
-				},
-			});
-		}
 
 
 		this.vault = this.app.vault;
@@ -868,7 +769,7 @@ export default class Live extends Plugin {
 							) {
 								menu.addItem((item) => {
 									item
-										.setTitle("Relay: share folder")
+										.setTitle("Knap: share folder")
 										.setIcon("share-2")
 										.onClick(() => {
 											const modal = new QuickShareModal(this.app, this, file.path);
@@ -879,17 +780,13 @@ export default class Live extends Plugin {
 							return;
 						}
 						if (folder.relayId) {
+							// The item that used to sit here opened upstream's relay
+							// screen for a relay id our shares do not have, so it
+							// landed on the settings screen by accident. There is one
+							// server and nothing to configure about it (ADR-0033).
 							menu.addItem((item) => {
 								item
-									.setTitle("Relay: relay settings")
-									.setIcon("gear")
-									.onClick(() => {
-										void this.openSettings(`/relays?id=${folder.relayId}`);
-									});
-							});
-							menu.addItem((item) => {
-								item
-									.setTitle("Relay: share settings")
+									.setTitle("Knap: share settings")
 									.setIcon("settings")
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
@@ -902,7 +799,7 @@ export default class Live extends Plugin {
 							menu.addItem((item) => {
 								item
 									.setTitle(
-										folder.connected ? "Relay: disconnect" : "Relay: connect",
+										folder.connected ? "Knap: disconnect" : "Knap: connect",
 									)
 									.setIcon("satellite")
 									.onClick(() => {
@@ -919,7 +816,7 @@ export default class Live extends Plugin {
 						} else {
 							menu.addItem((item) => {
 								item
-									.setTitle("Relay: share settings")
+									.setTitle("Knap: share settings")
 									.setIcon("settings")
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
@@ -933,7 +830,7 @@ export default class Live extends Plugin {
 							if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
 								menu.addItem((item) => {
 									item
-										.setTitle("Relay: unshare folder")
+										.setTitle("Knap: unshare folder")
 										.setIcon("folder-x")
 										.onClick(async () => {
 											const confirmed = await confirmDialog(
@@ -966,7 +863,7 @@ export default class Live extends Plugin {
 						if (folder.relayId && folder.connected) {
 							menu.addItem((item) => {
 								item
-									.setTitle("Relay: sync")
+									.setTitle("Knap: sync")
 									.setIcon("folder-sync")
 									.onClick(async () => {
 										void folder.netSync();
@@ -995,7 +892,7 @@ export default class Live extends Plugin {
 						if (ifile && isSyncFile(ifile)) {
 							menu.addItem((item) => {
 								item
-									.setTitle("Relay: download")
+									.setTitle("Knap: download")
 									.setIcon("cloud-download")
 									.onClick(async () => {
 										await ifile.pull();
@@ -1005,7 +902,7 @@ export default class Live extends Plugin {
 							if (this.debugSettings.get().debugging) {
 								menu.addItem((item) => {
 									item
-										.setTitle("Relay: verify upload")
+										.setTitle("Knap: verify upload")
 										.setIcon("search-check")
 										.onClick(async () => {
 											const present = await ifile.verifyUpload();
@@ -1017,7 +914,7 @@ export default class Live extends Plugin {
 							}
 							menu.addItem((item) => {
 								item
-									.setTitle("Relay: upload")
+									.setTitle("Knap: upload")
 									.setIcon("cloud-upload")
 									.onClick(async () => {
 										await ifile.push(true);

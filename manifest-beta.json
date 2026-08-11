@@ -3,7 +3,7 @@
 	"name": "Knap Sync",
 	"version": "1.2.0",
 	"minAppVersion": "1.8.7",
-	"description": "Sync your vault to a relay you host yourself, a whole vault or one folder at a time, with real-time collaborative editing on what you share.",
+	"description": "Your vault on Knap: a whole vault or one folder at a time, on desktop and on phone, with real-time collaborative editing on whatever you share.",
 	"author": "Pantalytics",
 	"authorUrl": "https://github.com/pantalytics",
 	"isDesktopOnly": false

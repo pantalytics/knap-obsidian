@@ -23,6 +23,10 @@ module.exports = {
         // only, no System3 cloud backend) — see TR-58.
         "API_URL": "",
         "AUTH_URL": "",
+        // The one Knap server's address, defined at build time by
+        // esbuild.config.mjs (ADR-0033). A test address rather than the real
+        // one, so a test that passes only against production fails here.
+        "CONTROL_PLANE_URL": "https://cp.knap.test",
     },
 	transform: {
 		".ts": [

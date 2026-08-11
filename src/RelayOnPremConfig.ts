@@ -1,73 +1,48 @@
 /**
- * Relay On-Premise Configuration
+ * The Knap server, and the settings that hold it.
  *
- * Configuration options for connecting to self-hosted relay-onprem instances
- * Supports multiple servers with independent authentication
+ * There is one server and the plugin knows only that one (ADR-0033). Its
+ * address is build-time configuration, not a text field and not a literal in
+ * a file that ships: esbuild.config.mjs defines CONTROL_PLANE_URL, and
+ * KNAP_CONTROL_PLANE_URL below is the only place the rest of the plugin reads
+ * it from.
+ *
+ * The settings still carry a list of servers because the auth layer, the
+ * shares and the shared folder records are all keyed by a server id. The list
+ * holds exactly one entry, nothing can add a second, and the migration below
+ * collapses anything older down to it.
  */
 
-/** Well-known Knap relay server */
-export const EVC_SERVER_ID = "knap-sync";
-export const EVC_CP_URL = "https://cp.knap.pantalytics.com";
+declare const CONTROL_PLANE_URL: string;
+
+/** The id every share, folder record and stored credential is keyed by. */
+export const KNAP_SERVER_ID = "knap-sync";
+
+/** What the server is called on screen, the rare times it is named at all. */
+export const KNAP_SERVER_NAME = "Knap Sync";
+
+/** Where the plugin talks, fixed at build time. */
+export const KNAP_CONTROL_PLANE_URL = CONTROL_PLANE_URL;
 
 /**
- * Generate a unique server ID from URL
- */
-export function generateServerId(controlPlaneUrl: string): string {
-	try {
-		const url = new URL(controlPlaneUrl);
-		// Use hostname + port as unique identifier
-		const hostPart = url.hostname.replace(/\./g, "-");
-		const portPart = url.port || (url.protocol === "https:" ? "443" : "80");
-		return `${hostPart}-${portPart}`;
-	} catch {
-		// Fallback to timestamp-based ID if URL parsing fails
-		return `server-${Date.now()}`;
-	}
-}
-
-/**
- * Individual relay-onprem server configuration
+ * A configured server. Only one is ever built, by knapServer() below.
  */
 export interface RelayOnPremServer {
-	/**
-	 * Unique identifier for this server (derived from URL)
-	 */
+	/** Unique identifier for this server */
 	id: string;
 
-	/**
-	 * Display name for the server
-	 */
+	/** Display name for the server */
 	name: string;
 
-	/**
-	 * Control plane URL (e.g., https://cp.example.com)
-	 */
+	/** Control plane URL */
 	controlPlaneUrl: string;
 
-	/**
-	 * Relay server URL (e.g., wss://relay.example.com)
-	 * If not specified, will use the URL from token response
-	 */
-	relayServerUrl?: string;
-
-	/**
-	 * Last logged in user email (for display purposes)
-	 */
+	/** Last signed-in email, for display */
 	lastUserEmail?: string;
-
-	/**
-	 * Whether connection has been validated
-	 */
-	isValidated: boolean;
-
-	/**
-	 * Timestamp of last validation
-	 */
-	lastValidated?: number;
 }
 
 /**
- * Relay on-prem settings with support for multiple servers
+ * Relay on-prem settings. One server, and the id of it.
  */
 export interface RelayOnPremSettings {
 	/**
@@ -76,15 +51,36 @@ export interface RelayOnPremSettings {
 	enabled: boolean;
 
 	/**
-	 * List of configured servers
+	 * The configured servers. Exactly one, always the Knap server.
 	 */
 	servers: RelayOnPremServer[];
 
 	/**
-	 * Default server ID for new shares
+	 * Server id used for new shares. Always the Knap server's.
 	 */
 	defaultServerId?: string;
 }
+
+/**
+ * The Knap server, as the settings hold it. `lastUserEmail` is the only field
+ * that survives a rebuild against a different address, because it is the only
+ * one a person put there.
+ */
+export function knapServer(lastUserEmail?: string): RelayOnPremServer {
+	return {
+		id: KNAP_SERVER_ID,
+		name: KNAP_SERVER_NAME,
+		controlPlaneUrl: KNAP_CONTROL_PLANE_URL,
+		...(lastUserEmail ? { lastUserEmail } : {}),
+	};
+}
+
+export const DEFAULT_RELAY_ONPREM_SETTINGS: RelayOnPremSettings = {
+	// Knap Sync always uses relay-onprem mode (no System 3 cloud)
+	enabled: true,
+	servers: [knapServer()],
+	defaultServerId: KNAP_SERVER_ID,
+};
 
 /**
  * Legacy settings format (pre-multi-server)
@@ -98,178 +94,107 @@ interface LegacyRelayOnPremSettings {
 	};
 }
 
-export const DEFAULT_RELAY_ONPREM_SETTINGS: RelayOnPremSettings = {
-	// Knap Sync always uses relay-onprem mode (no System 3 cloud)
-	enabled: true,
-	servers: [
-		{
-			id: EVC_SERVER_ID,
-			name: "Knap Sync",
-			controlPlaneUrl: EVC_CP_URL,
-			isValidated: false,
-		},
-	],
-	defaultServerId: EVC_SERVER_ID,
-};
+/**
+ * Any settings shape this plugin has ever written: the legacy single server,
+ * the multi-server list, or nothing at all.
+ */
+type StoredRelayOnPremSettings =
+	| LegacyRelayOnPremSettings
+	| RelayOnPremSettings
+	| undefined
+	| null;
 
 /**
- * Result of settings migration, includes renamed server IDs for auth store migration
+ * Result of settings migration, includes the renamed server ID for auth store
+ * migration
  */
 export interface MigrationResult {
 	settings: RelayOnPremSettings;
-	/** If an existing server was adopted as EVC, this is the old server ID */
+	/** If a stored server was adopted as the Knap server, this is its old id */
 	renamedServerId?: string;
 	/** Whether any changes were made */
 	changed: boolean;
 }
 
+function isMultiServer(
+	settings: LegacyRelayOnPremSettings | RelayOnPremSettings,
+): settings is RelayOnPremSettings {
+	return "servers" in settings && Array.isArray(settings.servers);
+}
+
 /**
- * Migrate from legacy single-server settings to multi-server format
+ * Pick which stored entry to carry forward. Its id is what the localStorage
+ * credential and the shared folder records are keyed by, so adopting the right
+ * one is what keeps somebody signed in across this migration.
+ */
+function adoptable(
+	servers: RelayOnPremServer[],
+	defaultServerId?: string,
+): RelayOnPremServer | undefined {
+	return (
+		servers.find((s) => s.id === KNAP_SERVER_ID) ??
+		servers.find((s) => s.controlPlaneUrl === KNAP_CONTROL_PLANE_URL) ??
+		servers.find((s) => s.id === defaultServerId) ??
+		servers[0]
+	);
+}
+
+/**
+ * Collapse whatever is stored down to the one Knap server.
+ *
+ * A person who added a second server through the list that used to be here
+ * loses it, which is the decision rather than a side effect: there is nowhere
+ * to reach it from any more, and its folders keep their own server id rather
+ * than being quietly repointed at ours.
  */
 export function migrateRelayOnPremSettings(
-	oldSettings: LegacyRelayOnPremSettings | RelayOnPremSettings | undefined | null
+	oldSettings: StoredRelayOnPremSettings,
 ): MigrationResult {
-	// Already migrated or null
 	if (!oldSettings) {
 		return { settings: DEFAULT_RELAY_ONPREM_SETTINGS, changed: true };
 	}
 
-	// Check if already in new format (has servers array)
-	if ("servers" in oldSettings && Array.isArray(oldSettings.servers)) {
-		const orig = oldSettings;
-		let changed = false;
-		let renamedServerId: string | undefined;
-
-		// Work on a shallow copy of servers to avoid mutating stored data
-		let servers = orig.servers.map((s) => ({ ...s }));
-		let defaultServerId = orig.defaultServerId;
-
-		const evcByIdIdx = servers.findIndex((s) => s.id === EVC_SERVER_ID);
-		// Find the BEST EVC-URL server: prefer one with isValidated or lastValidated (has auth)
-		const evcByUrlIdxAll = servers
-			.map((s, i) => ({ s, i }))
-			.filter(({ s }) => s.controlPlaneUrl === EVC_CP_URL && s.id !== EVC_SERVER_ID);
-
-		if (evcByIdIdx >= 0 && evcByUrlIdxAll.length > 0) {
-			// Dedup: EVC by id exists AND there are duplicate(s) with same URL but different id.
-			// Keep the richer duplicate (the one with auth/validation) under the EVC_SERVER_ID,
-			// remove the empty stub.
-			const richest = evcByUrlIdxAll.reduce((best, cur) =>
-				(cur.s.isValidated || cur.s.lastValidated) ? cur : best, evcByUrlIdxAll[0]);
-			const evcStub = servers[evcByIdIdx];
-			const richServer = richest.s;
-
-			// Merge: take all fields from the rich server, set id to EVC_SERVER_ID
-			servers[evcByIdIdx] = {
-				...richServer,
-				id: EVC_SERVER_ID,
-				name: richServer.name || evcStub.name || "Knap Sync",
-			};
-			renamedServerId = richServer.id;
-
-			// Update defaultServerId if it pointed to the old id
-			if (defaultServerId === richServer.id) {
-				defaultServerId = EVC_SERVER_ID;
-			}
-
-			// Remove all duplicate-URL entries (keep only the one we merged into evcByIdIdx)
-			const removeIds = new Set(evcByUrlIdxAll.map(({ s }) => s.id));
-			servers = servers.filter((s) => !removeIds.has(s.id));
-			changed = true;
-		} else if (evcByIdIdx < 0) {
-			// No EVC server by id — check if there's one by URL to adopt
-			if (evcByUrlIdxAll.length > 0) {
-				const richest = evcByUrlIdxAll.reduce((best, cur) =>
-					(cur.s.isValidated || cur.s.lastValidated) ? cur : best, evcByUrlIdxAll[0]);
-				renamedServerId = richest.s.id;
-				servers[richest.i] = { ...richest.s, id: EVC_SERVER_ID };
-				if (!servers[richest.i].name || servers[richest.i].name === new URL(EVC_CP_URL).hostname) {
-					servers[richest.i].name = "Knap Sync";
+	const stored = isMultiServer(oldSettings)
+		? adoptable(oldSettings.servers, oldSettings.defaultServerId)
+		: oldSettings.enabled && oldSettings.controlPlaneUrl
+			? {
+					id: KNAP_SERVER_ID,
+					name: KNAP_SERVER_NAME,
+					controlPlaneUrl: oldSettings.controlPlaneUrl,
+					lastUserEmail: oldSettings.credentials?.email,
 				}
-				if (defaultServerId === renamedServerId) {
-					defaultServerId = EVC_SERVER_ID;
-				}
-				// Remove other duplicates
-				if (evcByUrlIdxAll.length > 1) {
-					const removeIds = new Set(
-						evcByUrlIdxAll.filter(({ i }) => i !== richest.i).map(({ s }) => s.id)
-					);
-					servers = servers.filter((s) => !removeIds.has(s.id));
-				}
-				changed = true;
-			} else {
-				// No EVC server at all — prepend it
-				servers.unshift({
-					id: EVC_SERVER_ID,
-					name: "Knap Sync",
-					controlPlaneUrl: EVC_CP_URL,
-					isValidated: false,
-				});
-				changed = true;
-			}
-		}
+			: undefined;
 
-		if (!defaultServerId) {
-			defaultServerId = EVC_SERVER_ID;
-			changed = true;
-		}
-
-		return {
-			settings: { ...orig, servers, defaultServerId },
-			renamedServerId,
-			changed,
-		};
-	}
-
-	// Legacy format - migrate if enabled and has URL
-	const legacy = oldSettings as LegacyRelayOnPremSettings;
-	if (!legacy.enabled || !legacy.controlPlaneUrl) {
-		return { settings: DEFAULT_RELAY_ONPREM_SETTINGS, changed: true };
-	}
-
-	// Create server from legacy settings
-	const serverId = generateServerId(legacy.controlPlaneUrl);
-	let serverName: string;
-	try {
-		serverName = new URL(legacy.controlPlaneUrl).hostname;
-	} catch {
-		serverName = "Relay Server";
-	}
-
-	return {
-		settings: {
-			enabled: true,
-			servers: [
-				{
-					id: serverId,
-					name: serverName,
-					controlPlaneUrl: legacy.controlPlaneUrl,
-					relayServerUrl: legacy.relayServerUrl,
-					lastUserEmail: legacy.credentials?.email,
-					isValidated: true,
-					lastValidated: Date.now(),
-				},
-			],
-			defaultServerId: serverId,
-		},
-		changed: true,
+	const server = knapServer(stored?.lastUserEmail);
+	const settings: RelayOnPremSettings = {
+		enabled: true,
+		servers: [server],
+		defaultServerId: KNAP_SERVER_ID,
 	};
+
+	const renamedServerId =
+		stored && stored.id !== KNAP_SERVER_ID ? stored.id : undefined;
+
+	const changed =
+		!isMultiServer(oldSettings) ||
+		oldSettings.enabled !== true ||
+		oldSettings.defaultServerId !== KNAP_SERVER_ID ||
+		oldSettings.servers.length !== 1 ||
+		JSON.stringify(oldSettings.servers[0]) !== JSON.stringify(server);
+
+	return { settings, renamedServerId, changed };
 }
 
 /**
- * Minimum control-plane server version this plugin version supports (TR-57).
- * Bump this whenever a breaking control-plane API change ships that this
- * plugin relies on — a server below the floor gets a clear "please update"
- * notice at connect time instead of failing later with confusing unversioned
- * 404s once the plugin calls an endpoint the server doesn't have.
+ * Minimum control-plane version this plugin version supports (TR-57). Bump it
+ * whenever a breaking control-plane change ships that this plugin relies on: a
+ * server below the floor says so at sign-in rather than failing later with
+ * confusing 404s on an endpoint it does not have.
  *
  * NOTE (2026-07-22): control-plane's /server/info `version` field is
- * currently frozen at "0.1.0" and not bumped per release (checked live
- * against cp.tr.entire.vc) — this floor is set to that same baseline so the
- * live EVC server isn't false-flagged. The mechanism only becomes
- * meaningful once control-plane starts incrementing `version` on breaking
- * changes; that's a separate, cross-repo, product-lead call — flagged as a
- * follow-up, not fixed here.
+ * currently frozen at "0.1.0" and not bumped per release, so this floor is set
+ * to that same baseline and the check never fires. It only becomes meaningful
+ * once control-plane starts incrementing `version` on breaking changes.
  */
 export const MIN_SUPPORTED_SERVER_VERSION = "0.1.0";
 
@@ -293,10 +218,10 @@ export function compareSemver(a: string, b: string): number {
 }
 
 /**
- * Whether a server's reported version meets this plugin's compatibility
- * floor. A missing/empty version (server predates the /server/info version
- * field entirely) is treated as unsupported — it's the same "will fail
- * later with a confusing error" failure mode this check exists to catch.
+ * Whether the server's reported version meets this plugin's compatibility
+ * floor. A missing or empty version (a server predating the /server/info
+ * version field) is treated as unsupported: it is the same "fails later with a
+ * confusing error" case the check exists to catch.
  */
 export function isServerVersionSupported(serverVersion: string | undefined | null): boolean {
 	if (!serverVersion) return false;
@@ -304,100 +229,18 @@ export function isServerVersionSupported(serverVersion: string | undefined | nul
 }
 
 /**
- * Human-readable message for a server that fails isServerVersionSupported().
+ * What to say when a server fails isServerVersionSupported(). Nobody reading
+ * this runs the server, so it says what is happening rather than asking for
+ * something they cannot do.
  */
 export function serverCompatMessage(serverVersion: string | undefined | null): string {
 	if (!serverVersion) {
-		return "This server doesn't report a version — it may be too old for this plugin version. Please update the server.";
+		return "The server did not say which version it is running, and Knap Sync needs " +
+			`${MIN_SUPPORTED_SERVER_VERSION} or newer. Nothing to fix on your side.`;
 	}
-	return `This server is running version ${serverVersion}, older than this plugin requires (minimum ${MIN_SUPPORTED_SERVER_VERSION}). Please update the server.`;
-}
-
-/**
- * Validate a single server configuration
- */
-export function validateServerConfig(server: RelayOnPremServer): {
-	valid: boolean;
-	errors: string[];
-} {
-	const errors: string[] = [];
-
-	if (!server.id) {
-		errors.push("Server ID is required");
-	}
-
-	if (!server.name) {
-		errors.push("Server name is required");
-	}
-
-	if (!server.controlPlaneUrl) {
-		errors.push("Control Plane URL is required");
-	} else {
-		try {
-			const url = new URL(server.controlPlaneUrl);
-			if (!url.protocol.match(/^https?:$/)) {
-				errors.push("Control Plane URL must use HTTP or HTTPS protocol");
-			}
-		} catch {
-			errors.push("Control Plane URL is invalid");
-		}
-	}
-
-	if (server.relayServerUrl) {
-		try {
-			const url = new URL(server.relayServerUrl);
-			if (!url.protocol.match(/^wss?:$/)) {
-				errors.push("Relay Server URL must use WS or WSS protocol");
-			}
-		} catch {
-			errors.push("Relay Server URL is invalid");
-		}
-	}
-
-	return {
-		valid: errors.length === 0,
-		errors,
-	};
-}
-
-/**
- * Validate relay-onprem settings
- */
-export function validateRelayOnPremSettings(settings: RelayOnPremSettings): {
-	valid: boolean;
-	errors: string[];
-} {
-	const errors: string[] = [];
-
-	// Validate each server
-	for (const server of settings.servers) {
-		const serverValidation = validateServerConfig(server);
-		if (!serverValidation.valid) {
-			errors.push(`Server "${server.name}": ${serverValidation.errors.join(", ")}`);
-		}
-	}
-
-	// Check for duplicate IDs
-	const ids = new Set<string>();
-	for (const server of settings.servers) {
-		if (ids.has(server.id)) {
-			errors.push(`Duplicate server ID: ${server.id}`);
-		}
-		ids.add(server.id);
-	}
-
-	// Check defaultServerId exists
-	if (settings.defaultServerId && settings.servers.length > 0) {
-		const defaultExists = settings.servers.some((s) => s.id === settings.defaultServerId);
-		if (!defaultExists) {
-			errors.push("Default server ID does not match any configured server");
-		}
-	}
-
-	return {
-		valid: errors.length === 0,
-		errors,
-	};
+	return `The server is on version ${serverVersion} and Knap Sync needs ` +
+		`${MIN_SUPPORTED_SERVER_VERSION} or newer. Nothing to fix on your side, it will ` +
+		"work once the server catches up.";
 }
 
 /**
@@ -411,7 +254,8 @@ export function getServerById(
 }
 
 /**
- * Get the default server or first available server
+ * The Knap server. Named getDefaultServer for the callers that predate there
+ * being only one of them.
  */
 export function getDefaultServer(settings: RelayOnPremSettings): RelayOnPremServer | undefined {
 	if (settings.defaultServerId) {
@@ -443,26 +287,4 @@ export function withUpdatedLastUserEmail(
 			s.id === serverId ? { ...s, lastUserEmail: email } : s
 		),
 	};
-}
-
-function normalizeControlPlaneUrl(url: string): string {
-	return url.trim().replace(/\/+$/, "").toLowerCase();
-}
-
-/**
- * Find an existing server that would collide with a proposed add — same id
- * (generateServerId is deterministic per URL, so re-adding the same URL
- * produces the same id) or same URL under a different id (e.g. the server's
- * own self-reported id differs from generateServerId's output). Returns
- * undefined when there's no collision, i.e. the add is safe.
- */
-export function findDuplicateServer(
-	servers: RelayOnPremServer[],
-	candidateId: string,
-	candidateUrl: string
-): RelayOnPremServer | undefined {
-	const normalizedCandidate = normalizeControlPlaneUrl(candidateUrl);
-	return servers.find(
-		(s) => s.id === candidateId || normalizeControlPlaneUrl(s.controlPlaneUrl) === normalizedCandidate
-	);
 }

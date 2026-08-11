@@ -2,30 +2,27 @@
 	import type Live from "../main";
 	import type { RelayOnPremServer } from "../RelayOnPremConfig";
 	import type { ShareWithServer } from "../RelayOnPremShareClientManager";
-	import RelayOnPremServerList from "./RelayOnPremServerList.svelte";
+	import SignIn from "./SignIn.svelte";
 	import ShareListView from "./ShareListView.svelte";
 	import ShareDetailView from "./ShareDetailView.svelte";
 	import CreateShareView from "./CreateShareView.svelte";
 	import CreateInviteView from "./CreateInviteView.svelte";
-	import BillingView from "./BillingView.svelte";
 	import AgentKeysView from "./AgentKeysView.svelte";
 	import Breadcrumbs from "./Breadcrumbs.svelte";
 
 	export let plugin: Live;
 
-	// Refresh key — incremented on login/logout via serversChanged event
-	let authRefreshKey = 0;
-
-	// Navigation state
-	type ViewType = "servers" | "shares" | "shareDetail" | "createShare" | "createInvite" | "billing" | "agentKeys";
-	let currentView: ViewType = "servers";
+	// Navigation state. "home" is the sign-in screen, and everything else is
+	// reached from it once somebody is signed in.
+	type ViewType = "home" | "shares" | "shareDetail" | "createShare" | "createInvite" | "agentKeys";
+	let currentView: ViewType = "home";
 	let selectedServer: RelayOnPremServer | null = null;
 	let selectedShare: ShareWithServer | null = null;
 
 	// Navigation functions
 	function navigateTo(view: ViewType) {
 		currentView = view;
-		if (view === "servers") {
+		if (view === "home") {
 			selectedServer = null;
 			selectedShare = null;
 		} else if (view === "shares") {
@@ -37,12 +34,6 @@
 		selectedServer = event.detail.server;
 		selectedShare = null;
 		currentView = "shares";
-	}
-
-	function handleOpenBilling(event: CustomEvent<{ server: RelayOnPremServer }>) {
-		selectedServer = event.detail.server;
-		selectedShare = null;
-		currentView = "billing";
 	}
 
 	function handleSelectShare(event: CustomEvent<{ share: ShareWithServer }>) {
@@ -69,10 +60,12 @@
 		currentView = "agentKeys";
 	}
 
-	function handleOpenServerAgentKeys(event: CustomEvent<{ server: RelayOnPremServer }>) {
-		selectedServer = event.detail.server;
+	// Signing out drops back to the sign-in screen: everything past it needs
+	// an account, and a stale share list is worse than no share list.
+	function handleSignedOut() {
+		selectedServer = null;
 		selectedShare = null;
-		currentView = "agentKeys";
+		currentView = "home";
 	}
 
 	// Breadcrumb items
@@ -80,10 +73,10 @@
 
 	function getBreadcrumbs(view: ViewType, server: RelayOnPremServer | null, share: ShareWithServer | null) {
 		const items: any[] = [
-			{ type: "home", onClick: () => navigateTo("servers") },
+			{ type: "home", onClick: () => navigateTo("home") },
 		];
 
-		if (server && view !== "servers") {
+		if (server && view !== "home") {
 			items.push({
 				type: "text",
 				text: server.name,
@@ -91,9 +84,7 @@
 			});
 		}
 
-		if (view === "billing") {
-			items.push({ type: "text", text: "Plan & Usage" });
-		} else if (view === "createShare") {
+		if (view === "createShare") {
 			items.push({ type: "text", text: "Create Share" });
 		} else if (view === "createInvite" && share) {
 			items.push({
@@ -128,13 +119,13 @@
 		<div class="evc-header-top">
 			<div class="evc-header-text">
 				<div class="evc-header-title">Knap Sync</div>
-				<div class="evc-header-desc">Your vault on a server you host yourself</div>
+				<div class="evc-header-desc">Your vault on Knap, on every device you use</div>
 			</div>
 		</div>
 	</div>
 
 	<!-- Breadcrumb Navigation -->
-	{#if currentView !== "servers"}
+	{#if currentView !== "home"}
 		<div class="evc-breadcrumb-bar">
 			<Breadcrumbs items={breadcrumbItems} element="div" />
 		</div>
@@ -142,17 +133,12 @@
 
 	<!-- Content Area -->
 	<div class="evc-settings-content">
-		{#if currentView === "servers"}
-			<div class="evc-server-section">
-				<div class="evc-section-heading">
-					<div class="evc-section-heading-title">Knap servers</div>
-					<div class="evc-section-heading-desc">
-						The servers this vault syncs with. Open one to sign in, test it or
-						change its address.
-					</div>
-				</div>
-				<RelayOnPremServerList {plugin} on:openShares={handleOpenShares} on:openBilling={handleOpenBilling} on:openAgentKeys={handleOpenServerAgentKeys} on:serversChanged={() => { authRefreshKey++; }} />
-			</div>
+		{#if currentView === "home"}
+			<SignIn
+				{plugin}
+				on:openShares={handleOpenShares}
+				on:signedOut={handleSignedOut}
+			/>
 		{:else if currentView === "shares" && selectedServer}
 			<ShareListView
 				{plugin}
@@ -182,11 +168,6 @@
 				share={selectedShare}
 				on:created={handleCreateInviteDone}
 				on:cancel={() => navigateTo("shareDetail")}
-			/>
-		{:else if currentView === "billing" && selectedServer}
-			<BillingView
-				{plugin}
-				server={selectedServer}
 			/>
 		{:else if currentView === "agentKeys" && selectedServer}
 			<AgentKeysView
@@ -244,27 +225,5 @@
 	/* Content */
 	.evc-settings-content {
 		padding: 16px 20px;
-	}
-
-	/* Server section heading */
-	.evc-server-section {
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-	}
-
-	.evc-section-heading {
-		margin-bottom: 4px;
-	}
-
-	.evc-section-heading-title {
-		font-weight: 600;
-		font-size: 1.1em;
-	}
-
-	.evc-section-heading-desc {
-		color: var(--text-muted);
-		font-size: 0.9em;
-		margin-top: 4px;
 	}
 </style>
