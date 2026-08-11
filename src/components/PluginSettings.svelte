@@ -9,6 +9,7 @@
 	import ManageSharedFolder from "./ManageSharedFolder.svelte";
 	import ManageRemoteFolder from "./ManageRemoteFolder.svelte";
 	import { minimark } from "src/minimark";
+	import { readable, type Readable } from "svelte/store";
 
 	function stripHtml(s: string): string {
 		return s.replace(/<[^>]+>/g, "");
@@ -50,7 +51,12 @@
 	interface JoinRelayEvent extends CustomEvent<RelayEventDetail> {}
 
 	export let plugin: Live;
-	export let path: string | undefined = undefined;
+	// A store rather than a plain string. Svelte 5 only makes mount() props
+	// reactive when the props object is $state, and LiveSettingsTab is plain
+	// TypeScript, where runes are not available. The store carries navigateTo's
+	// updates instead. Defaults to one that never emits, for any caller that
+	// does not navigate.
+	export let path: Readable<string | undefined> = readable(undefined);
 	const app = plugin.app;
 	const relayManager = plugin.relayManager;
 	const relayRoles = relayManager.relayRoles;
@@ -130,8 +136,8 @@
 	}
 
 	$: {
-		if (path) {
-			setPath(path);
+		if ($path) {
+			setPath($path);
 		}
 	}
 

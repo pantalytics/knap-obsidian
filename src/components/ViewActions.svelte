@@ -1,15 +1,19 @@
 <script lang="ts">
-	import { LiveView } from "../LiveViews";
+	import { LiveView, type ViewActionsState } from "../LiveViews";
 	import type { ConnectionState, ConnectionStatus } from "../HasProvider";
 	import type { Document } from "src/Document";
 	import type { RemoteSharedFolder } from "src/Relay";
+	import type { Readable } from "svelte/store";
 	import { Layers, Satellite } from "lucide-svelte";
 
-	export let view: LiveView;
-	export let state: ConnectionState;
-	export let remote: RemoteSharedFolder;
+	// view, state and remote arrive together through a store. LiveViews pushes
+	// them on every connection change from plain TypeScript, where the $set
+	// this replaces no longer exists in Svelte 5.
+	export let actions: Readable<ViewActionsState>;
 	export let isLoggedOut: boolean = false;
 	export let onLogin: (() => Promise<boolean>) | undefined = undefined;
+
+	$: ({ view, state, remote } = $actions);
 
 	const ariaLabels: Record<ConnectionStatus, string> = {
 		connected: "connected: click to go offline",

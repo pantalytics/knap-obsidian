@@ -1,7 +1,11 @@
 <script lang="ts">
-	export let text: string;
-	export let label: string;
-	export let color: string | undefined;
+	import type { Readable } from "svelte/store";
+
+	// A store, for the same reason as Pill: FolderNav updates the tag from
+	// plain TypeScript and $set is gone in Svelte 5.
+	export let text: Readable<string>;
+	export let label: string = "";
+	export let color: string | undefined = undefined;
 </script>
 
 <div
@@ -9,7 +13,7 @@
 	aria-label={label}
 	style={color ? `color:${color}` : ""}
 >
-	<span>{text}</span>
+	<span>{$text}</span>
 </div>
 
 <style>
