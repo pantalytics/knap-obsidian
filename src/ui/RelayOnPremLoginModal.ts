@@ -188,7 +188,7 @@ export class RelayOnPremLoginModal extends Modal {
 			} else {
 				await this.loginManager.loginWithEmailAndPassword(email, password);
 			}
-			new Notice("Signed in to Knap");
+			new Notice("Signed in");
 			this.close();
 			this.onSuccess();
 		} catch (error: unknown) {
@@ -234,7 +234,7 @@ export class RelayOnPremLoginModal extends Modal {
 			// #e7bca9fb — otherwise main.ts's post-login hook never runs.
 			await this.loginManager.loginWithOAuth2(provider, this.serverId);
 
-			new Notice("Signed in to Knap");
+			new Notice("Signed in");
 			this.close();
 			this.onSuccess();
 		} catch (error: unknown) {

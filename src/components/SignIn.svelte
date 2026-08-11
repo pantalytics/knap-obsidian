@@ -134,7 +134,7 @@
 			// Through the login manager rather than the auth provider, so that
 			// the post-login hook in main.ts runs and shares start (TR-10).
 			await plugin.loginManager.loginWithOAuth2(provider, KNAP_SERVER_ID);
-			new Notice("Signed in to Knap");
+			new Notice("Signed in");
 			refresh(true);
 		} catch (e: unknown) {
 			const message = e instanceof Error ? e.message : "Sign-in failed";

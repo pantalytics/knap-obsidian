@@ -126,7 +126,7 @@ side gets the button.
 
 *Relay* is upstream's word for their product and their server. Neither is
 something a person using this plugin has to know about, so neither reaches the
-screen. `Relay: share folder` becomes `Knap: share folder`, for the same reason
+screen. `Relay: share folder` becomes `Knap Sync: share folder`, for the same reason
 the settings section stopped being called Relay Servers.
 
 ## Permissions come from one place

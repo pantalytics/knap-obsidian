@@ -12,7 +12,7 @@ if (window.Response === undefined || window.Headers === undefined) {
 	// https://github.com/electron/electron/pull/42419
 	try {
 		console.warn(
-			"[Relay] Polyfilling Fetch API (Electron Bug: https://github.com/electron/electron/pull/42419)",
+			"[Knap Sync] Polyfilling Fetch API (Electron Bug: https://github.com/electron/electron/pull/42419)",
 		);
 		const windowRecord = window as unknown as Record<string, unknown>;
 		if (windowRecord["blinkfetch"]) {
@@ -30,10 +30,10 @@ if (window.Response === undefined || window.Headers === undefined) {
 if ((window as unknown as Record<string, unknown>)["EventSource"] === undefined) {
 	if (Platform.isMobile) {
 		console.warn(
-			"[Relay] Polyfilling EventSource API required, but unable to polyfill on Mobile",
+			"[Knap Sync] Polyfilling EventSource API required, but unable to polyfill on Mobile",
 		);
 	} else {
-		console.warn("[Relay] Polyfilling EventSource API");
+		console.warn("[Knap Sync] Polyfilling EventSource API");
 		// eventsource v4 exports { ErrorEvent, EventSource }, so the module object
 		// is not itself a constructor. Assigning it whole left window.EventSource
 		// as a plain object and `new EventSource(...)` would have thrown.

@@ -1,4 +1,4 @@
-# CI — Team Relay Obsidian Plugin
+# CI for the Knap Sync Obsidian plugin
 # Based on F3 ci-ts-plugin template (bob/docs/ci-templates/ci-ts-plugin.yml)
 #
 # Burn-in mode: all jobs use continue-on-error: true (non-blocking REPORT).
@@ -58,7 +58,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: jest-coverage-team-relay
+          name: jest-coverage-knap-sync
           path: coverage/
 
   # ── Build smoke ─────────────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: team-relay-dist
+          name: knap-sync-dist
           path: main.js
 
   # ── Lint ────────────────────────────────────────────────────────────────────
