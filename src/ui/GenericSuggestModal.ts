@@ -1,15 +1,16 @@
+import { mount, unmount } from "svelte";
 import { App, Modal } from "obsidian";
 
-interface SvelteComponentConstructor {
-	new (options: { target: Element; props: Record<string, unknown> }): { $destroy: () => void };
-}
+// Svelte 5 components are functions, not classes, so this is the type mount()
+// accepts rather than something with a `new` signature.
+type SvelteComponent = Parameters<typeof mount>[0];
 
 export class GenericSuggestModal<T> extends Modal {
-	private component?: { $destroy: () => void };
+	private component?: Record<string, unknown>;
 
 	constructor(
 		app: App,
-		private ComponentClass: SvelteComponentConstructor,
+		private ComponentClass: SvelteComponent,
 		private componentProps: Record<string, unknown>,
 		private onSelect: (item: T) => void,
 	) {
@@ -24,7 +25,7 @@ export class GenericSuggestModal<T> extends Modal {
 		modalEl.addClass("evc-hidden");
 		const contentEl = modalContainer || modalEl;
 
-		this.component = new this.ComponentClass({
+		this.component = mount(this.ComponentClass, {
 			target: contentEl,
 			props: {
 				...this.componentProps,
@@ -38,12 +39,13 @@ export class GenericSuggestModal<T> extends Modal {
 	}
 
 	onClose() {
-		this.component?.$destroy();
+		if (this.component) void unmount(this.component);
+		this.component = undefined;
 	}
 
 	destroy() {
 		this.onSelect = null as unknown as (item: T) => void;
 		this.componentProps = null as unknown as Record<string, unknown>;
-		this.ComponentClass = null as unknown as SvelteComponentConstructor;
+		this.ComponentClass = null as unknown as SvelteComponent;
 	}
 }

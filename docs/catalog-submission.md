@@ -115,37 +115,48 @@ rather than the lint's.
 
 ## What is left
 
-### 1. Decide on svelte
+### 1. Click through a vault
 
-`npm audit --omit=dev` is down to one moderate finding. uuid went to `^11.1.1`
-in 1.1.43, clearing GHSA-w5hq-g745-h8pq, and `@types/uuid` went with it.
+`npm audit --omit=dev` reports nothing at all as of 1.2.0. uuid went to
+`^11.1.1` in 1.1.43 and svelte to 5 in 1.2.0, which closed the last one.
 
-svelte `<=5.55.6` remains, six advisories. Five are server-side rendering issues
-that cannot fire inside a plugin. The sixth, GHSA-rcqx-6q8c-2c42, is DOM
-clobbering of internal framework state and does run client-side. The fix is
-svelte 5, and this repo has 64 components on svelte 4 using `new Component()`,
-`$set` and `$destroy`, all of which svelte 5 removes. That is a migration with
-its own testing, not a dependency bump, and it should not ride along with a
-catalog submission.
+What that migration cost is a testing debt, and it is the honest reason this
+step exists. Svelte 5 removed the client component API: `new Component()`
+throws at runtime while still type-checking, so the fifteen call sites that
+moved to `mount()` cannot be validated by `tsc`, `eslint` or the 441 unit
+tests. All four are green and none of them opens a modal.
 
-So the choice is to submit carrying one moderate advisory on the scorecard, or
-to do the svelte 5 migration first. Carrying it looks right, given five of the
-six cannot fire here and the sixth needs an attacker who can already put chosen
-markup into the settings UI.
+What to exercise, in a real vault, before tagging:
 
-### 2. Cut the 1.1.43 release
+- The settings tab, including a deep link into a share, which is the `$set`
+  that became a store.
+- Each modal: debug, self-host, user select, share folder, add to vault,
+  feature flags, IndexedDB analysis, endpoint config. The endpoint config
+  modal's Apply button in particular, since its two events became callback
+  props.
+- The folder pill in the file explorer while a sync runs, so the progress
+  updates land, and the upload tag on a file.
+- The connection dot in a note's view actions, and the same in a canvas.
+
+### 2. Cut the release
 
 The published releases are 1.1.41 and 1.1.42, both of which predate the scan
 fixes. Submitting against either would put the version with the findings in
 front of the scanner, so tag first:
 
 ```bash
-git tag 1.1.43        # bare semver, exactly the value in manifest.json
-git push origin 1.1.43
+git tag 1.2.0         # bare semver, exactly the value in manifest.json
+git push origin 1.2.0
 ```
 
 The release workflow builds, attests provenance and attaches the three assets.
 `workflow_dispatch` rebuilds a tag if a run needs repeating.
+
+1.1.43 was merged but never tagged, so it is available as a checkpoint release
+if you want the lint and bug fixes out separately from the framework
+migration. Tag it on the commit that merged it. Note that a session running in
+this environment cannot do either: the git credential is scoped to branch refs
+and a push to `refs/tags/*` comes back 403.
 
 ### 3. Submit at community.obsidian.md
 

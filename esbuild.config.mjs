@@ -98,7 +98,8 @@ const context = await esbuild.context({
 	format: "cjs",
 	plugins: [
 		esbuildSvelte({
-			compilerOptions: { css: true },
+			// Svelte 5 dropped the boolean form: true became "injected".
+			compilerOptions: { css: "injected" },
 			preprocess: sveltePreprocess(),
 		}),
 		YjsInternalsPlugin,

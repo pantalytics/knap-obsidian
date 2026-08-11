@@ -1,10 +1,11 @@
+import { mount, unmount } from "svelte";
 import { App, Modal } from "obsidian";
 import SelfHostModalContent from "../components/SelfHostModalContent.svelte";
 import type { RelayManager } from "../RelayManager";
 import type { Relay } from "../Relay";
 
 export class SelfHostModal extends Modal {
-	private component?: SelfHostModalContent;
+	private component?: Record<string, unknown>;
 
 	constructor(
 		app: App,
@@ -18,7 +19,7 @@ export class SelfHostModal extends Modal {
 	onOpen() {
 		const { contentEl } = this;
 
-		this.component = new SelfHostModalContent({
+		this.component = mount(SelfHostModalContent, {
 			target: contentEl,
 			props: {
 				relayManager: this.relayManager,
@@ -42,6 +43,6 @@ export class SelfHostModal extends Modal {
 	onClose() {
 		const { contentEl } = this;
 		contentEl.empty();
-		this.component?.$destroy();
+		if (this.component) void unmount(this.component);
 	}
 }

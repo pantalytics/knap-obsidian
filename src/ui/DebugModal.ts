@@ -1,9 +1,10 @@
+import { mount, unmount } from "svelte";
 import { App, Modal } from "obsidian";
 import DebugModalContent from "../components/DebugModalContent.svelte";
 import type Live from "../main";
 
 export class DebugModal extends Modal {
-	private component?: DebugModalContent;
+	private component?: Record<string, unknown>;
 
 	constructor(
 		app: App,
@@ -15,7 +16,7 @@ export class DebugModal extends Modal {
 	onOpen() {
 		const { contentEl } = this;
 
-		this.component = new DebugModalContent({
+		this.component = mount(DebugModalContent, {
 			target: contentEl,
 			props: {
 				plugin: this.plugin,
@@ -26,6 +27,6 @@ export class DebugModal extends Modal {
 	onClose() {
 		const { contentEl } = this;
 		contentEl.empty();
-		this.component?.$destroy();
+		if (this.component) void unmount(this.component);
 	}
 }
