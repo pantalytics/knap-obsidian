@@ -79,10 +79,10 @@
 					serverName: "Default Server",
 				}));
 			} else {
-				error = "Please add a server and log in first.";
+				error = "Sign in first.";
 			}
 		} catch (e: unknown) {
-			error = e instanceof Error ? e.message : "Failed to load shares";
+			error = e instanceof Error ? e.message : "Could not load your folders";
 		} finally {
 			loading = false;
 		}
@@ -91,19 +91,19 @@
 
 <div class="evc-share-list">
 	<div class="evc-share-list-header">
-		<div class="evc-section-title">Shares on {server.name}</div>
+		<div class="evc-section-title">Synced folders</div>
 		<button class="mod-cta" on:click={() => dispatch('createShare')}>
-			Create Share
+			Add a folder
 		</button>
 	</div>
 
 	{#if loading}
-		<div class="evc-loading">Loading shares...</div>
+		<div class="evc-loading">Loading…</div>
 	{:else if error}
 		<div class="evc-error">{error}</div>
 	{:else if shares.length === 0}
 		<div class="evc-empty">
-			<p>No shares yet. Create your first share to get started!</p>
+			<p>Nothing syncs yet. Add a folder and it starts.</p>
 		</div>
 	{:else}
 		<div class="evc-share-items">

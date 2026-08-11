@@ -64,6 +64,7 @@ import {
 	type ShareScope,
 } from "./vaultScope";
 import { claimVpathIfUnclaimed, awaitVpathClaimSettled, wonVpathClaim } from "./uploadClaim";
+import { stampKnapMeta } from "./knapMeta";
 
 export interface SharedFolderSettings {
 	guid: string;
@@ -339,6 +340,19 @@ export class SharedFolder extends HasProvider {
 
 		void this.whenSynced().then(() => {
 			this.syncStore.start();
+			// Say what this share is, so Knap's page can call the row by the
+			// vault's name instead of a hostname. After the sync rather than in
+			// the constructor: the check against what is already there is only
+			// meaningful once the remote document has arrived, and it is what
+			// keeps this from being an update on every start.
+			try {
+				stampKnapMeta(this.ydoc, {
+					scope: this.scope,
+					vault: this.vault.getName(),
+				});
+			} catch (e) {
+				this.warn("could not stamp share identity", e);
+			}
 			try {
 				void this._persistence.set("path", this.path);
 				void this._persistence.set("relay", this.relayId || "");

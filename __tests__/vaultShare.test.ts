@@ -160,22 +160,37 @@ describe("the copy that goes with it", () => {
 		expect(second).toContain("plugins");
 	});
 
+	/** Every string this module puts in front of a person. */
+	const onScreen = (): string[] => [
+		...FIRST_SYNC_LINES,
+		FOLDERS_TOGGLE_LABEL,
+		foldersInsteadLine(0),
+		foldersInsteadLine(1),
+		foldersInsteadLine(4),
+		foldersToggleHint("folders"),
+		foldersToggleHint("whole-vault"),
+		switchConfirmation("folders", 0),
+		switchConfirmation("folders", 1),
+		switchConfirmation("whole-vault", 1),
+		switchConfirmation("whole-vault", 3),
+		switchedNotice("folders"),
+		switchedNotice("whole-vault"),
+		switchFailedLine("folders", "503"),
+		switchFailedLine("whole-vault", "503"),
+	];
+
 	test("no em-dashes anywhere in it", () => {
-		const lines = [
-			...FIRST_SYNC_LINES,
-			FOLDERS_TOGGLE_LABEL,
-			foldersInsteadLine(0),
-			foldersInsteadLine(1),
-			foldersToggleHint("folders"),
-			foldersToggleHint("whole-vault"),
-			switchConfirmation("folders", 1),
-			switchConfirmation("whole-vault", 3),
-			switchedNotice("folders"),
-			switchedNotice("whole-vault"),
-			switchFailedLine("whole-vault", "the server said no"),
-		];
-		for (const line of lines) {
+		for (const line of onScreen()) {
 			expect(line).not.toContain("—");
+		}
+	});
+
+	test("none of it says share, which is not one of the four words", () => {
+		// The screens say vault, folder and sync, and the words table in
+		// docs/ui-ux.md is the list. Share is the control plane's noun and
+		// stays in the code, where the comments above use it freely.
+		for (const line of onScreen()) {
+			expect(line.toLowerCase()).not.toContain("share");
 		}
 	});
 
@@ -207,8 +222,8 @@ describe("the copy that goes with it", () => {
 	});
 
 	test("the confirmation counts what it is about to remove", () => {
-		expect(switchConfirmation("whole-vault", 1)).toContain("Your shared folder");
-		expect(switchConfirmation("whole-vault", 3)).toContain("Your 3 shared folders");
+		expect(switchConfirmation("whole-vault", 1)).toContain("Your synced folder");
+		expect(switchConfirmation("whole-vault", 3)).toContain("Your 3 synced folders");
 	});
 
 	test("with nothing to remove, the confirmation does not claim there is", () => {

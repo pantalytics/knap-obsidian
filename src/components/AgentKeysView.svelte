@@ -276,7 +276,7 @@
 <!-- Main view -->
 <div class="ak-view">
 	<div class="ak-header-row">
-		<h3 class="ak-title">Agent Keys</h3>
+		<h3 class="ak-title">Agent keys</h3>
 		<button class="evc-small-btn mod-cta" on:click={() => openCreateModal()}>+ Create agent key</button>
 	</div>
 

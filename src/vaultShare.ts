@@ -156,15 +156,15 @@ export const FOLDERS_TOGGLE_LABEL = "Sync individual folders";
 
 export function foldersToggleHint(mode: VaultSyncMode): string {
 	return mode === "folders"
-		? "Only the folders you share go up. Right-click a folder in the file explorer to share one."
-		: "Everything in this vault goes up. Turn this on to pick folders instead.";
+		? "Only the folders you pick sync. Right-click a folder in the file explorer to sync it."
+		: "Everything in this vault syncs. Turn this on to pick folders instead.";
 }
 
-/** What to say when the setting is on and nothing has been shared yet. */
+/** What to say when the setting is on and no folder has been picked yet. */
 export function foldersInsteadLine(count: number): string {
 	if (count === 0) {
 		return (
-			"Nothing is syncing yet. Right-click a folder in the file explorer to share it, " +
+			"Nothing is syncing yet. Right-click a folder in the file explorer to sync it, " +
 			"or turn the setting off to sync the whole vault."
 		);
 	}
@@ -192,20 +192,18 @@ export function switchConfirmation(
 ): string {
 	if (next === "folders") {
 		const vault =
-			removing > 0
-				? "The whole vault stops syncing and comes off the server. "
-				: "";
+			removing > 0 ? "The whole vault stops syncing and comes off Knap. " : "";
 		return (
 			vault +
-			"Every folder you share after this uploads from scratch, which takes a while " +
+			"Every folder you sync after this uploads from scratch, which takes a while " +
 			"on a big vault. Your notes on this device are not touched."
 		);
 	}
 	const folders =
 		removing === 1
-			? "Your shared folder stops syncing and comes off the server. "
+			? "Your synced folder stops syncing and comes off Knap. "
 			: removing > 1
-				? `Your ${removing} shared folders stop syncing and come off the server. `
+				? `Your ${removing} synced folders stop syncing and come off Knap. `
 				: "";
 	return (
 		folders +
@@ -217,12 +215,12 @@ export function switchConfirmation(
 /** What to say once it has landed. */
 export function switchedNotice(next: VaultSyncMode): string {
 	return next === "folders"
-		? "Individual folders is on. Nothing syncs until you share a folder."
+		? "Individual folders is on. Nothing syncs until you pick a folder."
 		: "The whole vault is syncing.";
 }
 
 /**
- * What to say when a share would not come off the server.
+ * What to say when a share would not come off Knap.
  *
  * The switch stops at the first refusal rather than carrying on, because
  * finishing it would leave the setting saying one thing and the server doing

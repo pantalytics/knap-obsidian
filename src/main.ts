@@ -778,7 +778,7 @@ export default class Live extends Plugin {
 							) {
 								menu.addItem((item) => {
 									item
-										.setTitle("Knap Sync: share folder")
+										.setTitle("Knap Sync: sync this folder")
 										.setIcon("share-2")
 										.onClick(() => {
 											const modal = new QuickShareModal(this.app, this, file.path);
@@ -795,7 +795,7 @@ export default class Live extends Plugin {
 							// server and nothing to configure about it (ADR-0033).
 							menu.addItem((item) => {
 								item
-									.setTitle("Knap Sync: share settings")
+									.setTitle("Knap Sync: folder settings")
 									.setIcon("settings")
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
@@ -825,7 +825,7 @@ export default class Live extends Plugin {
 						} else {
 							menu.addItem((item) => {
 								item
-									.setTitle("Knap Sync: share settings")
+									.setTitle("Knap Sync: folder settings")
 									.setIcon("settings")
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
@@ -839,12 +839,12 @@ export default class Live extends Plugin {
 							if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
 								menu.addItem((item) => {
 									item
-										.setTitle("Knap Sync: unshare folder")
+										.setTitle("Knap Sync: stop syncing this folder")
 										.setIcon("folder-x")
 										.onClick(async () => {
 											const confirmed = await confirmDialog(
 												this.app,
-												`Are you sure you want to unshare "${folder.path}"?\n\nThis will remove the share from the server and disconnect this folder.`
+												`Stop syncing "${folder.path}"?\n\nThe folder stays in your vault. It stops syncing on every device, and Knap can no longer read it.`
 											);
 											if (!confirmed) return;
 
@@ -859,10 +859,10 @@ export default class Live extends Plugin {
 												// Remove local shared folder
 												this.sharedFolders.delete(folder);
 												this.folderNavDecorations?.quickRefresh();
-												new Notice(`Folder "${folder.path}" unshared`);
+												new Notice(`"${folder.path}" no longer syncs`);
 											} catch (error: unknown) {
 												new Notice(
-													`Failed to unshare: ${error instanceof Error ? error.message : "Unknown error"}`
+													`Could not stop syncing: ${error instanceof Error ? error.message : "Unknown error"}`
 												);
 											}
 										});

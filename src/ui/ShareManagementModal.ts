@@ -47,9 +47,9 @@ export class ShareManagementModal extends Modal {
 		this.initialShareId = initialShareId;
 
 		if (serverName) {
-			this.setTitle(`Shares on ${serverName}`);
+			this.setTitle("Synced folders");
 		} else {
-			this.setTitle("Knap Sync shares");
+			this.setTitle("Knap Sync folders");
 		}
 	}
 
@@ -68,7 +68,7 @@ export class ShareManagementModal extends Modal {
 
 		if (!this.plugin.shareClientManager && !this.plugin.shareClient) {
 			contentEl.createEl("p", {
-				text: "Please add a server and log in first.",
+				text: "Sign in first.",
 				cls: "relay-onprem-error",
 			});
 			return;
@@ -76,7 +76,7 @@ export class ShareManagementModal extends Modal {
 
 		// Loading state
 		const loadingDiv = contentEl.createDiv({ cls: "relay-onprem-loading" });
-		loadingDiv.createEl("p", { text: "Loading shares..." });
+		loadingDiv.createEl("p", { text: "Loading…" });
 
 		try {
 			await this.loadShares();
@@ -182,7 +182,7 @@ export class ShareManagementModal extends Modal {
 			const { contentEl } = this;
 			contentEl.empty();
 			const loadingDiv = contentEl.createDiv({ cls: "relay-onprem-loading" });
-			loadingDiv.createEl("p", { text: "Loading share details..." });
+			loadingDiv.createEl("p", { text: "Loading…" });
 
 			// Determine if current user is the owner (local check, no network)
 			const multiServerAuth = this.plugin.loginManager.getMultiServerAuthManager();
@@ -297,7 +297,7 @@ export class ShareManagementModal extends Modal {
 		headerDiv.addClass("evc-flex", "evc-justify-end", "evc-mb-3");
 
 		const createButton = headerDiv.createEl("button", {
-			text: "Create share",
+			text: "Add a folder",
 			cls: "mod-cta",
 		});
 		createButton.addEventListener("click", () => { void this.showCreateShareForm(); });
@@ -305,7 +305,7 @@ export class ShareManagementModal extends Modal {
 		// Shares list
 		if (this.shares.length === 0) {
 			contentEl.createEl("p", {
-				text: "No shares yet. Create your first share to get started!",
+				text: "Nothing syncs yet. Add a folder and it starts.",
 				cls: "relay-onprem-empty",
 			});
 			return;
@@ -377,7 +377,7 @@ export class ShareManagementModal extends Modal {
 		copyBtn.textContent = "Copy ID";
 		copyBtn.addEventListener("click", () => {
 			void navigator.clipboard.writeText(this.selectedShare!.id);
-			new Notice("Share ID copied to clipboard");
+			new Notice("Folder ID copied");
 		});
 
 		// Section order (v1.9.2): Local Folder → Members → Add Member → Invites → Agent Keys → Web Publishing → Actions
@@ -533,7 +533,7 @@ export class ShareManagementModal extends Modal {
 						.onClick(() => {
 							const modal = new FolderSuggestModal(
 								this.plugin.app,
-								"Choose local folder for this share...",
+								"Choose a folder on this device…",
 								new Set(),
 								this.plugin.sharedFolders,
 								(folderPath: string) => {
@@ -574,7 +574,7 @@ export class ShareManagementModal extends Modal {
 		// Visibility change dropdown (v1.8.3)
 		new Setting(contentEl)
 			.setName("Change visibility")
-			.setDesc("Control who can access this share")
+			.setDesc("Who can reach this folder")
 			.addDropdown((dropdown) => {
 				dropdown
 					.addOption("private", "Private - only members")
@@ -588,8 +588,8 @@ export class ShareManagementModal extends Modal {
 
 		// Delete share
 		new Setting(contentEl)
-			.setName("Delete share")
-			.setDesc("Permanently delete this share and remove all members")
+			.setName("Stop syncing")
+			.setDesc("The folder stays in your vault, stops syncing everywhere, and loses its members")
 			.addButton((button) => {
 				button
 					.setButtonText("Delete")
@@ -609,7 +609,7 @@ export class ShareManagementModal extends Modal {
 		if (visibility === "protected") {
 			const passwordInput = await promptDialog(this.app, "Enter password for protected share:");
 			if (!passwordInput) {
-				new Notice("Password is required for protected shares");
+				new Notice("A protected folder needs a password");
 				this.renderContent(); // Re-render to reset dropdown
 				return;
 			}
@@ -675,7 +675,7 @@ export class ShareManagementModal extends Modal {
 
 		new Setting(contentEl)
 			.setName("Publish to web")
-			.setDesc("Make this share accessible via a web URL")
+			.setDesc("Reachable at a web address")
 			.addToggle((toggle) => {
 				toggle
 					.setValue(isPublished)
@@ -1267,7 +1267,7 @@ export class ShareManagementModal extends Modal {
 
 		if (activeInvites.length === 0) {
 			contentEl.createEl("p", {
-				text: "No active invite links. Create one to share access.",
+				text: "No invite links. Create one to let somebody in.",
 				cls: "relay-onprem-empty",
 			});
 		} else {
@@ -1323,7 +1323,7 @@ export class ShareManagementModal extends Modal {
 
 		if (activeKeys.length === 0) {
 			contentEl.createEl("p", {
-				text: "No agent keys. Create one to allow programmatic access to this share.",
+				text: "No agent keys. Create one to let a program reach this folder.",
 				cls: "relay-onprem-empty",
 			});
 		} else {
@@ -1358,7 +1358,7 @@ export class ShareManagementModal extends Modal {
 		contentEl.empty();
 
 		const backButton = contentEl.createEl("button", {
-			text: "Back to share",
+			text: "Back to folder",
 			cls: "mod-muted evc-mb-3",
 		});
 		backButton.addEventListener("click", () => void this.loadShareDetails(this.selectedShare!));
@@ -1524,7 +1524,7 @@ export class ShareManagementModal extends Modal {
 
 		// Back button
 		const backButton = contentEl.createEl("button", {
-			text: "Back to share",
+			text: "Back to folder",
 			cls: "mod-muted evc-mb-3",
 		});
 		backButton.addEventListener("click", () => { void this.loadShareDetails(this.selectedShare!); });
@@ -1650,7 +1650,7 @@ export class ShareManagementModal extends Modal {
 			}
 			controlPlaneUrl = settings.servers[0].controlPlaneUrl;
 		} else {
-			new Notice("Share client not available");
+			new Notice("Not signed in");
 			return;
 		}
 
@@ -1705,7 +1705,7 @@ export class ShareManagementModal extends Modal {
 		});
 		backButton.addEventListener("click", () => this.renderContent());
 
-		contentEl.createEl("h3", { text: "Create new share" });
+		contentEl.createEl("h3", { text: "Add a folder" });
 
 		let selectedPath: string = "";
 		let kindSelect: HTMLSelectElement;
@@ -1717,7 +1717,7 @@ export class ShareManagementModal extends Modal {
 
 		if (loggedInServers.length === 0) {
 			contentEl.createEl("p", {
-				text: "You must be logged in to at least one server to create shares.",
+				text: "Sign in before adding a folder.",
 				cls: "relay-onprem-error",
 			});
 			return;
@@ -1730,8 +1730,8 @@ export class ShareManagementModal extends Modal {
 			selectedServerId = defaultServer?.id || loggedInServers[0].id;
 
 			new Setting(contentEl)
-				.setName("Server")
-				.setDesc("Select which server to create the share on")
+				.setName("Account")
+				.setDesc("Which account this folder syncs under")
 				.addDropdown((dropdown) => {
 					loggedInServers.forEach(server => {
 						const label = server.id === settings.defaultServerId
@@ -1761,7 +1761,7 @@ export class ShareManagementModal extends Modal {
 				.onClick(() => {
 					const modal = new FolderSuggestModal(
 						this.app,
-						"Choose folder for share...",
+						"Choose a folder…",
 						new Set(),
 						this.plugin.sharedFolders,
 						(folderPath: string) => {
@@ -1775,7 +1775,7 @@ export class ShareManagementModal extends Modal {
 
 		new Setting(contentEl)
 			.setName("Type")
-			.setDesc("Type of share")
+			.setDesc("A whole folder, or one note")
 			.addDropdown((dropdown) => {
 				kindSelect = dropdown.selectEl;
 				dropdown.addOption("doc", "Document");
@@ -1790,7 +1790,7 @@ export class ShareManagementModal extends Modal {
 
 		new Setting(passwordSettingEl)
 			.setName("Password")
-			.setDesc("Password required to access this share")
+			.setDesc("Password needed to open this folder")
 			.addText((text) => {
 				passwordInput = text.inputEl;
 				text.setPlaceholder("Enter password for protected share");
@@ -1799,7 +1799,7 @@ export class ShareManagementModal extends Modal {
 
 		new Setting(contentEl)
 			.setName("Visibility")
-			.setDesc("Who can access this share")
+			.setDesc("Who can reach this folder")
 			.addDropdown((dropdown) => {
 				visibilitySelect = dropdown.selectEl;
 				dropdown.addOption("private", "Private");
@@ -2044,7 +2044,7 @@ export class ShareManagementModal extends Modal {
 				await this.plugin.shareClient.removeMember(this.selectedShare.id, userId);
 			}
 
-			new Notice("Member removed from share");
+			new Notice("Member removed");
 			await this.loadShareDetails(this.selectedShare);
 		} catch (error: unknown) {
 			new Notice(
@@ -2083,7 +2083,7 @@ export class ShareManagementModal extends Modal {
 				this.plugin.folderNavDecorations?.quickRefresh();
 			}
 
-			new Notice("Share deleted successfully");
+			new Notice("Folder no longer syncs");
 			this.selectedShare = null;
 			this.members = [];
 			this.invites = [];
