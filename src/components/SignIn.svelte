@@ -302,7 +302,7 @@
 			<div class="knap-account-actions">
 				{#if server}
 					<button class="knap-btn" on:click={() => dispatch("openShares", { server })}>
-						Shared folders
+						Synced folders
 					</button>
 				{/if}
 				<button class="knap-btn" on:click={signOut}>Sign out</button>
@@ -323,7 +323,7 @@
 			<p class="knap-signin-hint">{syncInstruction(SIGNED_OUT)}</p>
 		{:else}
 			<p class="knap-signin-line">
-				Sign in with your Knap account. Then share this vault, or a folder in it.
+				Sign in with your Knap account and this vault starts syncing.
 			</p>
 		{/if}
 		{#if hasSignInButton(SIGNED_OUT)}

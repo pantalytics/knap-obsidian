@@ -115,19 +115,36 @@ side gets the button.
 
 ## The words
 
-| On screen | Not on screen |
+Four of them, and no others. This is Knap's ADR-0036, and the admin repo's
+`docs/nomenclature.md` carries the same table, because a person moves between
+the two applications in one sitting and matching up two vocabularies is not
+their job.
+
+| On screen | What it means |
 |---|---|
-| Vault | share, workspace, space |
-| Shared folder | share, relay |
-| Knap Sync | Relay Servers, relay-onprem, Obsidian servers |
-| The vault's own name | any hostname |
-| Sign in | pair, pairing code, token |
-| Can read, can edit | viewer, editor, role |
+| **Vault** | This Obsidian vault |
+| **Folder** | A folder in it that syncs. *Synced folder* the first time on a screen, plain *folder* after that |
+| **Sync** | What happens between them. **Knap Sync** is this settings tab and Knap's own page, the same two words on both sides |
+| **MCP** | How an AI reaches the vault |
+
+| Not on screen | Say instead |
+|---|---|
+| share, workspace, space | folder |
+| Relay Server, relay-onprem, Knap servers, Obsidian servers | Knap Sync |
+| relay, control plane, any hostname | Knap, or the vault |
+| pair, pairing code, token | **Sign in** |
+| viewer, editor, role | **can read**, **can edit** |
 
 *Relay* is upstream's word for their product and their server. Neither is
 something a person using this plugin has to know about, so neither reaches the
-screen. `Relay: share folder` becomes `Knap Sync: share folder`, for the same reason
-the settings section stopped being called Relay Servers.
+screen. `Relay: share folder` became `Knap Sync: sync this folder`, for the same
+reason the settings section stopped being called Relay Servers.
+
+**Upstream's own screens still say all of it**, and they are left that way on
+purpose. `Relays.svelte`, `ManageRelay.svelte`, `ManageSharedFolder.svelte` and
+`ManageRemoteFolder.svelte` only render when `isRelayOnPremMode()` is false,
+which it never is here, so nobody reads them. Renaming a file we rebase from
+upstream costs every future rebase to buy a word that is never shown.
 
 ## Permissions come from one place
 

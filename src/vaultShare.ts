@@ -84,6 +84,6 @@ export function foldersInsteadLine(count: number): string {
 	const folders = count === 1 ? "one folder" : `${count} folders`;
 	return (
 		`This vault syncs ${folders} rather than the whole thing. ` +
-		"The two cannot be combined, so unshare them if you want everything to sync."
+		"The two cannot be combined, so stop syncing them if you want everything to sync."
 	);
 }

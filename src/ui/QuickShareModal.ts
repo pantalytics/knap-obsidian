@@ -1,8 +1,8 @@
 /**
- * Quick Share Modal
+ * The context menu's "sync this folder", as a modal.
  *
- * Modal for quickly sharing a folder from context menu in relay-onprem mode.
- * Handles server selection if logged into multiple servers.
+ * The words on screen are ADR-0036's: a folder syncs, and there is no share
+ * and no server. The class, the client and the API call keep upstream's names.
  */
 
 import { App, Modal, Notice, Setting } from "obsidian";
@@ -22,7 +22,7 @@ export class QuickShareModal extends Modal {
 		private folderPath: string,
 	) {
 		super(app);
-		this.setTitle("Share folder");
+		this.setTitle("Sync this folder");
 	}
 
 	onOpen() {
@@ -39,7 +39,7 @@ export class QuickShareModal extends Modal {
 
 		if (loggedInServerIds.length === 0) {
 			contentEl.createEl("p", {
-				text: "Please log in to a server first.",
+				text: "Sign in first.",
 				cls: "relay-quick-share-error",
 			});
 			return;
@@ -65,8 +65,8 @@ export class QuickShareModal extends Modal {
 		// Server selector (only if multiple servers)
 		if (loggedInServers.length > 1) {
 			new Setting(contentEl)
-				.setName("Server")
-				.setDesc("Select which server to create the share on")
+				.setName("Account")
+				.setDesc("Which account this folder syncs under")
 				.addDropdown((dropdown) => {
 					loggedInServers.forEach((server) => {
 						dropdown.addOption(server.id, server.name);
@@ -81,7 +81,7 @@ export class QuickShareModal extends Modal {
 		} else if (loggedInServers.length === 1) {
 			// Show which server will be used (read-only)
 			new Setting(contentEl)
-				.setName("Server")
+				.setName("Account")
 				.setDesc(loggedInServers[0].name);
 		}
 
@@ -93,7 +93,7 @@ export class QuickShareModal extends Modal {
 		cancelBtn.addEventListener("click", () => this.close());
 
 		const createBtn = buttonContainer.createEl("button", {
-			text: "Create share",
+			text: "Start syncing",
 			cls: "mod-cta",
 		});
 		createBtn.addEventListener("click", () => { void this.createShare(); });
@@ -150,7 +150,7 @@ export class QuickShareModal extends Modal {
 		const server = getServerById(settings, this.selectedServerId);
 
 		if (!server) {
-			new Notice("Server not found");
+			new Notice("No account to sync under");
 			this.isCreating = false;
 			return;
 		}
@@ -186,11 +186,11 @@ export class QuickShareModal extends Modal {
 			// Refresh visual indicators
 			this.plugin.folderNavDecorations?.quickRefresh();
 
-			new Notice(`Folder shared on ${server.name}`);
+			new Notice(`${this.folderPath} is syncing now`);
 			this.close();
 		} catch (error: unknown) {
 			new Notice(
-				`Failed to create share: ${error instanceof Error ? error.message : "Unknown error"}`
+				`Could not start syncing: ${error instanceof Error ? error.message : "Unknown error"}`
 			);
 			this.isCreating = false;
 		}
