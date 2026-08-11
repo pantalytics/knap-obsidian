@@ -8,7 +8,7 @@ This page is the design the fork is being cut down to. It was settled on
 2026-08-11 against an interactive mockup, and the decisions behind it live as
 ADRs in the private admin repository, `knap-mcp-admin/docs/adr/`: **0030**
 (sign-in), **0031** (one control surface), **0032** (whole vault by default),
-**0033** (one server), **0034** (permissions), **0036** (individual folders is
+**0033** (one server), **0034** (permissions), **0039** (individual folders is
 one toggle). Where this page and an ADR disagree, the ADR wins.
 
 ## The one rule
@@ -74,7 +74,8 @@ that belong to this device.
 
 Somebody who wants less turns on **Sync individual folders**, the one setting on
 this screen, and then shares folders **from the file explorer, the way this
-plugin already works**: right-click a folder, *Knap: share folder*, at any depth.
+plugin already works**: right-click a folder, *Knap Sync: sync this folder*, at
+any depth.
 `Clients` and `Personal/Reading list` are both ordinary cases, which is why the
 table shows the path rather than the leaf name.
 
@@ -88,7 +89,7 @@ be shared separately*. So the toggle is a switch between two states rather than
 a third one, and flipping it is a single act: the shares the old mode owned come
 off the server first, and the setting is written only once they have all gone.
 
-**That order is the point of it existing** (ADR-0036). Unsharing folders one at a
+**That order is the point of it existing** (ADR-0039). Unsharing folders one at a
 time used to leave this plugin syncing nothing and the server still holding the
 shares, and neither half noticed. A refusal now stops the switch: what came off
 stays off, the setting still describes what is happening, and pressing the toggle
