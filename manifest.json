@@ -1,7 +1,7 @@
 {
 	"id": "knap-sync",
 	"name": "Knap Sync",
-	"version": "1.1.42",
+	"version": "1.1.43",
 	"minAppVersion": "1.8.7",
 	"description": "Sync your vault to a relay you host yourself, a whole vault or one folder at a time, with real-time collaborative editing on what you share.",
 	"author": "Pantalytics",

@@ -20,7 +20,7 @@ export const invalidLinkSyncAnnotation = Annotation.define();
 
 class FileWarningWidget extends WidgetType {
 	toDOM() {
-		const span = activeDocument.createElement("span");
+		const span = createSpan();
 		span.addClass("evc-inline-flex");
 		span.addClass("invalid-link");
 		// Use Obsidian's setIcon API instead of innerHTML for security

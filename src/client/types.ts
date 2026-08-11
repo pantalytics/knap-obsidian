@@ -59,15 +59,11 @@ export interface FileToken extends ClientToken {
 
 
 function base64ToString(input: string) {
-	if (typeof window !== "undefined" && window.atob) {
-		// Browser
-		return window.atob(input);
-	} else if (typeof Buffer !== "undefined") {
-		// Node.js
-		return Buffer.from(input, "base64").toString();
-	} else {
-		throw new Error("Unable to decode from Base64");
-	}
+	// Obsidian runs in a browser context on every platform, desktop and mobile
+	// alike, so window.atob is always there. The Node Buffer fallback upstream
+	// carried was unreachable here and only served to pull a Node global into a
+	// plugin that ships for phones.
+	return window.atob(input);
 }
 
 

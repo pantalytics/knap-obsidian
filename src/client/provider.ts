@@ -491,11 +491,10 @@ export class YSweetProvider extends Observable<string> {
 			);
 		};
 
-		if (typeof window !== "undefined") {
-			activeWindow.addEventListener("unload", this._unloadHandler);
-		} else if (typeof process !== "undefined") {
-			process.on("exit", this._unloadHandler);
-		}
+		// Upstream y-websocket also handled a Node process here. Obsidian always
+		// has a window, as the window.setInterval below assumes, so that branch
+		// was unreachable and its `process` reference broke the mobile lint.
+		activeWindow.addEventListener("unload", this._unloadHandler);
 
 		awareness.on("update", this._awarenessUpdateHandler);
 		this._checkInterval = window.setInterval(() => {
@@ -585,12 +584,8 @@ export class YSweetProvider extends Observable<string> {
 		this.awareness.destroy();
 		this._observers.clear();
 
-		if (typeof window !== "undefined") {
-			activeWindow.removeEventListener("unload", this._unloadHandler);
-			window.clearInterval(this.awareness._checkInterval as number | undefined);
-		} else if (typeof process !== "undefined") {
-			process.off("exit", this._unloadHandler);
-		}
+		activeWindow.removeEventListener("unload", this._unloadHandler);
+		window.clearInterval(this.awareness._checkInterval as number | undefined);
 		this.awareness.off("update", this._awarenessUpdateHandler);
 		this.doc.off("update", this._updateHandler);
 		super.destroy();

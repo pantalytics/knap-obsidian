@@ -135,7 +135,7 @@ export class LoggedOutView implements S3View {
 			this.clearLoginButton();
 			
 			// Create login button element
-			const loginButton = activeDocument.createElement("button");
+			const loginButton = createEl("button");
 			loginButton.className = "view-header-left system3-login-button";
 			loginButton.textContent = "Login to enable live edits";
 			loginButton.setAttribute("aria-label", "Login to enable live edits");
@@ -468,7 +468,7 @@ export class LiveView<ViewType extends TextFileView>
 			this.clearMergeButton();
 			
 			// Create merge button element
-			const mergeButton = activeDocument.createElement("button");
+			const mergeButton = createEl("button");
 			mergeButton.className = "view-header-left system3-merge-button";
 			mergeButton.textContent = "Merge conflict";
 			mergeButton.setAttribute("aria-label", "Merge conflict -- click to resolve");

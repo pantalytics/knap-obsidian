@@ -112,6 +112,10 @@ import type { IAuthProvider } from "./auth/IAuthProvider";
 import { RelayOnPremShareClient, type FolderItem } from "./RelayOnPremShareClient";
 import { RelayOnPremShareClientManager, type ShareWithServer } from "./RelayOnPremShareClientManager";
 import { QuickShareModal } from "./ui/QuickShareModal";
+// ShareManagementModal only imports main.ts for its type, which erases at
+// compile time, so there is no runtime cycle for a plain import to trip over.
+// It was being pulled in with require() at three call sites instead.
+import { ShareManagementModal } from "./ui/ShareManagementModal";
 import { confirmDialog } from "./ui/dialogs";
 import { LocalStorage } from "./LocalStorage";
 
@@ -462,7 +466,6 @@ export default class Live extends Plugin {
 
 		// Our own ribbon icon: a note kept in step with a server
 		addIcon("knap-sync", `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"><path d="M18.5 44.4a32 32 0 0 1 63 0"/><path d="M87.3 31.2 81.5 44.4 71.5 34"/><path d="M81.5 55.6a32 32 0 0 1-63 0"/><path d="M12.7 68.8 18.5 55.6 28.5 66"/><circle cx="50" cy="50" r="7" fill="currentColor" stroke="none"/></svg>`);
-		// eslint-disable-next-line obsidianmd/ui/sentence-case -- the plugin's own name
 		this.addRibbonIcon("knap-sync", "Knap Sync", () => {
 			void this.openSettings();
 		});
@@ -890,8 +893,6 @@ export default class Live extends Plugin {
 									.setIcon("settings")
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
-											// eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for optional polyfill
-											const { ShareManagementModal } = require("./ui/ShareManagementModal") as typeof import("./ui/ShareManagementModal");
 											new ShareManagementModal(this.app, this, folder.settings.onpremServerId, undefined, folder.guid).open();
 										} else {
 											void this.openSettings(`/shared-folders?id=${folder.guid}`);
@@ -922,8 +923,6 @@ export default class Live extends Plugin {
 									.setIcon("settings")
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
-											// eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for optional polyfill
-											const { ShareManagementModal } = require("./ui/ShareManagementModal") as typeof import("./ui/ShareManagementModal");
 											new ShareManagementModal(this.app, this, folder.settings.onpremServerId, undefined, folder.guid).open();
 										} else {
 											void this.openSettings(`/shared-folders?id=${folder.guid}`);
@@ -1286,7 +1285,6 @@ export default class Live extends Plugin {
 		// Use the same registered knap-sync icon as ribbon
 		const iconEl = statusBarItem.createSpan({ cls: "relay-status-icon" });
 		setIcon(iconEl, "knap-sync");
-		// eslint-disable-next-line obsidianmd/ui/sentence-case -- the plugin's own name
 		statusBarItem.setAttribute("aria-label", "Knap Sync status");
 		statusBarItem.setAttribute("data-tooltip-position", "top");
 		statusBarItem.addClass("evc-cursor-pointer");
@@ -1322,8 +1320,6 @@ export default class Live extends Plugin {
 					.setTitle("Manage shares")
 					.setIcon("folder-shared")
 					.onClick(() => {
-						// eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for optional polyfill
-						const { ShareManagementModal } = require("./ui/ShareManagementModal") as typeof import("./ui/ShareManagementModal");
 						new ShareManagementModal(this.app, this).open();
 					});
 			});

@@ -815,7 +815,10 @@ export class SharedFolder extends HasProvider {
 		// Without this, cleanupExtraLocalFiles may see incomplete remote state
 		// and delete files that exist on the server but haven't been received yet.
 		await this.onceProviderSynced();
-		this.addLocalDocs();
+		// addLocalDocs is async and claims against the divergent-guid race, so
+		// syncFileTree must not start until it has finished. The other caller
+		// (whenReady) awaits it for the same reason.
+		await this.addLocalDocs();
 		await this.syncFileTree(this.syncStore);
 		this.backgroundSync.enqueueSharedFolderSync(this);
 	}
