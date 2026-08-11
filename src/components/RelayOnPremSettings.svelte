@@ -61,7 +61,7 @@
 	}
 
 	// Signing out drops back to the sign-in screen: everything past it needs
-	// an account, and a stale share list is worse than no share list.
+	// an account, and a stale folder list is worse than no folder list.
 	function handleSignedOut() {
 		selectedServer = null;
 		selectedShare = null;
@@ -77,22 +77,25 @@
 		];
 
 		if (server && view !== "home") {
+			// The crumb is what the screen behind it holds, not the machine it
+			// came from (ADR-0038). There is one account and naming it here
+			// would be a hostname in a breadcrumb.
 			items.push({
 				type: "text",
-				text: server.name,
+				text: "Folders",
 				onClick: () => navigateTo("shares"),
 			});
 		}
 
 		if (view === "createShare") {
-			items.push({ type: "text", text: "Create Share" });
+			items.push({ type: "text", text: "Add a folder" });
 		} else if (view === "createInvite" && share) {
 			items.push({
 				type: "text",
 				text: share.path,
 				onClick: () => navigateTo("shareDetail"),
 			});
-			items.push({ type: "text", text: "Create Invite" });
+			items.push({ type: "text", text: "Invite somebody" });
 		} else if (view === "agentKeys") {
 			if (share) {
 				items.push({
@@ -101,7 +104,7 @@
 					onClick: () => navigateTo("shareDetail"),
 				});
 			}
-			items.push({ type: "text", text: "Agent Keys" });
+			items.push({ type: "text", text: "Agent keys" });
 		} else if (share && (view === "shareDetail")) {
 			items.push({ type: "text", text: share.path });
 		}

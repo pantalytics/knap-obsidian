@@ -69,7 +69,7 @@
 			invites = invitesResult;
 			editingSlug = currentShare.web_slug || "";
 		} catch (e: unknown) {
-			new Notice(`Failed to load share details: ${e instanceof Error ? e.message : "Unknown error"}`);
+			new Notice(`Could not load this folder: ${e instanceof Error ? e.message : "Unknown error"}`);
 		} finally {
 			loading = false;
 		}
@@ -116,7 +116,7 @@
 
 	function copyId() {
 		navigator.clipboard.writeText(currentShare.id);
-		new Notice("Share ID copied");
+		new Notice("Folder ID copied");
 	}
 
 	// Members
@@ -227,9 +227,9 @@
 	async function updateVisibility(newVisibility: string) {
 		let password: string | undefined;
 		if (newVisibility === "protected") {
-			const input = await promptDialog(plugin.app, "Enter password for protected share:");
+			const input = await promptDialog(plugin.app, "Password for this folder:");
 			if (!input) {
-				new Notice("Password is required for protected shares");
+				new Notice("A protected folder needs a password");
 				currentShare = { ...currentShare }; // trigger re-render to reset
 				return;
 			}
@@ -271,7 +271,7 @@
 				plugin.sharedFolders.delete(localFolder);
 				plugin.folderNavDecorations?.quickRefresh();
 			}
-			new Notice("Share deleted");
+			new Notice("Folder no longer syncs");
 			dispatch("deleted");
 		} catch (e: unknown) {
 			new Notice(`Failed to delete: ${e instanceof Error ? e.message : "Unknown error"}`);
@@ -284,7 +284,7 @@
 			// Private shares need visibility change before web publishing
 			const newVisibility = await choiceDialog(
 				plugin.app,
-				'This share is private. Web publishing requires "public" or "protected" visibility. Choose how you want to publish:',
+				'This folder is private. Web publishing needs "public" or "protected" visibility. Choose how you want to publish:',
 				[
 					{ label: "Make public (open access)", value: "public" },
 					{ label: "Make protected (password)", value: "protected" },
@@ -562,7 +562,7 @@
 	function connectToFolder() {
 		const modal = new FolderSuggestModal(
 			plugin.app,
-			"Choose local folder for this share...",
+			"Choose a folder on this device…",
 			new Set(),
 			plugin.sharedFolders,
 			(folderPath: string) => {
@@ -583,7 +583,7 @@
 	}
 
 	async function disconnectFolder() {
-		if (!(await confirmDialog(plugin.app, `Disconnect local folder "${localFolderPath}" from this share? Local files will not be deleted.`))) return;
+		if (!(await confirmDialog(plugin.app, `Disconnect "${localFolderPath}" from this folder? Nothing on this device is deleted.`))) return;
 		const localFolder = plugin.sharedFolders.find((sf) => sf.guid === share.id);
 		if (localFolder) {
 			plugin.sharedFolders.delete(localFolder);
@@ -596,9 +596,9 @@
 
 <div class="evc-share-detail">
 	{#if loading}
-		<div class="evc-loading">Loading share details...</div>
+		<div class="evc-loading">Loading…</div>
 	{:else}
-		<!-- Share Info -->
+		<!-- Folder info -->
 		<div class="evc-detail-header">
 			<h3 class="evc-detail-title">{currentShare.path}</h3>
 			<div class="evc-detail-badges">
@@ -718,7 +718,7 @@
 				<button class="evc-small-btn" on:click={() => dispatch('agentKeys')}>Manage</button>
 			</div>
 			<div class="evc-setting-desc">
-				API keys for automated agents to access this share without your login credentials.
+				API keys, so an automated agent can reach this folder without your sign-in.
 			</div>
 		</div>
 		{/if}
@@ -800,7 +800,7 @@
 				<div class="evc-setting-row">
 					<div class="evc-setting-info">
 						<span>Change Visibility</span>
-						<span class="evc-setting-desc">Control who can access this share</span>
+						<span class="evc-setting-desc">Who can reach this folder</span>
 					</div>
 					<select
 						class="dropdown"
@@ -815,8 +815,8 @@
 
 				<div class="evc-setting-row">
 					<div class="evc-setting-info">
-						<span>Delete Share</span>
-						<span class="evc-setting-desc">Permanently delete this share</span>
+						<span>Stop syncing</span>
+						<span class="evc-setting-desc">The folder stays in your vault and stops syncing everywhere</span>
 					</div>
 					<button class="evc-btn-danger" on:click={deleteShare}>Delete</button>
 				</div>

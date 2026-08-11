@@ -2,7 +2,7 @@
 
 **Your vault on Knap, on every device you use.** A whole vault or one folder at
 a time, on desktop and on phone, with real-time collaborative editing on
-whatever you share.
+whatever syncs.
 
 Knap Sync keeps your notes as plain markdown in your vault. Knap holds a CRDT
 copy, so two people can edit the same note without a merge conflict and a device
@@ -12,7 +12,7 @@ that was offline catches up when it reconnects.
 
 ## What it does
 
-- **Sync a whole vault, or pick folders.** Sync everything, or share
+- **Sync a whole vault, or pick folders.** Sync everything, or sync
   `Projects/` and leave the rest of the vault alone.
 - **Two people, one note.** Edits merge as you type. No conflict copies, no
   last-writer-wins.
@@ -61,10 +61,11 @@ code to paste, on a laptop or on a phone.
 That button is the only way in. There is nothing else to try and nothing behind
 it to choose.
 
-Then share a folder, or sync the whole vault, and the first sync starts.
+The whole vault starts syncing on its own. To sync some folders instead, pick
+them in the same tab; it is one or the other, never a mixture.
 
-There is one Knap server and the plugin talks to that one. If you want to run
-your own, [EVC Team Relay](https://github.com/entire-vc/evc-team-relay-obsidian-plugin)
+The plugin talks to Knap and nothing else, so there is no address to configure.
+If you want to run your own, [EVC Team Relay](https://github.com/entire-vc/evc-team-relay-obsidian-plugin)
 is the plugin for it, and this one is a fork of it.
 
 ---
@@ -86,9 +87,9 @@ in through one.
 
 | Connection | Protocol | What for | When |
 |---|---|---|---|
-| Control plane | HTTPS | Sign-in, token refresh, listing and creating shares, inviting people | On login and on share operations |
+| Control plane | HTTPS | Sign-in, token refresh, listing and adding folders, inviting people | On sign-in, and when a folder changes |
 | Control plane | HTTPS | Issuing the short-lived token for a sync connection | Before opening a socket |
-| Sync server | WSS | The document sync itself | While a shared note is open, and while catching up |
+| Sync server | WSS | The document sync itself | While a synced note is open, and while catching up |
 | Identity provider | HTTPS | The sign-in page itself | Only while you are signing in |
 | `obsidian://` callback | Obsidian URL scheme | Receiving the sign-in redirect | During sign-in only |
 

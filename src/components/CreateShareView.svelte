@@ -61,7 +61,7 @@
 	function choosePath() {
 		const modal = new FolderSuggestModal(
 			plugin.app,
-			"Choose folder for share...",
+			"Choose a folder…",
 			new Set(),
 			plugin.sharedFolders,
 			(folderPath: string) => {
@@ -91,8 +91,8 @@
 		registerLocalFolder(share);
 		new Notice(
 			madeHere
-				? `${share.path} is now shared.`
-				: `${share.path} is already shared.`,
+				? `${share.path} is syncing now.`
+				: `${share.path} already syncs.`,
 		);
 		dispatch("created", { share });
 	}
@@ -110,7 +110,7 @@
 			return;
 		}
 		if (duplicate) {
-			error = `${duplicate.path} is already shared. Open it from the list instead of making a second one.`;
+			error = `${duplicate.path} already syncs. Open it from the list instead of adding it twice.`;
 			return;
 		}
 
@@ -145,14 +145,14 @@
 		}
 	}
 
-	// A create that throws has not always failed. The server can write the share
-	// and then the reply is what goes wrong, which is how a folder ended up shared
-	// on the control plane while the form sat there saying nothing. So ask the
-	// server what it has before telling anyone the folder was not shared.
+	// A create that throws has not always failed. The server can write the record
+	// and then the reply is what goes wrong, which is how a folder ended up
+	// syncing while the form sat there saying nothing. So ask what is there
+	// before telling anyone the folder was not added.
 	async function reportFailure(e: unknown, path: string, knewShares: boolean) {
 		if (e instanceof LimitExceededApiError) {
 			const info = e.limitInfo;
-			error = `You are using ${info.current} of ${info.max} shared folders on the ${info.plan} plan. Upgrade to add another.`;
+			error = `You are syncing ${info.current} of ${info.max} folders on the ${info.plan} plan. Upgrade to add another.`;
 			return;
 		}
 
@@ -165,12 +165,12 @@
 			return;
 		}
 
-		error = `${path} was not shared. ${e instanceof Error ? e.message : "The server gave no reason."}`;
+		error = `${path} was not added. ${e instanceof Error ? e.message : "No reason came back."}`;
 	}
 </script>
 
 <div class="evc-create-share">
-	<div class="evc-section-title">Create New Share</div>
+	<div class="evc-section-title">Add a folder</div>
 
 	{#if error}
 		<div class="evc-form-error" role="alert">{error}</div>
@@ -180,12 +180,12 @@
 		<label for="evc-path-btn">Path</label>
 		<div class="evc-path-selector">
 			<button id="evc-path-btn" class="evc-path-btn" on:click={choosePath}>
-				{selectedPath || "Choose folder..."}
+				{selectedPath || "Choose a folder…"}
 			</button>
 		</div>
 		{#if duplicate}
 			<div class="evc-form-warning">
-				This folder is already shared.
+				This folder already syncs.
 			</div>
 		{/if}
 	</div>
@@ -201,9 +201,9 @@
 	<div class="evc-form-field">
 		<label for="evc-visibility">Visibility</label>
 		<select id="evc-visibility" class="dropdown" bind:value={visibility}>
-			<option value="private">Private - Only members</option>
-			<option value="public">Public - Anyone with link</option>
-			<option value="protected">Protected - Password required</option>
+			<option value="private">Private, only people you add</option>
+			<option value="public">Public, anyone with the link</option>
+			<option value="protected">Protected, password needed</option>
 		</select>
 	</div>
 
@@ -213,7 +213,7 @@
 			<input
 				id="evc-password"
 				type="password"
-				placeholder="Enter password for protected share"
+				placeholder="Password for this folder"
 				bind:value={password}
 			/>
 		</div>
@@ -221,7 +221,7 @@
 
 	<div class="evc-form-actions">
 		<button class="mod-cta" on:click={handleCreate} disabled={creating || !!duplicate}>
-			{creating ? "Creating..." : "Create Share"}
+			{creating ? "Adding…" : "Add folder"}
 		</button>
 		<button on:click={() => dispatch('cancel')}>Cancel</button>
 	</div>
