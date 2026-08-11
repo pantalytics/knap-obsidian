@@ -18,6 +18,10 @@ import { withOutboundSyncGuard } from "../WebSyncManager";
 
 export class ShareManagementModal extends Modal {
 	private shares: ShareWithServer[] = [];
+	// Whether this.shares reflects an answer from the server. An empty list
+	// because the lookup failed is not the same as an empty list because
+	// nothing is shared, and only the second one can rule out a duplicate.
+	private sharesLoaded = false;
 	private selectedShare: ShareWithServer | null = null;
 	private members: ShareMember[] = [];
 	private invites: Invite[] = [];
@@ -164,6 +168,7 @@ export class ShareManagementModal extends Modal {
 				serverName: "Default Server",
 			}));
 		}
+		this.sharesLoaded = true;
 	}
 
 	private async loadShareDetails(share: ShareWithServer) {
@@ -1839,14 +1844,14 @@ export class ShareManagementModal extends Modal {
 
 					// Validate password for protected shares
 					if (visibility === "protected" && !password) {
-						showError("A protected share needs a password.");
+						showError("A protected folder needs a password.");
 						return;
 					}
 
 					const duplicate = this.findExistingShare(path, selectedServerId);
 					if (duplicate) {
 						showError(
-							`${duplicate.path} is already shared on ${duplicate.serverName}. Open it from the share list instead.`,
+							`${duplicate.path} is already shared. Open it from the list instead of making a second one.`,
 						);
 						return;
 					}
@@ -1877,6 +1882,12 @@ export class ShareManagementModal extends Modal {
 		showError?: (message: string) => void,
 	) {
 		let share: RelayOnPremShare | undefined;
+		// Set when the share was found after a throw rather than returned by the
+		// create. Together with a list that was loaded before sending, which
+		// confirmed the folder was unshared a moment ago, that is what lets the
+		// throw be read as this create having landed anyway.
+		let recovered = false;
+		const knewShares = this.sharesLoaded;
 
 		try {
 			const createRequest = {
@@ -1901,7 +1912,7 @@ export class ShareManagementModal extends Modal {
 			share = this.findExistingShare(path, serverId);
 
 			if (!share) {
-				const message = `The share was not created. ${error instanceof Error ? error.message : "The server gave no reason."}`;
+				const message = `${path} was not shared. ${error instanceof Error ? error.message : "The server gave no reason."}`;
 				if (showError) {
 					showError(message);
 				} else {
@@ -1909,9 +1920,14 @@ export class ShareManagementModal extends Modal {
 				}
 				return;
 			}
+			recovered = true;
 		}
 
-		new Notice(`Share "${share.path}" created successfully!`);
+		new Notice(
+			recovered && !knewShares
+				? `${share.path} is already shared.`
+				: `${share.path} is now shared.`,
+		);
 
 		// Create local SharedFolder for visual indicators and sync
 		if (share.kind === "folder") {

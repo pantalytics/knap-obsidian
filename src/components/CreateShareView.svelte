@@ -85,9 +85,15 @@
 		}
 	}
 
-	function finish(share: RelayOnPremShare) {
+	// madeHere is false when the folder turned out to be shared but this form
+	// cannot claim to be what shared it, so the notice does not say it did.
+	function finish(share: RelayOnPremShare, madeHere = true) {
 		registerLocalFolder(share);
-		new Notice(`Share "${share.path}" created!`);
+		new Notice(
+			madeHere
+				? `${share.path} is now shared.`
+				: `${share.path} is already shared.`,
+		);
 		dispatch("created", { share });
 	}
 
@@ -100,13 +106,18 @@
 			return;
 		}
 		if (visibility === "protected" && !password.trim()) {
-			error = "A protected share needs a password.";
+			error = "A protected folder needs a password.";
 			return;
 		}
 		if (duplicate) {
-			error = `${duplicate.path} is already shared on ${server.name}. Open it from the share list instead.`;
+			error = `${duplicate.path} is already shared. Open it from the list instead of making a second one.`;
 			return;
 		}
+
+		// Whether the server's list was in hand before sending. Reaching here with
+		// it means the folder was confirmed unshared a moment ago, which is what
+		// lets a share found afterwards be read as this create having landed.
+		const knewShares = knowExistingShares;
 
 		creating = true;
 		try {
@@ -128,20 +139,20 @@
 
 			finish(share);
 		} catch (e: unknown) {
-			await reportFailure(e, path);
+			await reportFailure(e, path, knewShares);
 		} finally {
 			creating = false;
 		}
 	}
 
 	// A create that throws has not always failed. The server can write the share
-	// and then the reply is what goes wrong, which is how a share ended up on the
-	// control plane while the form sat there saying nothing. So ask the server
-	// what it has before telling anyone the share was not created.
-	async function reportFailure(e: unknown, path: string) {
+	// and then the reply is what goes wrong, which is how a folder ended up shared
+	// on the control plane while the form sat there saying nothing. So ask the
+	// server what it has before telling anyone the folder was not shared.
+	async function reportFailure(e: unknown, path: string, knewShares: boolean) {
 		if (e instanceof LimitExceededApiError) {
 			const info = e.limitInfo;
-			error = `You are using ${info.current} of ${info.max} shares on the ${info.plan} plan. Upgrade to create another one.`;
+			error = `You are using ${info.current} of ${info.max} shared folders on the ${info.plan} plan. Upgrade to add another.`;
 			return;
 		}
 
@@ -150,11 +161,11 @@
 			? findShareForPath(existingShares, path)
 			: undefined;
 		if (landed) {
-			finish(landed);
+			finish(landed, knewShares);
 			return;
 		}
 
-		error = `The share was not created. ${e instanceof Error ? e.message : "The server gave no reason."}`;
+		error = `${path} was not shared. ${e instanceof Error ? e.message : "The server gave no reason."}`;
 	}
 </script>
 
@@ -174,7 +185,7 @@
 		</div>
 		{#if duplicate}
 			<div class="evc-form-warning">
-				This folder already has a share on {server.name}.
+				This folder is already shared.
 			</div>
 		{/if}
 	</div>
