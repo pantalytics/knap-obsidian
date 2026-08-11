@@ -494,7 +494,7 @@ export class LiveView<ViewType extends TextFileView>
 				try {
 					stale = await this.document.checkStale();
 				} catch (e: unknown) {
-					console.warn("[Relay] setMergeButton checkStale failed:", (e as Error).message);
+					console.warn("[Knap Sync] setMergeButton checkStale failed:", (e as Error).message);
 					this.clearMergeButton();
 					return;
 				}
@@ -546,7 +546,7 @@ export class LiveView<ViewType extends TextFileView>
 					try {
 						stale = await this.document.checkStale();
 					} catch (e: unknown) {
-						console.warn("[Relay] mergeBanner checkStale failed:", (e as Error).message);
+						console.warn("[Knap Sync] mergeBanner checkStale failed:", (e as Error).message);
 						return true;
 					}
 					if (!stale) {
@@ -659,7 +659,7 @@ export class LiveView<ViewType extends TextFileView>
 		} catch (e: unknown) {
 			// HTTP download failed (e.g., 401 with CWT tokens on relay-server).
 			// Return false — rely on WS sync for CRDT state.
-			console.warn("[Relay] LiveView.checkStale failed, relying on WS sync:", (e as Error).message);
+			console.warn("[Knap Sync] LiveView.checkStale failed, relying on WS sync:", (e as Error).message);
 			return false;
 		}
 		if (stale && this.document._diskBuffer?.contents) {
@@ -895,13 +895,13 @@ export class LiveViewManager {
 
 
 	goOffline() {
-		this.log("[System 3][Relay][Live Views] going offline");
+		this.log("[Knap Sync][Live Views] going offline");
 		this.views.forEach((view) => view.document?.disconnect());
 		void this.refresh("[NetworkStatus]");
 	}
 
 	goOnline() {
-		this.log("[System 3][Relay][Live Views] going online");
+		this.log("[Knap Sync][Live Views] going online");
 		void this.refresh("[NetworkStatus]");
 		this.sharedFolders.items().forEach((folder: SharedFolder) => {
 			void folder.connect();
@@ -1004,7 +1004,7 @@ export class LiveViewManager {
 						);
 						views.push(view);
 					} catch (e: unknown) {
-						this.warn(`[Relay] Error getting doc for view ${viewFilePath}`, e);
+						this.warn(`[Knap Sync] Error getting doc for view ${viewFilePath}`, e);
 					}
 				} else {
 					this.log(`Folder not ready, skipping views. folder=${folder.path}`);
@@ -1036,7 +1036,7 @@ export class LiveViewManager {
 							const view = new RelayCanvasView(this, canvasView, doc);
 							views.push(view);
 						} catch (e: unknown) {
-							this.warn(`[Relay] Error getting canvas for view ${viewFilePath}`, e);
+							this.warn(`[Knap Sync] Error getting canvas for view ${viewFilePath}`, e);
 						}
 					} else {
 						this.log(`Folder not ready, skipping views. folder=${folder.path}`);
@@ -1110,7 +1110,7 @@ export class LiveViewManager {
 
 		if (attemptedConnections > backgroundConnections) {
 			this.warn(
-				`[System 3][Relay][Live Views] connection pool (max ${backgroundConnections}): rejected connections for ${
+				`[Knap Sync][Live Views] connection pool (max ${backgroundConnections}): rejected connections for ${
 					attemptedConnections - backgroundConnections
 				} views`,
 			);
@@ -1178,7 +1178,7 @@ export class LiveViewManager {
 		try {
 			views = this.getViews();
 		} catch (e: unknown) {
-			this.warn("[System 3][Relay][Live Views] error getting views", e);
+			this.warn("[Knap Sync][Live Views] error getting views", e);
 			return false;
 		}
 		const activeDocumentFolders = this.findFolders();
