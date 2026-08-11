@@ -1,16 +1,21 @@
 # CI — Team Relay Obsidian Plugin
 # Based on F3 ci-ts-plugin template (bob/docs/ci-templates/ci-ts-plugin.yml)
 #
-# Burn-in mode: all jobs use continue-on-error: true (non-blocking REPORT).
-# To flip to ENFORCE: set continue-on-error: false on each job and set
-# CI_MODE=ENFORCE in repo Settings → Variables → Actions.
+# The gate enforces by default. Individual jobs keep continue-on-error: true so
+# that one red job does not hide the others: every job runs, and ci-gate is the
+# single check that fails the run. Set CI_MODE=REPORT in repo Settings →
+# Variables → Actions to make failures informational again, which is the escape
+# hatch for a bad day rather than the normal state.
 
 name: CI
 
 on:
   pull_request:
+  # The default branch is knap/fork-base, not main. Naming main here meant no CI
+  # ever ran on a merge: the PR run was the last word, and anything that only
+  # breaks once two PRs are combined landed unnoticed.
   push:
-    branches: [main]
+    branches: [knap/fork-base]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -216,7 +221,7 @@ jobs:
     steps:
       - name: Check outcomes
         run: |
-          MODE="${{ vars.CI_MODE || 'REPORT' }}"
+          MODE="${{ vars.CI_MODE || 'ENFORCE' }}"
           TC="${{ needs.type-check.result }}"
           UC="${{ needs.unit-coverage.result }}"
           BS="${{ needs.build-smoke.result }}"
@@ -234,5 +239,5 @@ jobs:
               exit 1
             fi
           else
-            echo "REPORT mode — failures are informational. Flip CI_MODE=ENFORCE after 3-day green burn-in."
+            echo "REPORT mode — failures are informational. Unset the CI_MODE variable to enforce again."
           fi

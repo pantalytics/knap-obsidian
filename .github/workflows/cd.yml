@@ -1,0 +1,59 @@
+name: CD
+# A release happens when the version changes, and never otherwise.
+#
+# The trigger is a version bump landing on the default branch, not a merge: most
+# merges are not releases, and the ones that are say so in manifest.json. CI
+# already refuses a bump where manifest.json, package.json, versions.json and
+# manifest-beta.json disagree, or where the version is not strictly greater than
+# the last release, so by the time a bump is on the default branch it is a
+# release-shaped commit.
+#
+# This file only decides whether to release. The building, attesting and
+# publishing all stay in release.yml, called below, so there is one description
+# of what a release is.
+on:
+  push:
+    branches: [knap/fork-base]
+    paths: ['manifest.json']
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    name: "Is this version already released?"
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      needed: ${{ steps.check.outputs.needed }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VER=$(node -p "require('./manifest.json').version")
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          # manifest.json changes for reasons other than a version bump, and a
+          # re-run of an old commit is a real thing. Either way the question is
+          # the same: does this version already exist as a release.
+          if gh release view "$VER" >/dev/null 2>&1; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "$VER is already released. Nothing to do."
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "$VER has no release yet. Cutting one."
+          fi
+
+  release:
+    name: "Release"
+    needs: decide
+    if: needs.decide.outputs.needed == 'true'
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/release.yml
+    with:
+      version: ${{ needs.decide.outputs.version }}
