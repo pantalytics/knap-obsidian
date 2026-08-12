@@ -1,9 +1,14 @@
 import {
 	decideVaultShare,
+	joinButtonLabel,
+	joinPreviewLines,
+	newVaultBesideLine,
 	planFolderCleanup,
 	replaceFoldersConfirmation,
 	replaceFoldersFailedLine,
 	replaceFoldersLine,
+	JOIN_HELD_NOTE,
+	VAULT_NAME_IS_THE_KEY,
 	VAULT_SCOPE_NOTE,
 	REPLACE_FOLDERS_LABEL,
 	type LocalShare,
@@ -122,6 +127,93 @@ describe("clearing folder shares out of the way", () => {
 	});
 });
 
+describe("the name is the key, and now it says so (#42)", () => {
+	test("the rule is on the screen in the words the code follows", () => {
+		// decideVaultShare matches on `share.path === vaultName` and nothing
+		// else. Until this line existed, nothing anywhere said so.
+		const said = VAULT_NAME_IS_THE_KEY.toLowerCase();
+		expect(said).toContain("name");
+		expect(said).toContain("second vault");
+	});
+
+	test("the rule says what to do about it, not only what happens", () => {
+		// The row carries the vault's name in its value; this is the line under
+		// it, so it has to stand on its own without repeating the name.
+		const said = VAULT_NAME_IS_THE_KEY.toLowerCase();
+		expect(said).toContain("same name");
+		expect(said).toContain("another device");
+	});
+
+	test("what will be joined is named before it is joined", () => {
+		const said = joinPreviewLines({ vaultName: "Second Brain" }).join(" ");
+		expect(said).toContain("Knap already has a vault called Second Brain");
+		expect(said).toContain("The name is the only thing Knap matches on");
+	});
+
+	test("the day the vault was made is the one fact that settles it", () => {
+		// The share record carries created_at. It is the difference between the
+		// vault somebody made yesterday and one from months ago that went bad.
+		const said = joinPreviewLines({
+			vaultName: "V",
+			createdAt: "2026-08-11T09:14:00Z",
+		}).join(" ");
+		expect(said).toContain("added to Knap on 11 August 2026");
+	});
+
+	test("a date Knap did not send is left out rather than guessed at", () => {
+		for (const createdAt of [undefined, "", "the other day"]) {
+			const said = joinPreviewLines({ vaultName: "V", createdAt }).join(" ");
+			expect(said).not.toContain("added to Knap on");
+			expect(said).not.toContain("Invalid");
+		}
+	});
+
+	test("no note count and no device count, because Knap will not say", () => {
+		// The issue asked for "N notes and 2 other devices". A share record has
+		// neither, the files index is the web publishing artifact list and reads
+		// 0 on a private vault, and there is no device list on this side of the
+		// API at all. Saying what is known beats inventing the rest.
+		const said = joinPreviewLines({
+			vaultName: "V",
+			createdAt: "2026-08-11T09:14:00Z",
+		}).join(" ");
+		expect(said).not.toMatch(/\d+ notes?\b/);
+		expect(said).not.toMatch(/\d+ (other )?devices?\b/);
+	});
+
+	test("the way out is named too, and it is the one that works", () => {
+		// Renaming the local vault before connecting is what was used on
+		// 2026-08-11 to avoid rejoining a vault that had gone bad. It works
+		// precisely because the name is the key.
+		const said = joinPreviewLines({ vaultName: "V" }).join(" ").toLowerCase();
+		expect(said).toContain("rename this vault");
+	});
+
+	test("the button carries the name, so nobody presses it blind", () => {
+		expect(joinButtonLabel("Second Brain")).toBe("Sync with Second Brain");
+	});
+
+	test("a new vault beside the ones already there names both sides", () => {
+		// The fork as it actually happens: somebody meant to join the vault
+		// they made yesterday and the name is one character out. Naming what
+		// the account already has beside what this vault is called is the
+		// cheapest way to catch it.
+		const line = newVaultBesideLine("Note", ["Notes", "Werk"]);
+		expect(line).toContain("Notes and Werk");
+		expect(line).toContain("this vault is called Note");
+		expect(line).toContain("The names do not match");
+	});
+
+	test("a long list stops at three and counts the rest", () => {
+		const line = newVaultBesideLine("V", ["A", "B", "C", "D", "E"]);
+		expect(line).toContain("A, B, C and 2 more");
+	});
+
+	test("a first vault on an empty account says nothing about others", () => {
+		expect(newVaultBesideLine("Second Brain", [])).toBeUndefined();
+	});
+});
+
 describe("the copy that goes with it", () => {
 	test("the one note says what does not travel", () => {
 		const note = VAULT_SCOPE_NOTE.toLowerCase();
@@ -142,6 +234,13 @@ describe("the copy that goes with it", () => {
 	/** Every string this module puts in front of a person. */
 	const onScreen = (): string[] => [
 		VAULT_SCOPE_NOTE,
+		VAULT_NAME_IS_THE_KEY,
+		JOIN_HELD_NOTE,
+		joinButtonLabel("Second Brain"),
+		...joinPreviewLines({ vaultName: "Second Brain" }),
+		...joinPreviewLines({ vaultName: "V", createdAt: "2026-08-11T09:14:00Z" }),
+		newVaultBesideLine("Note", ["Notes"]) ?? "",
+		newVaultBesideLine("Note", ["Notes", "Werk", "Archief", "Oud"]) ?? "",
 		REPLACE_FOLDERS_LABEL,
 		replaceFoldersLine(1),
 		replaceFoldersLine(4),

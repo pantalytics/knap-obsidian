@@ -115,6 +115,7 @@ import { RelayOnPremShareClientManager, type ShareWithServer } from "./RelayOnPr
 import { ShareManagementModal } from "./ui/ShareManagementModal";
 import { LocalStorage } from "./LocalStorage";
 import { SYNC_DOT_NAMES, vaultReading, type VaultReading } from "./vaultStatus";
+import { readVaultHazards, topHazard, type Hazard } from "./vaultHazards";
 
 interface DebugSettings {
 	debugging: boolean;
@@ -180,6 +181,18 @@ export default class Live extends Plugin {
 	public webSyncManager?: import("./WebSyncManager").WebSyncManager;
 	public inboundFileDownloader?: import("./InboundFileDownloader").InboundFileDownloader;
 	public inboundSyncPoller?: import("./InboundSyncPoller").InboundSyncPoller;
+	/** What else is syncing this vault (#41). Read at load, and on each visit. */
+	private vaultHazards: Hazard[] = [];
+	/**
+	 * Whether this vault is not syncing and is waiting for a person.
+	 *
+	 * Set by the settings screen, read by the corner of the window, so the two
+	 * cannot describe one vault two ways: a vault held back because something
+	 * else syncs it (#41), or because it has not been told which vault on Knap
+	 * it belongs to (#42), reads Paused on both rather than Up to date on
+	 * either.
+	 */
+	public vaultHeld = false;
 	debug!: (...args: unknown[]) => void;
 	log!: (...args: unknown[]) => void;
 	warn!: (...args: unknown[]) => void;
@@ -664,6 +677,13 @@ export default class Live extends Plugin {
 
 		this.app.workspace.onLayoutReady(() => {
 			this.sharedFolders.load();
+
+			// What else is syncing this vault, said once, in the corner (#41).
+			// After the folders load, because whether this vault already syncs
+			// is what decides between holding it back and telling somebody.
+			// Not awaited: nothing below depends on the answer.
+			void this.noticeVaultHazards();
+
 			this._liveViews = new LiveViewManager(
 				this.app,
 				this.sharedFolders,
@@ -1243,7 +1263,64 @@ export default class Live extends Plugin {
 					completed: work.completed,
 				};
 			}),
+			this.vaultHeld,
 		);
+	}
+
+	/**
+	 * What this vault has to be told before it can sync, most serious first.
+	 *
+	 * Read at load and again whenever the settings screen opens, so turning
+	 * the other plugin off and coming back clears it. Both readers get the
+	 * same list, and only the first of them reaches a screen: see
+	 * `topHazard`.
+	 */
+	public readVaultHazards(): Hazard[] {
+		return this.vaultHazards;
+	}
+
+	public async refreshVaultHazards(): Promise<Hazard[]> {
+		const adapter = this.app.vault.adapter as unknown as {
+			getBasePath?: () => string;
+			basePath?: string;
+			exists(path: string): Promise<boolean>;
+			read(path: string): Promise<string>;
+		};
+		try {
+			this.vaultHazards = await readVaultHazards(
+				{
+					configDir: this.app.vault.configDir,
+					// Desktop has `getBasePath()`, the phone adapter has
+					// `basePath`, and a vault whose path neither will give up
+					// is simply not checked for a cloud folder. It never
+					// leaves this call.
+					basePath: adapter?.getBasePath?.() ?? adapter?.basePath ?? "",
+					exists: (path: string) => adapter.exists(path),
+					read: (path: string) => adapter.read(path),
+				},
+				// Whether this vault is already syncing, which decides whether
+				// a second sync plugin holds it back or is only told about.
+				(this.sharedFolders?.items() ?? []).some((folder) => folder.isVaultScope),
+			);
+		} catch (e: unknown) {
+			this.warn("Could not read what else syncs this vault", e);
+			this.vaultHazards = [];
+		}
+		return this.vaultHazards;
+	}
+
+	/**
+	 * Say the one thing, once, at load.
+	 *
+	 * One notice, not one per hazard. A person who has both a second sync
+	 * plugin and a vault in Dropbox has one thing to fix first, and two
+	 * notices stacked in the corner is how neither gets read.
+	 */
+	private async noticeVaultHazards(): Promise<void> {
+		const hazard = topHazard(await this.refreshVaultHazards());
+		if (hazard) {
+			new Notice(hazard.notice, 15000);
+		}
 	}
 
 	/**
