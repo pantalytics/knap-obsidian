@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Notice } from "obsidian";
-	import { createEventDispatcher, onMount } from "svelte";
+	import { createEventDispatcher, onDestroy, onMount } from "svelte";
 	import type Live from "../main";
 	import {
 		KNAP_SERVER_ID,
@@ -17,13 +17,20 @@
 		replaceFoldersConfirmation,
 		replaceFoldersFailedLine,
 		replaceFoldersLine,
-		FIRST_SYNC_LINES,
+		VAULT_SCOPE_NOTE,
 		REPLACE_FOLDERS_LABEL,
 		type LocalShare,
 		type ShareLike,
 	} from "../vaultShare";
 	import { RelayOnPremShareClientManager } from "../RelayOnPremShareClientManager";
-	import { hasSignInButton, syncDot, syncInstruction, syncWord } from "../syncStatus";
+	import {
+		hasSignInButton,
+		syncCounts,
+		syncDot,
+		syncInstruction,
+		syncProgress,
+		syncWord,
+	} from "../syncStatus";
 
 	// One button, because there is one server and one account (ADR-0030,
 	// ADR-0033). No address to type, nothing to choose, and no code to paste:
@@ -59,29 +66,52 @@
 
 	$: auth = getAuthStatus(authRefreshKey);
 
+	// A group still short of its total is the honest definition of syncing, and
+	// it is the one that ends. The flag beneath it is the fallback for the
+	// moment before the queue has a group: it is set when a share is made and
+	// nothing ever cleared it, which is why the screen could sit on Syncing
+	// long after the vault had finished.
+	$: syncingNow = syncTotal > 0 ? syncDone < syncTotal : vaultSyncing;
+
 	// The word comes off the shared list rather than being written here
 	// (status.py, mirrored in src/syncStatus.ts). What this side knows is
 	// whether there is an account and whether anything is still moving.
 	$: word = syncWord({
 		signedIn: auth.isSignedIn,
 		paused: vaultPaused,
-		syncing: vaultSyncing,
+		syncing: syncingNow,
 	});
 	$: dot = syncDot(word);
+	// The count sits beside the word, and the bar under it. Both are phrased by
+	// the shared list, so this screen and Knap's page count in the same words.
+	$: counts = syncingNow && syncTotal > 0 ? syncCounts(syncDone, syncTotal) : "";
+	$: progress = syncingNow ? syncProgress(syncDone, syncTotal) : undefined;
 	// Somebody who has signed in here before is signed OUT, which is a state
 	// with its own words and its own button. Somebody who never has is simply
 	// new, and gets told what the button is for instead: the signed-out
 	// instruction promises their notes are still on this device, which is true
 	// and beside the point on an install that has never synced anything.
 	$: returning = Boolean(server?.lastUserEmail);
-	$: statusNote =
-		auth.isSignedIn || returning
-			? syncInstruction(word)
-			: "Sign in with your Knap account and this vault starts syncing.";
+	// The instruction goes when something truer takes its place. Syncing with a
+	// count beside it and a bar under it does not also need a sentence about
+	// leaving Obsidian open: that sentence was on screen twice at once, once
+	// here and once as the first line of the first sync.
+	$: statusNote = !(auth.isSignedIn || returning)
+		? "Sign in with your Knap account and this vault starts syncing."
+		: counts
+			? ""
+			: syncInstruction(word);
 
 	// Filled in by startSyncingTheVault, and by the folder it finds or makes.
 	let vaultPaused = false;
 	let vaultSyncing = false;
+	// How much of the vault has gone up. Nothing here counts anything: the sync
+	// queue already keeps completed and total per folder, and syncStatus.ts
+	// already knows how to say them. Both halves existed already and neither
+	// was wired to a screen.
+	let syncDone = 0;
+	let syncTotal = 0;
+	let stopWatchingProgress: (() => void) | undefined;
 	// How many folder shares an older build left behind, and whether the
 	// clean-up that replaces them is running. Zero on every install that never
 	// picked folders, which is the only shape a new one can be in.
@@ -118,7 +148,23 @@
 		if (getAuthStatus(0).isSignedIn) {
 			void startSyncingTheVault();
 		}
+		// The queue writes the group back after every completed item, so
+		// following the map is enough to follow the upload. No timer, and
+		// nothing polled.
+		stopWatchingProgress = plugin.backgroundSync?.syncGroups.subscribe(readProgress);
 	});
+
+	onDestroy(() => {
+		stopWatchingProgress?.();
+	});
+
+	/** Where the vault is in the sync queue, or zeroes when it is not in one. */
+	function readProgress() {
+		const folder = plugin.sharedFolders?.find((f) => f.isVaultScope);
+		const group = folder ? plugin.backgroundSync?.syncGroups.get(folder) : undefined;
+		syncDone = group?.completed ?? 0;
+		syncTotal = group?.total ?? 0;
+	}
 
 	/** The share clients, which only exist once somebody is signed in. */
 	function shareClients(): RelayOnPremShareClientManager | undefined {
@@ -203,7 +249,8 @@
 			plugin.folderNavDecorations?.quickRefresh();
 			vaultSyncing = true;
 			vaultPaused = folder ? folder.shouldConnect === false : false;
-			vaultLines = FIRST_SYNC_LINES;
+			vaultLines = [];
+			readProgress();
 		} catch (e: unknown) {
 			error = e instanceof Error ? e.message : "Could not start syncing this vault";
 		}
@@ -410,19 +457,60 @@
 		</div>
 		<div class="setting-item-control knap-value">
 			<span class="knap-dot knap-dot-{dot}"></span>
-			<span>{word}</span>
+			<span>{counts ? `${word} · ${counts}` : word}</span>
 		</div>
 	</div>
 
-	<!-- What a first sync needs said while it runs, and nothing after it. -->
+	<!-- The bar only draws against a real denominator. A bar filling against an
+	     unknown total is a spinner wearing a percentage. -->
+	{#if progress !== undefined}
+		<div
+			class="knap-track"
+			role="progressbar"
+			aria-label="Sync progress"
+			aria-valuemin="0"
+			aria-valuemax="100"
+			aria-valuenow={Math.round(progress * 100)}
+		>
+			<i style="width: {Math.round(progress * 100)}%"></i>
+		</div>
+	{/if}
+
+	<!-- Anything the vault still needs said, which is now only the folder
+	     clean-up an older build left behind. -->
 	{#each vaultLines as line}
 		<p class="knap-note">{line}</p>
 	{/each}
 
+	<!-- Not a button: a place you go. The glyph says it opens a browser, and
+	     the row is the same shape as the two above it. -->
+	{#if auth.isSignedIn}
+		<button class="setting-item knap-row-link" on:click={openDashboard}>
+			<div class="setting-item-info">
+				<div class="setting-item-name">Dashboard</div>
+			</div>
+			<div class="setting-item-control knap-glyph">
+				<svg
+					viewBox="0 0 16 16"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.6"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<path d="M6.5 3.5h6v6M12.5 3.5 6 10" />
+					<path d="M11 9.5v3h-8v-8h3" />
+				</svg>
+			</div>
+		</button>
+	{/if}
+
 	<div class="knap-actions">
 		{#if auth.isSignedIn}
-			<button class="knap-btn" on:click={signOut}>Logout</button>
-			<button class="knap-btn" on:click={openDashboard}>Dashboard</button>
+			<!-- Quiet, and on its own: it is the one thing on this screen
+			     somebody can regret pressing. -->
+			<button class="knap-btn knap-btn-quiet" on:click={signOut}>Sign out</button>
 		{:else if hasSignInButton(word)}
 			<button class="knap-btn mod-cta" disabled={signingIn} on:click={signIn}>
 				{signingIn
@@ -452,6 +540,12 @@
 
 	{#if error}
 		<div class="knap-form-error">{error}</div>
+	{/if}
+
+	<!-- The one line about what a vault is. It answers the question a bare
+	     second device raises, which outlives the upload that raises it. -->
+	{#if auth.isSignedIn}
+		<p class="knap-foot">{VAULT_SCOPE_NOTE}</p>
 	{/if}
 </div>
 
@@ -484,6 +578,73 @@
 		color: var(--text-muted);
 		font-size: 12px;
 		max-width: 46em;
+	}
+
+	/* The one permanent line, at caption weight: it is worth saying and it is
+	   not the headline. */
+	.knap-foot {
+		margin: 20px 0 0;
+		color: var(--text-faint);
+		font-size: 12px;
+		max-width: 46em;
+	}
+
+	/* Two pixels of fact where two paragraphs used to be. It hangs under the
+	   status row rather than beside it, so the row keeps the shape every other
+	   setting in the app has. */
+	.knap-track {
+		height: 2px;
+		border-radius: 2px;
+		background: var(--background-modifier-border);
+		overflow: hidden;
+		margin: -4px 0 4px;
+	}
+
+	.knap-track > i {
+		display: block;
+		height: 100%;
+		border-radius: 2px;
+		background: var(--interactive-accent);
+		transition: width 240ms ease-out;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.knap-track > i {
+			transition: none;
+		}
+	}
+
+	/* A setting row that happens to be a button, so it reads as a place to go
+	   and still lines up with the rows above it. */
+	.knap-row-link {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		width: 100%;
+		box-shadow: none;
+		background: transparent;
+		text-align: left;
+		font: inherit;
+		cursor: pointer;
+		border-radius: var(--radius-s, 4px);
+	}
+
+	.knap-row-link:hover {
+		background: var(--background-modifier-hover);
+	}
+
+	.knap-row-link .setting-item-name {
+		color: var(--text-accent);
+	}
+
+	.knap-glyph {
+		display: flex;
+		color: var(--text-faint);
+	}
+
+	.knap-glyph svg {
+		width: 14px;
+		height: 14px;
 	}
 
 	.knap-actions {
@@ -538,6 +699,20 @@
 	.knap-btn:disabled {
 		cursor: default;
 		opacity: 0.6;
+	}
+
+	/* Text, not a slab. Signing out is rare and irreversible in the small way
+	   that matters: it should not sit at the same weight as the way in. */
+	.knap-btn-quiet {
+		background: transparent;
+		box-shadow: none;
+		color: var(--text-muted);
+		padding-left: 0;
+	}
+
+	.knap-btn-quiet:hover {
+		background: transparent;
+		color: var(--text-error);
 	}
 
 	.knap-form-error {

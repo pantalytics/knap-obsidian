@@ -101,16 +101,19 @@ export function planFolderCleanup(local: LocalShare[]): string[] {
 }
 
 /**
- * What to say while the first sync runs.
+ * What a vault is, in the one line the screen keeps.
  *
- * The second line is not a detail. A bare second device reads as a failed sync
- * to anybody expecting their setup to arrive with the notes, and this is the
- * only moment they are looking at the screen.
+ * This used to be the second of two lines shown while the first sync ran. The
+ * first of them said to leave Obsidian open, twice over: the status row was
+ * already saying it, word for word, directly above. A bar and a count say it
+ * better than either, so both sentences went and this one stayed.
+ *
+ * It stayed because it is not about the first sync at all. A bare second device
+ * reads as a failed sync to anybody expecting their setup to arrive with the
+ * notes, and that question outlives the upload that prompts it.
  */
-export const FIRST_SYNC_LINES = [
-	"The whole vault is on its way up. Leave Obsidian open until it finishes, and it picks up where it left off if you close it.",
-	"Your notes, all of them. Not your settings, themes or plugins: those stay on the device they are installed on.",
-] as const;
+export const VAULT_SCOPE_NOTE =
+	"Your notes sync. Settings, themes and plugins stay on the device they are installed on.";
 
 /** The button that starts the clean-up, on the one screen that offers it. */
 export const REPLACE_FOLDERS_LABEL = "Sync the whole vault";
