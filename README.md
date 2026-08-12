@@ -52,8 +52,8 @@ from GitHub and keeps them updated.
 
 ### Coming from an older version
 
-The plugin was called Knap Sync up to 1.4.0 and Synced Vaults in 1.5.0 and
-1.6.0. The name is Knap again from 1.7.0, and this time only the name changed:
+The plugin was called Knap Sync up to 1.4.0 and Synced Vaults from 1.5.0 to
+1.7.0. The name is Knap again from 1.8.0, and this time only the name changed:
 the identifier stays `synced-vaults`, so the plugin updates in place and there
 is nothing to delete and nothing to sign in to again.
 
