@@ -2,7 +2,6 @@
 	import { Notice } from "obsidian";
 	import { createEventDispatcher, onMount } from "svelte";
 	import type Live from "../main";
-	import type { RelayOnPremServer } from "../RelayOnPremConfig";
 	import {
 		KNAP_SERVER_ID,
 		KNAP_CONTROL_PLANE_URL,
@@ -46,7 +45,6 @@
 	const dispatch = createEventDispatcher<{
 		signedIn: void;
 		signedOut: void;
-		openShares: { server: RelayOnPremServer };
 	}>();
 
 	const relayOnPremSettings = plugin.relayOnPremSettings;
@@ -382,12 +380,11 @@
 			<span class="knap-account-text">
 				{word}{auth.email ? ` as ${auth.email}` : ""}
 			</span>
+			<!-- Sign out is the only button here. Who can read this led to a
+			     list of one share and the screens under it, which is a second
+			     level on a screen that has one thing to say: this vault syncs,
+			     as you. -->
 			<div class="knap-account-actions">
-				{#if server}
-					<button class="knap-btn" on:click={() => dispatch("openShares", { server })}>
-						Who can read this
-					</button>
-				{/if}
 				<button class="knap-btn" on:click={signOut}>Sign out</button>
 			</div>
 		</div>
