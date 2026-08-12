@@ -59,6 +59,14 @@ export interface GroupProgress {
 	status: "pending" | "running" | "completed" | "failed";
 }
 
+/** How much of one folder's work is behind us, in notes rather than percent. */
+export interface FolderWork {
+	/** Notes this folder's passes have taken on, sends and fetches together. */
+	total: number;
+	/** How many of them came back with a body actually written. */
+	completed: number;
+}
+
 export class BackgroundSync extends HasLogging {
 	public activeSync = new ObservableSet<QueueItem>();
 	public activeDownloads = new ObservableSet<QueueItem>();
@@ -174,6 +182,28 @@ export class BackgroundSync extends HasLogging {
 			sharedFolder,
 			status: group.status,
 		};
+	}
+
+	/**
+	 * One folder's work, as two counts.
+	 *
+	 * `getGroupProgress` rounds to a percentage, and a percentage is the wrong
+	 * shape for a status that must not go green early: 2,566 notes out of
+	 * 2,567 rounds to 100. This hands back the counts and lets the caller
+	 * compare them itself.
+	 *
+	 * `completed` only counts a note whose body actually got written. A sync
+	 * that came back without one is marked failed rather than done (#38), so
+	 * `completed` short of `total` covers the notes still queued and the notes
+	 * that came back empty alike, and both mean the same thing to somebody
+	 * reading the corner of the window: this vault is not all up yet.
+	 */
+	getFolderWork(sharedFolder: SharedFolder): FolderWork {
+		const group = this.syncGroups.get(sharedFolder);
+		if (!group) {
+			return { total: 0, completed: 0 };
+		}
+		return { total: group.total, completed: group.completed };
 	}
 
 	getAllGroupsProgress(): GroupProgress[] {

@@ -15,7 +15,15 @@
  * long, and the alternative words would each be a lie for longer than it lasts.
  */
 
-import { syncWord, type SyncDot, type SyncWord } from "./syncStatus";
+import {
+	SYNCING,
+	syncCounts,
+	syncDot,
+	syncProgress,
+	syncWord,
+	type SyncDot,
+	type SyncWord,
+} from "./syncStatus";
 
 /**
  * Every dot the status bar may be wearing. It is here rather than in
@@ -25,12 +33,47 @@ import { syncWord, type SyncDot, type SyncWord } from "./syncStatus";
  */
 export const SYNC_DOT_NAMES: readonly SyncDot[] = ["ok", "working", "wait", "error"];
 
-/** The two things a shared folder has to say about itself. */
+/** What a shared folder has to say about itself. */
 export interface FolderStatus {
 	/** Whether this device wants the folder connected at all. */
 	shouldConnect: boolean;
-	/** Whether its document has caught up with the server. */
+	/**
+	 * Whether the folder's own metadata document has caught up with the
+	 * server. This is a fact about one document and says nothing about the
+	 * notes listed in it.
+	 */
 	synced: boolean;
+	/** Whether the walk that registers and seeds local files is still running. */
+	filling: boolean;
+	/** Notes this device has taken on for this folder, sends and fetches together. */
+	total: number;
+	/** How many of them came back with a body actually written. */
+	completed: number;
+}
+
+/**
+ * Whether this folder has nothing left to carry.
+ *
+ * `synced` on its own was the whole of the status, and it is the bug (#40).
+ * It is one boolean about one document, it goes true the first time that
+ * document catches up, and nothing ever puts it back. A vault of 2,567 notes
+ * with not one body behind any of them satisfied it inside a minute, which is
+ * how the corner of the window came to say up to date over an empty vault.
+ *
+ * The folder's own document is necessary and nowhere near sufficient, so two
+ * more have to agree with it:
+ *
+ * - `filling` is the walk that finds every local file and copies the new ones
+ *   into their documents. On a large vault it runs for minutes, and nothing is
+ *   queued until it has found something, so a folder still walking has not yet
+ *   said how much work there is to do.
+ * - `completed` against `total` is every note the sync passes took on. A sync
+ *   that came back without writing the body counts as failed rather than done
+ *   (#38), so `completed` short of `total` means a note's body is not where it
+ *   should be, whether it is still queued or came back empty.
+ */
+export function folderCaughtUp(folder: FolderStatus): boolean {
+	return folder.synced && !folder.filling && folder.completed >= folder.total;
 }
 
 /**
@@ -46,6 +89,67 @@ export function vaultSyncWord(
 	return syncWord({
 		signedIn,
 		paused: folders.length > 0 && folders.every((folder) => !folder.shouldConnect),
-		syncing: folders.some((folder) => folder.shouldConnect && !folder.synced),
+		syncing: folders.some(
+			(folder) => folder.shouldConnect && !folderCaughtUp(folder),
+		),
 	});
+}
+
+/** Notes done and notes to do, over every folder this device is carrying. */
+export interface VaultCounts {
+	done: number;
+	total: number;
+}
+
+/**
+ * A folder this device has switched off contributes nothing: its notes are
+ * not moving and counting them would put a number next to a vault that is
+ * standing still.
+ */
+export function vaultCounts(folders: readonly FolderStatus[]): VaultCounts {
+	let done = 0;
+	let total = 0;
+	for (const folder of folders) {
+		if (!folder.shouldConnect) continue;
+		done += folder.completed;
+		total += folder.total;
+	}
+	return { done, total };
+}
+
+/** Everything either screen needs to draw the state of this vault. */
+export interface VaultReading {
+	word: SyncWord;
+	dot: SyncDot;
+	done: number;
+	total: number;
+	/** "290 of 2,567", or empty when there is nothing worth counting. */
+	counts: string;
+	/** How full the bar is, 0 to 1, or undefined when there is no bar. */
+	progress: number | undefined;
+}
+
+/**
+ * The whole reading, in one call, so the icon and the settings screen cannot
+ * disagree about the same vault.
+ *
+ * The count and the bar only appear while notes are moving. Up to date has
+ * nothing to count, and a number beside it would only invite the question of
+ * what the other one is.
+ */
+export function vaultReading(
+	signedIn: boolean,
+	folders: readonly FolderStatus[],
+): VaultReading {
+	const word = vaultSyncWord(signedIn, folders);
+	const { done, total } = vaultCounts(folders);
+	const moving = word === SYNCING && total > 0;
+	return {
+		word,
+		dot: syncDot(word),
+		done,
+		total,
+		counts: moving ? syncCounts(done, total) : "",
+		progress: moving ? syncProgress(done, total) : undefined,
+	};
 }

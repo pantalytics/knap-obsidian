@@ -23,7 +23,8 @@
 		type ShareLike,
 	} from "../vaultShare";
 	import { RelayOnPremShareClientManager } from "../RelayOnPremShareClientManager";
-	import { hasSignInButton, syncDot, syncInstruction, syncWord } from "../syncStatus";
+	import { hasSignInButton, syncInstruction } from "../syncStatus";
+	import type { VaultReading } from "../vaultStatus";
 
 	// One button, because there is one server and one account (ADR-0030,
 	// ADR-0033). No address to type, nothing to choose, and no code to paste:
@@ -59,15 +60,17 @@
 
 	$: auth = getAuthStatus(authRefreshKey);
 
-	// The word comes off the shared list rather than being written here
-	// (status.py, mirrored in src/syncStatus.ts). What this side knows is
-	// whether there is an account and whether anything is still moving.
-	$: word = syncWord({
-		signedIn: auth.isSignedIn,
-		paused: vaultPaused,
-		syncing: vaultSyncing,
-	});
-	$: dot = syncDot(word);
+	// What the vault is doing, read off the folders and the sync queue by the
+	// plugin, so this row and the mark in the corner of the window cannot say
+	// two different things about one vault.
+	//
+	// It used to be two booleans set here, once, by the sign-in flow: true
+	// while this screen made the share and never touched again. That is half
+	// of #40. On the next visit both were false and the row said Up to date
+	// over a vault that had thousands of notes still to send.
+	let reading: VaultReading = plugin.readVaultStatus();
+	$: word = reading.word;
+	$: dot = reading.dot;
 	// Somebody who has signed in here before is signed OUT, which is a state
 	// with its own words and its own button. Somebody who never has is simply
 	// new, and gets told what the button is for instead: the signed-out
@@ -79,9 +82,19 @@
 			? syncInstruction(word)
 			: "Sign in with your Knap account and this vault starts syncing.";
 
-	// Filled in by startSyncingTheVault, and by the folder it finds or makes.
-	let vaultPaused = false;
-	let vaultSyncing = false;
+	function refreshReading() {
+		reading = plugin.readVaultStatus();
+	}
+
+	// A second a tick while this screen is open. The bar is the thing somebody
+	// watches during a first sync, and four seconds of it standing still reads
+	// as stuck.
+	onMount(() => {
+		refreshReading();
+		const ticker = window.setInterval(refreshReading, 1000);
+		return () => window.clearInterval(ticker);
+	});
+
 	// How many folder shares an older build left behind, and whether the
 	// clean-up that replaces them is running. Zero on every install that never
 	// picked folders, which is the only shape a new one can be in.
@@ -103,6 +116,7 @@
 	function refresh(signedIn: boolean) {
 		authRefreshKey = authRefreshKey + 1;
 		dispatch(signedIn ? "signedIn" : "signedOut");
+		refreshReading();
 		if (signedIn) {
 			void startSyncingTheVault();
 		} else {
@@ -201,8 +215,9 @@
 				folder.settings.onpremServerId = KNAP_SERVER_ID;
 			}
 			plugin.folderNavDecorations?.quickRefresh();
-			vaultSyncing = true;
-			vaultPaused = folder ? folder.shouldConnect === false : false;
+			// The folder is brand new and has caught up with nothing yet, so
+			// the row says Syncing the moment it reads it.
+			refreshReading();
 			vaultLines = FIRST_SYNC_LINES;
 		} catch (e: unknown) {
 			error = e instanceof Error ? e.message : "Could not start syncing this vault";
@@ -270,8 +285,6 @@
 				leftoverFolders = Math.max(0, leftoverFolders - 1);
 			}
 
-			vaultSyncing = false;
-			vaultPaused = false;
 			vaultLines = [];
 			await startSyncingTheVault();
 			new Notice("The whole vault is syncing.");
@@ -373,8 +386,6 @@
 
 	async function signOut() {
 		error = "";
-		vaultSyncing = false;
-		vaultPaused = false;
 		try {
 			await plugin.loginManager.logoutFromServer(KNAP_SERVER_ID);
 			new Notice("Signed out");
@@ -411,8 +422,25 @@
 		<div class="setting-item-control knap-value">
 			<span class="knap-dot knap-dot-{dot}"></span>
 			<span>{word}</span>
+			{#if reading.counts}
+				<span class="knap-count">{reading.counts}</span>
+			{/if}
 		</div>
 	</div>
+
+	<!-- The bar, while notes are moving (#41). This is the machine doing the
+	     work, so the count and the bar belong here as much as on Knap's own
+	     page: adopting a vault of a few thousand notes is hours, and one word
+	     is not enough to sit through it. Both are drawn from the same numbers
+	     the corner of the window uses. -->
+	{#if reading.progress !== undefined}
+		<!-- aria-hidden because the row above already says the same thing in
+		     words, and a screen reader that reads the count and then the bar
+		     has said it twice. -->
+		<div class="knap-bar" aria-hidden="true">
+			<div class="knap-bar-fill" style:width="{Math.round(reading.progress * 100)}%"></div>
+		</div>
+	{/if}
 
 	<!-- What a first sync needs said while it runs, and nothing after it. -->
 	{#each vaultLines as line}
@@ -484,6 +512,26 @@
 		color: var(--text-muted);
 		font-size: 12px;
 		max-width: 46em;
+	}
+
+	/* Tabular figures so the count does not shuffle sideways every time a
+	   note lands. */
+	.knap-count {
+		font-variant-numeric: tabular-nums;
+	}
+
+	.knap-bar {
+		height: 4px;
+		margin-top: 10px;
+		border-radius: 2px;
+		background: var(--background-modifier-border);
+		overflow: hidden;
+	}
+
+	.knap-bar-fill {
+		height: 100%;
+		background: var(--interactive-accent);
+		transition: width 200ms ease-out;
 	}
 
 	.knap-actions {

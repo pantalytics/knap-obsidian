@@ -461,3 +461,16 @@
 .relay-onprem-statusbar .relay-status-icon.relay-status-error {
 	color: var(--text-error);
 }
+
+/* The count beside the mark, while notes are moving. It is empty the rest of
+   the time and takes itself out of the row when it is, so the corner goes
+   back to being one icon the moment the vault is caught up. */
+.relay-onprem-statusbar .relay-status-count {
+	margin-left: var(--size-2-2);
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.relay-onprem-statusbar .relay-status-count:empty {
+	display: none;
+}

@@ -114,8 +114,7 @@ import { RelayOnPremShareClientManager, type ShareWithServer } from "./RelayOnPr
 // It was being pulled in with require() at three call sites instead.
 import { ShareManagementModal } from "./ui/ShareManagementModal";
 import { LocalStorage } from "./LocalStorage";
-import { syncDot } from "./syncStatus";
-import { SYNC_DOT_NAMES, vaultSyncWord } from "./vaultStatus";
+import { SYNC_DOT_NAMES, vaultReading, type VaultReading } from "./vaultStatus";
 
 interface DebugSettings {
 	debugging: boolean;
@@ -1152,6 +1151,11 @@ export default class Live extends Plugin {
 	 * corner and nothing to open. Behind it are two actions and the settings
 	 * screen, and nothing about folders: a vault is one share (ADR-0042), so
 	 * there is no list to manage from here.
+	 *
+	 * While notes are moving the count sits next to the icon (#41). This is
+	 * the machine doing the work, and somebody who has just pointed Knap at a
+	 * few thousand notes should not have to open a web page to find out how
+	 * far it has got.
 	 */
 	private addRelayStatusBarItem() {
 		const statusBarItem = this.addStatusBarItem();
@@ -1159,14 +1163,15 @@ export default class Live extends Plugin {
 		// Use the same registered synced-vaults icon as ribbon
 		const iconEl = statusBarItem.createSpan({ cls: "relay-status-icon" });
 		setIcon(iconEl, "synced-vaults");
+		const countEl = statusBarItem.createSpan({ cls: "relay-status-count" });
 		statusBarItem.setAttribute("data-tooltip-position", "top");
 		statusBarItem.addClass("evc-cursor-pointer");
 
-		const paint = () => this.paintRelayStatus(statusBarItem, iconEl);
+		const paint = () => this.paintRelayStatus(statusBarItem, iconEl, countEl);
 		paint();
 		// Nothing here is a subscription: the share comes and goes and its
 		// provider changes state without telling anybody, so the corner reads
-		// it rather than waiting to be told. It is two booleans a tick.
+		// it rather than waiting to be told. It is a handful of numbers a tick.
 		this.registerInterval(window.setInterval(paint, 4000));
 
 		statusBarItem.addEventListener("click", (event) => {
@@ -1210,25 +1215,62 @@ export default class Live extends Plugin {
 	}
 
 	/**
-	 * Colour the status bar icon and say the word behind it.
+	 * What this vault is doing, read off the folders and the sync queue.
+	 *
+	 * The corner of the window and the settings screen both call this, so
+	 * neither can describe the same vault differently from the other.
+	 *
+	 * The three things a folder is asked are in `vaultStatus.ts`, and the
+	 * reason there are three rather than one is #40: `synced` alone is a fact
+	 * about the folder's own metadata document, it goes true the first time
+	 * that one document catches up, and nothing ever puts it back. It said up
+	 * to date over 2,567 notes that had no bodies at all.
+	 */
+	public readVaultStatus(): VaultReading {
+		const signedIn = this.loginManager?.isLoggedInToServer?.(KNAP_SERVER_ID) ?? false;
+		return vaultReading(
+			signedIn,
+			(this.sharedFolders?.items() ?? []).map((folder) => {
+				const work = folder.backgroundSync?.getFolderWork(folder) ?? {
+					total: 0,
+					completed: 0,
+				};
+				return {
+					shouldConnect: folder.shouldConnect,
+					synced: folder.synced,
+					filling: folder.filling,
+					total: work.total,
+					completed: work.completed,
+				};
+			}),
+		);
+	}
+
+	/**
+	 * Colour the status bar icon, and put the count beside it while there is
+	 * one.
 	 *
 	 * Green is the point of the thing. Somebody who has just written a note
 	 * wants to know it left the building, and reading that off the corner of
-	 * the window beats opening a menu to find out.
+	 * the window beats opening a menu to find out. The same goes the other
+	 * way for a vault that has thousands of notes still to send, which is why
+	 * the number is here and not only on a web page.
 	 */
-	private paintRelayStatus(statusBarItem: HTMLElement, iconEl: HTMLElement) {
-		const signedIn = this.loginManager?.isLoggedInToServer?.(KNAP_SERVER_ID) ?? false;
-		const word = vaultSyncWord(
-			signedIn,
-			(this.sharedFolders?.items() ?? []).map((folder) => ({
-				shouldConnect: folder.shouldConnect,
-				synced: folder.synced,
-			})),
-		);
+	private paintRelayStatus(
+		statusBarItem: HTMLElement,
+		iconEl: HTMLElement,
+		countEl: HTMLElement,
+	) {
+		const reading = this.readVaultStatus();
 		for (const dot of SYNC_DOT_NAMES) {
-			iconEl.toggleClass(`relay-status-${dot}`, dot === syncDot(word));
+			iconEl.toggleClass(`relay-status-${dot}`, dot === reading.dot);
 		}
-		statusBarItem.setAttribute("aria-label", `Knap: ${word.toLowerCase()}`);
+		countEl.setText(reading.counts);
+		const word = reading.word.toLowerCase();
+		statusBarItem.setAttribute(
+			"aria-label",
+			reading.counts ? `Knap: ${word}, ${reading.counts}` : `Knap: ${word}`,
+		);
 	}
 
 	/**

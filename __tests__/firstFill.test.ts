@@ -128,6 +128,8 @@ async function makeVault(paths: string[]): Promise<Harness> {
 		files,
 		fset: { add: jest.fn(), update: jest.fn() },
 		pendingDeletes: new Set<string>(),
+		// Set in the constructor, which this harness does not run.
+		_filling: false,
 		obsidianApp: { vault: { configDir: ".obsidian" } },
 		debug: noop,
 		log: noop,
@@ -216,6 +218,47 @@ describe("the first fill over a vault that already has notes", () => {
 
 		expect(harness.syncStore.hasYMapEntry("one.md")).toBe(true);
 		expect(harness.record.seeded).toContain("one.md");
+	});
+});
+
+/**
+ * #40's other half. On a vault of a few thousand notes this walk runs for
+ * minutes, and nothing is queued until it has found something, so a folder
+ * that is still walking has not yet said how much work there is. The status
+ * asks for this so it cannot go green in that window on the strength of the
+ * folder's own metadata document having caught up.
+ */
+describe("while the first fill is running", () => {
+	test("the folder says so, and stops saying so when it is done", async () => {
+		const harness = await makeVault(notes);
+		let duringTheWalk: boolean | undefined;
+		Object.assign(harness.folder, {
+			getSyncFiles: () => {
+				duringTheWalk = harness.folder.filling;
+				return notes.map((p) => new TFile(p));
+			},
+		});
+
+		expect(harness.folder.filling).toBe(false);
+
+		await harness.fill();
+
+		expect(duringTheWalk).toBe(true);
+		expect(harness.folder.filling).toBe(false);
+	});
+
+	test("a walk that throws still puts it down", async () => {
+		const harness = await makeVault(notes);
+		Object.assign(harness.folder, {
+			getSyncFiles: () => {
+				throw new Error("the vault went away");
+			},
+		});
+
+		await expect(harness.fill()).rejects.toThrow("the vault went away");
+		// Left true, the corner of the window would read Syncing for the rest
+		// of the session over a vault that is doing nothing.
+		expect(harness.folder.filling).toBe(false);
 	});
 });
 
