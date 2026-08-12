@@ -180,6 +180,7 @@ export class SharedFolder extends HasProvider {
 	private unsubscribes: Unsubscriber[] = [];
 	private storageQuota?: number;
 	private pendingDeletes: Set<string> = new Set();
+	private _filling: boolean = false;
 
 	private _persistence: IndexeddbPersistence;
 	diskBufferStore: DiskBufferStore;
@@ -384,6 +385,28 @@ export class SharedFolder extends HasProvider {
 	 * is only ever called as `this.addLocalDocs()`.
 	 */
 	private async addLocalDocs(): Promise<void> {
+		this._filling = true;
+		try {
+			await this.fillFromLocalFiles();
+		} finally {
+			this._filling = false;
+		}
+	}
+
+	/**
+	 * Whether the walk above is running.
+	 *
+	 * The status in the corner of the window reads this (#40). On a vault of a
+	 * few thousand notes the walk takes minutes, and until it has found
+	 * something there is nothing queued and nothing to count, so a folder that
+	 * is still walking must not be allowed to read as up to date on the
+	 * strength of its own metadata document having caught up.
+	 */
+	public get filling(): boolean {
+		return this._filling;
+	}
+
+	private async fillFromLocalFiles(): Promise<void> {
 		const syncTFiles = this.getSyncFiles();
 		const files: IFile[] = [];
 		const newPaths = this.placeHold(syncTFiles);

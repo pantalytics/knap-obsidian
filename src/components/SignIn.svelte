@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Notice } from "obsidian";
-	import { createEventDispatcher, onDestroy, onMount } from "svelte";
+	import { createEventDispatcher, onMount } from "svelte";
 	import type Live from "../main";
 	import {
 		KNAP_SERVER_ID,
@@ -23,14 +23,8 @@
 		type ShareLike,
 	} from "../vaultShare";
 	import { RelayOnPremShareClientManager } from "../RelayOnPremShareClientManager";
-	import {
-		hasSignInButton,
-		syncCounts,
-		syncDot,
-		syncInstruction,
-		syncProgress,
-		syncWord,
-	} from "../syncStatus";
+	import { hasSignInButton, syncInstruction } from "../syncStatus";
+	import type { VaultReading } from "../vaultStatus";
 
 	// One button, because there is one server and one account (ADR-0030,
 	// ADR-0033). No address to type, nothing to choose, and no code to paste:
@@ -66,26 +60,24 @@
 
 	$: auth = getAuthStatus(authRefreshKey);
 
-	// A group still short of its total is the honest definition of syncing, and
-	// it is the one that ends. The flag beneath it is the fallback for the
-	// moment before the queue has a group: it is set when a share is made and
-	// nothing ever cleared it, which is why the screen could sit on Syncing
-	// long after the vault had finished.
-	$: syncingNow = syncTotal > 0 ? syncDone < syncTotal : vaultSyncing;
-
-	// The word comes off the shared list rather than being written here
-	// (status.py, mirrored in src/syncStatus.ts). What this side knows is
-	// whether there is an account and whether anything is still moving.
-	$: word = syncWord({
-		signedIn: auth.isSignedIn,
-		paused: vaultPaused,
-		syncing: syncingNow,
-	});
-	$: dot = syncDot(word);
+	// What the vault is doing, worked out by the plugin off the folders and the
+	// sync queue, so this row and the mark in the corner of the window cannot
+	// say two different things about one vault.
+	//
+	// Counting a group off the queue, which is what this row did on its own, is
+	// one of the three facts behind the word and it was the only one here. It
+	// says nothing while the walk that registers the local files is still
+	// running, and nothing about the folder's own document, so in that window
+	// the row fell back to a flag the sign-in flow set once: a screen opened
+	// later over a vault still filling read Up to date. That is #40, and the
+	// three facts and the reason for each are in vaultStatus.ts.
+	let reading: VaultReading = plugin.readVaultStatus();
+	$: word = reading.word;
+	$: dot = reading.dot;
 	// The count sits beside the word, and the bar under it. Both are phrased by
 	// the shared list, so this screen and Knap's page count in the same words.
-	$: counts = syncingNow && syncTotal > 0 ? syncCounts(syncDone, syncTotal) : "";
-	$: progress = syncingNow ? syncProgress(syncDone, syncTotal) : undefined;
+	$: counts = reading.counts;
+	$: progress = reading.progress;
 	// Somebody who has signed in here before is signed OUT, which is a state
 	// with its own words and its own button. Somebody who never has is simply
 	// new, and gets told what the button is for instead: the signed-out
@@ -102,16 +94,6 @@
 			? ""
 			: syncInstruction(word);
 
-	// Filled in by startSyncingTheVault, and by the folder it finds or makes.
-	let vaultPaused = false;
-	let vaultSyncing = false;
-	// How much of the vault has gone up. Nothing here counts anything: the sync
-	// queue already keeps completed and total per folder, and syncStatus.ts
-	// already knows how to say them. Both halves existed already and neither
-	// was wired to a screen.
-	let syncDone = 0;
-	let syncTotal = 0;
-	let stopWatchingProgress: (() => void) | undefined;
 	// How many folder shares an older build left behind, and whether the
 	// clean-up that replaces them is running. Zero on every install that never
 	// picked folders, which is the only shape a new one can be in.
@@ -133,6 +115,7 @@
 	function refresh(signedIn: boolean) {
 		authRefreshKey = authRefreshKey + 1;
 		dispatch(signedIn ? "signedIn" : "signedOut");
+		refreshReading();
 		if (signedIn) {
 			void startSyncingTheVault();
 		} else {
@@ -148,22 +131,21 @@
 		if (getAuthStatus(0).isSignedIn) {
 			void startSyncingTheVault();
 		}
-		// The queue writes the group back after every completed item, so
-		// following the map is enough to follow the upload. No timer, and
-		// nothing polled.
-		stopWatchingProgress = plugin.backgroundSync?.syncGroups.subscribe(readProgress);
+		// A second a tick while this screen is open. Following the sync queue
+		// was enough while the count was the only thing on the row. It is not
+		// any more: the other two facts change without telling anybody, which
+		// is why the corner of the window reads them rather than subscribing.
+		// A second rather than the corner's four, because the bar is the thing
+		// somebody watches during a first sync and one standing still reads as
+		// stuck.
+		refreshReading();
+		const ticker = window.setInterval(refreshReading, 1000);
+		return () => window.clearInterval(ticker);
 	});
 
-	onDestroy(() => {
-		stopWatchingProgress?.();
-	});
-
-	/** Where the vault is in the sync queue, or zeroes when it is not in one. */
-	function readProgress() {
-		const folder = plugin.sharedFolders?.find((f) => f.isVaultScope);
-		const group = folder ? plugin.backgroundSync?.syncGroups.get(folder) : undefined;
-		syncDone = group?.completed ?? 0;
-		syncTotal = group?.total ?? 0;
+	/** The one reading this screen and the corner of the window both draw on. */
+	function refreshReading() {
+		reading = plugin.readVaultStatus();
 	}
 
 	/** The share clients, which only exist once somebody is signed in. */
@@ -247,10 +229,10 @@
 				folder.settings.onpremServerId = KNAP_SERVER_ID;
 			}
 			plugin.folderNavDecorations?.quickRefresh();
-			vaultSyncing = true;
-			vaultPaused = folder ? folder.shouldConnect === false : false;
 			vaultLines = [];
-			readProgress();
+			// The folder is brand new and has caught up with nothing yet, so
+			// the row says Syncing the moment it reads it.
+			refreshReading();
 		} catch (e: unknown) {
 			error = e instanceof Error ? e.message : "Could not start syncing this vault";
 		}
@@ -317,8 +299,6 @@
 				leftoverFolders = Math.max(0, leftoverFolders - 1);
 			}
 
-			vaultSyncing = false;
-			vaultPaused = false;
 			vaultLines = [];
 			await startSyncingTheVault();
 			new Notice("The whole vault is syncing.");
@@ -420,8 +400,6 @@
 
 	async function signOut() {
 		error = "";
-		vaultSyncing = false;
-		vaultPaused = false;
 		try {
 			await plugin.loginManager.logoutFromServer(KNAP_SERVER_ID);
 			new Notice("Signed out");
