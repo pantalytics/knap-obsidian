@@ -74,8 +74,14 @@ function batchFor(body: unknown): RelayTokenBatchResponse {
 	const asked = (body as { doc_ids?: string[] }).doc_ids ?? [];
 	return {
 		relay_url: TOKEN_RESPONSE.relay_url,
-		expires_at: TOKEN_RESPONSE.expires_at,
-		tokens: asked.map((doc_id) => ({ doc_id, token: TOKEN_RESPONSE.token })),
+		// Per token, exactly as the control plane answers it. There is no
+		// batch-level expires_at, and assuming one is how every token ends up
+		// with a NaN expiry.
+		tokens: asked.map((doc_id) => ({
+			doc_id,
+			token: TOKEN_RESPONSE.token,
+			expires_at: TOKEN_RESPONSE.expires_at,
+		})),
 	};
 }
 
@@ -480,8 +486,11 @@ describe("RelayOnPremTokenProvider batched token requests", () => {
 				.doc_ids as string[];
 			const data: RelayTokenBatchResponse = {
 				relay_url: "wss://relay.example.com",
-				expires_at: new Date(Date.now() + 60_000).toISOString(),
-				tokens: asked.map((doc_id) => ({ doc_id, token: `token-${doc_id}` })),
+				tokens: asked.map((doc_id) => ({
+					doc_id,
+					token: `token-${doc_id}`,
+					expires_at: new Date(Date.now() + 60_000).toISOString(),
+				})),
 			};
 			return Promise.resolve({
 				ok: true,
@@ -609,15 +618,57 @@ describe("RelayOnPremTokenProvider batched token requests", () => {
 		).toHaveLength(0);
 	});
 
+	test("each token's expiry comes from its own entry, not from the batch", async () => {
+		// The control plane answers expires_at per token and carries none for
+		// the batch. Reading a batch-level one yields undefined, and
+		// `new Date(undefined).getTime()` is NaN -- which TokenStore reads as
+		// expired forever, so nothing would ever cache and every document
+		// would pay for a token it had already been given.
+		const expiry = new Date(Date.now() + 5 * 60_000).toISOString();
+		mockFetch.mockImplementation((_url, init) => {
+			const asked = JSON.parse((init as RequestInit).body as string)
+				.doc_ids as string[];
+			const data: RelayTokenBatchResponse = {
+				relay_url: "wss://relay.example.com",
+				tokens: asked.map((doc_id) => ({
+					doc_id,
+					token: `token-${doc_id}`,
+					expires_at: expiry,
+				})),
+			};
+			return Promise.resolve({
+				ok: true,
+				status: 200,
+				text: async () => JSON.stringify(data),
+				json: async () => data,
+				headers: new Headers(),
+			} as Response);
+		});
+		const provider = new RelayOnPremTokenProvider({
+			controlPlaneUrl: "https://relay.example.com",
+			authProvider: makeAuthProvider(),
+		});
+
+		const request = provider.requestToken("relay1", "folder1", "doc1", "write");
+		await jest.advanceTimersByTimeAsync(0);
+		const clientToken = await request;
+
+		expect(clientToken.expiryTime).toBe(new Date(expiry).getTime());
+		expect(Number.isNaN(clientToken.expiryTime)).toBe(false);
+	});
+
 	test("a batch that skips a document refuses for it rather than guessing", async () => {
 		mockFetch.mockImplementation((_url, init) => {
 			const asked = JSON.parse((init as RequestInit).body as string)
 				.doc_ids as string[];
 			const data: RelayTokenBatchResponse = {
 				relay_url: "wss://relay.example.com",
-				expires_at: new Date(Date.now() + 60_000).toISOString(),
 				// Answers for the first and quietly drops the second.
-				tokens: asked.slice(0, 1).map((doc_id) => ({ doc_id, token: "t" })),
+				tokens: asked.slice(0, 1).map((doc_id) => ({
+					doc_id,
+					token: "t",
+					expires_at: new Date(Date.now() + 60_000).toISOString(),
+				})),
 			};
 			return Promise.resolve({
 				ok: true,

@@ -24,17 +24,27 @@ export interface RelayTokenResponse {
 	expires_at: string;
 }
 
+/**
+ * The batch route's answer: N ordinary tokens, in the order they were asked
+ * for. Each carries its own expiry rather than the batch carrying one, and
+ * there is no wider token in here -- the relay server enforces one document
+ * per token.
+ */
 export interface RelayTokenBatchResponse {
 	relay_url: string;
-	expires_at: string;
-	tokens: Array<{ doc_id: string; token: string }>;
+	tokens: Array<{ doc_id: string; token: string; expires_at: string }>;
 }
 
 /**
- * Documents one batch request may ask for. The control plane's own ceiling,
- * and it refuses more rather than trimming, so the number lives on both sides.
+ * Documents one batch request may ask for. The control plane's own ceiling
+ * (`RELAY_TOKEN_BATCH_MAX`), and it refuses more rather than trimming, so the
+ * number lives on both sides.
+ *
+ * It is set against the five-minute token lifetime rather than server load:
+ * every token in a batch starts expiring the moment it is signed, so asking
+ * for more than can be spent inside that window is signatures thrown away.
  */
-export const MAX_BATCH_DOCS = 200;
+export const MAX_BATCH_DOCS = 100;
 
 interface TokenWaiter {
 	resolve: (token: ClientToken) => void;
@@ -454,24 +464,28 @@ export class RelayOnPremTokenProvider {
 			}
 
 			const data = (await response.json()) as RelayTokenBatchResponse;
-			const issued = new Map(data.tokens.map((t) => [t.doc_id, t.token]));
-			const expiryTime = new Date(data.expires_at).getTime();
+			const issued = new Map(data.tokens.map((t) => [t.doc_id, t]));
 
 			settle((waiter, docId) => {
-				const token = issued.get(docId);
-				if (!token) {
+				const item = issued.get(docId);
+				if (!item) {
 					// A batch that answered for some and not others is not a
 					// reason to guess: this document was asked for, and is owed
 					// either a token or an error.
 					waiter.reject(new Error(`No relay token issued for ${docId}`));
 					return;
 				}
+				// Each token carries its own expiry. Reading a batch-level one
+				// would be undefined here, and an undefined date is a NaN
+				// expiryTime, which reads as expired forever: every token would
+				// be re-fetched on the next use and the caching this change
+				// exists to enable would quietly do nothing.
 				waiter.resolve({
-					token,
+					token: item.token,
 					url: data.relay_url,
 					docId,
 					folder: folderId,
-					expiryTime,
+					expiryTime: new Date(item.expires_at).getTime(),
 					authorization: mode === "write" ? "full" : "read-only",
 				});
 			});
