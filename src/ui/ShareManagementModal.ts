@@ -295,7 +295,7 @@ export class ShareManagementModal extends Modal {
 		// (ADR-0042), so this list reports rather than offers.
 		if (this.shares.length === 0) {
 			contentEl.createEl("p", {
-				text: "Nothing syncs yet. Sign in on the Synced Vaults settings tab and the whole vault starts.",
+				text: "Nothing syncs yet. Sign in on the Knap settings tab and the whole vault starts.",
 				cls: "relay-onprem-empty",
 			});
 			return;

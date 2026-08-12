@@ -88,7 +88,7 @@ export function createAuthProviderForServer(
 
 /**
  * Check if relay-onprem mode is enabled
- * For Synced Vaults, this is always true (we don't support System 3 cloud)
+ * For Knap, this is always true (we don't support System 3 cloud)
  */
 export function isRelayOnPremMode(settings: RelayOnPremSettings): boolean {
 	// Always return true if enabled, even without servers configured

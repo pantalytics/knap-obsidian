@@ -71,7 +71,7 @@
 	});
 </script>
 
-<div class="modal-title">Synced Vaults database analysis</div>
+<div class="modal-title">Knap database analysis</div>
 <div class="system3-indexeddb-analysis">
 	<div class="setting-item">
 		<div class="setting-item-info">

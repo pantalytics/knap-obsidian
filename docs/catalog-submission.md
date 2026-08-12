@@ -1,4 +1,4 @@
-# Submitting Synced Vaults to the community catalog
+# Submitting Knap to the community catalog
 
 What the Obsidian community directory asks for, what this repo already has, and
 what is genuinely left. Everything here was read off
@@ -66,10 +66,10 @@ Verified against the live repo and the live catalog on 2026-08-11, not assumed.
 |---|---|
 | Repository is public | Public. This was the blocker in the previous draft and it is gone. |
 | `README.md`, `LICENSE`, `manifest.json` in the repo root | Present. CI checks they stay present. |
-| Default branch carries the Synced Vaults manifest and README | `knap/fork-base` is the default branch and holds both. There is no `main`, so there is nothing to merge first. |
-| Plugin id unique across published plugins | `synced-vaults` is free, and so is the name: no entry carries either. Re-checked against all 6582 entries in `community-plugins.json` on 2026-08-12, after the rename off `knap-sync`. The old id was checked against 6558 entries on 2026-08-11 and was free too, which is worth knowing only because it means nothing was forced here. |
+| Default branch carries the Knap manifest and README | `knap/fork-base` is the default branch and holds both. There is no `main`, so there is nothing to merge first. |
+| Plugin id unique across published plugins | `synced-vaults` is free: re-checked against all 6582 entries in `community-plugins.json` on 2026-08-12, after the rename off `knap-sync`. The id stayed there when the name went back to Knap (ADR-0045). The name was checked separately on 2026-08-12 against all 6588 entries then published: no plugin is called Knap and none carries the word in its name. |
 | Plugin id does not contain `obsidian` | `synced-vaults`. CI checks it. |
-| Name does not read as a first-party Obsidian product | Synced Vaults. 275 catalog plugins carry "Sync" in the name, so the word itself is not a problem. CI checks for "Obsidian". |
+| Name does not read as a first-party Obsidian product | Knap. It is the product's own name and says nothing about Obsidian. CI checks for "Obsidian". |
 | `manifest.json` carries id, name, version, minAppVersion, description, author, `isDesktopOnly` | All set. `isDesktopOnly: false`, so the phone is a supported target and the scan will hold it to that. |
 | Semantic version, matching across manifest, package.json, versions.json, manifest-beta.json | CI fails the build when any two disagree. |
 | Release tagged bare semver, equal to `manifest.version` | 1.1.41 and 1.1.42 are published. `release.yml` refuses a `v` prefix and refuses a tag that differs from the manifest. 1.1.43 still needs tagging, see below. |

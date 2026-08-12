@@ -1,7 +1,7 @@
 # What this plugin should do, and what it should not
 
-Synced Vaults is a fork of EVC Team Relay's Obsidian plugin. The fork exists because
-we run one service and upstream builds a hosted product, and most of what this
+Knap is a fork of EVC Team Relay's Obsidian plugin. The fork exists because we
+run one service and upstream builds a hosted product, and most of what this
 plugin still renders answers questions our stack does not have.
 
 This page is the design the fork is being cut down to. It was settled on
@@ -9,8 +9,8 @@ This page is the design the fork is being cut down to. It was settled on
 ADRs in the private admin repository, `knap-mcp-admin/docs/adr/`: **0030**
 (sign-in), **0031** (one control surface), **0032** (whole vault by default),
 **0033** (one server), **0034** (permissions), **0042** (a vault is one share,
-which retired 0039's toggle). Where this page and an ADR disagree, the ADR
-wins.
+which retired 0039's toggle), **0045** (the plugin is Knap, and the screen is
+two rows). Where this page and an ADR disagree, the ADR wins.
 
 ## The one rule
 
@@ -65,14 +65,20 @@ moment they are looking at the screen.
 
 ### 3. Working
 
-One row for the vault: a dot, the name, the state, when it last moved. Open, it
-carries the facts, who may read them, and the two actions that belong to this
-device.
+Two rows and two buttons, and that is the whole screen (ADR-0045). **Account** is
+the address signed in, **Status** is the state word with its dot, and under them
+sits whatever instruction the state carries. *Logout* ends the session on this
+device. *Dashboard* opens Knap's page in a browser, which is where the rest of
+it lives: which devices sync, and which AI is connected.
+
+The rows are Obsidian's own `setting-item`, label on the left and value on the
+right, so the screen reads like the settings pages either side of it rather than
+like a panel we built.
 
 ### 4. Folders are content, not settings
 
 A folder is a thing inside the vault, and the vault is what syncs. So there is
-no folder picker, no *Synced Vaults: sync this folder* on the context menu, and no
+no folder picker, no *Knap: sync this folder* on the context menu, and no
 *Add a folder* button. **Making a folder makes it everywhere, moving it moves it
 everywhere, and deleting it deletes it everywhere**, which is what a person
 already expects from a sync and what they get from Obsidian Sync.
@@ -104,9 +110,10 @@ documents, and it goes when the last of those vaults has been through it.
 
 ### 5. Signed out
 
-The row turns red, the shares pause, and *Sign in again* is the primary button
-inside it. Nothing has been lost, and the copy says so: every note is still on
-this device.
+The status word turns to *Signed out* with a red dot, the shares pause, and
+*Sign in* is the only button left: there is no account row to show and nothing on
+Knap's page to open without one. Nothing has been lost, and the copy says so:
+every note is still on this device.
 
 ## One vault, one row, and never a second level
 
@@ -143,13 +150,13 @@ their job.
 |---|---|
 | **Vault** | This Obsidian vault |
 | **Folder** | A folder inside the vault. It syncs because the vault does, so it is never a thing to turn on |
-| **Sync** | What happens between them. **Synced Vaults** is this settings tab, and Knap's own page says the same words |
+| **Sync** | What happens between them. The settings tab is **Knap**, the product's own name, and Knap's page uses the same four words |
 | **MCP** | How an AI reaches the vault |
 
 | Not on screen | Say instead |
 |---|---|
 | share, workspace, space | folder |
-| Relay Server, relay-onprem, Knap servers, Obsidian servers | Synced Vaults |
+| Relay Server, relay-onprem, Knap servers, Obsidian servers | Knap |
 | relay, control plane, any hostname | Knap, or the vault |
 | pair, pairing code, token | **Sign in** |
 | viewer, editor, role | **can read**, **can edit** |
@@ -158,7 +165,7 @@ their job.
 something a person using this plugin has to know about, so neither reaches the
 screen. `Relay: share folder` became `Synced Vaults: sync this folder` for that
 reason, and then went altogether when there stopped being a folder to sync on
-its own.
+its own. The menu items that remain say *Knap:* now.
 
 **Upstream's own screens still say all of it**, and they are left that way on
 purpose. `Relays.svelte`, `ManageRelay.svelte`, `ManageSharedFolder.svelte` and

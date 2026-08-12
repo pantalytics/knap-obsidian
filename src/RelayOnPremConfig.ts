@@ -14,15 +14,25 @@
  */
 
 declare const CONTROL_PLANE_URL: string;
+declare const PANEL_URL: string;
 
 /** The id every share, folder record and stored credential is keyed by. */
 export const KNAP_SERVER_ID = "synced-vaults";
 
 /** What the server is called on screen, the rare times it is named at all. */
-export const KNAP_SERVER_NAME = "Synced Vaults";
+export const KNAP_SERVER_NAME = "Knap";
 
 /** Where the plugin talks, fixed at build time. */
 export const KNAP_CONTROL_PLANE_URL = CONTROL_PLANE_URL;
+
+/**
+ * Knap's own page, which the Dashboard button opens in a browser.
+ *
+ * Everything about the vault is set here in Obsidian and Knap's page reports
+ * (ADR-0031), so the button is a way out to the reporting rather than a second
+ * place to change something. Fixed at build time, like the address above.
+ */
+export const KNAP_PANEL_URL = PANEL_URL;
 
 /**
  * A configured server. Only one is ever built, by knapServer() below.
@@ -77,7 +87,7 @@ export function knapServer(lastUserEmail?: string): RelayOnPremServer {
 }
 
 export const DEFAULT_RELAY_ONPREM_SETTINGS: RelayOnPremSettings = {
-	// Synced Vaults always uses relay-onprem mode (no System 3 cloud)
+	// Knap always uses relay-onprem mode (no System 3 cloud)
 	enabled: true,
 	servers: [knapServer()],
 	defaultServerId: KNAP_SERVER_ID,
@@ -236,10 +246,10 @@ export function isServerVersionSupported(serverVersion: string | undefined | nul
  */
 export function serverCompatMessage(serverVersion: string | undefined | null): string {
 	if (!serverVersion) {
-		return "The server did not say which version it is running, and Synced Vaults needs " +
+		return "The server did not say which version it is running, and Knap needs " +
 			`${MIN_SUPPORTED_SERVER_VERSION} or newer. Nothing to fix on your side.`;
 	}
-	return `The server is on version ${serverVersion} and Synced Vaults needs ` +
+	return `The server is on version ${serverVersion} and Knap needs ` +
 		`${MIN_SUPPORTED_SERVER_VERSION} or newer. Nothing to fix on your side, it will ` +
 		"work once the server catches up.";
 }
