@@ -220,9 +220,33 @@ export class BackgroundSync extends HasLogging {
 				}
 
 				syncPromise
-					.then(() => {
-						item.status = "completed";
+					.then((result: unknown) => {
 						const callback = this.syncCompletionCallbacks.get(item.guid);
+
+						// A document sync that answers false came back without
+						// writing the body. Counting it as a completed sync is
+						// what let a fill of thousands of notes finish, write
+						// none of them, and say it was up to date (#38). The
+						// waiting caller is still released, because the queue
+						// promise is a sequencing barrier rather than a result,
+						// and rejecting it here would only produce unhandled
+						// rejections at the callers that fire and forget.
+						if (result === false) {
+							item.status = "failed";
+							this.warn("[Sync Incomplete]", item.path);
+							if (callback) {
+								callback.resolve();
+								this.syncCompletionCallbacks.delete(item.guid);
+							}
+							const failedGroup = this.syncGroups.get(item.sharedFolder);
+							if (failedGroup) {
+								failedGroup.status = "failed";
+								this.syncGroups.set(item.sharedFolder, failedGroup);
+							}
+							return;
+						}
+
+						item.status = "completed";
 						if (callback) {
 							callback.resolve();
 							this.syncCompletionCallbacks.delete(item.guid);
@@ -750,10 +774,38 @@ export class BackgroundSync extends HasLogging {
 		} else if (isDocument(doc)) {
 			currentTextStr = doc.text;
 		}
+		// A file we cannot read and a file that is not there are two different
+		// answers, and treating both as "" was the quietest way this ended
+		// with an empty document on the relay and a green tick next to it
+		// (#38): "" matches an empty Y.Text, so the insert below is skipped
+		// and the sync reports success. Ask first, and if a file that is
+		// there will not open, stop rather than guess at its contents.
+		let fileExists = false;
 		try {
-			currentFileContents = await doc.sharedFolder.read(doc);
-		} catch {
-			// File does not exist
+			fileExists = await doc.sharedFolder.exists(doc);
+		} catch (e: unknown) {
+			this.warn(
+				"[syncDocumentWebsocket] could not tell whether the file exists",
+				doc.path,
+				e,
+			);
+		}
+		if (fileExists) {
+			try {
+				currentFileContents = await doc.sharedFolder.read(doc);
+			} catch (e: unknown) {
+				this.error(
+					"[syncDocumentWebsocket] could not read the local file, leaving it alone",
+					doc.path,
+					e,
+				);
+				return false;
+			}
+		} else {
+			this.debug(
+				"[syncDocumentWebsocket] no local file yet, this one comes from the relay",
+				doc.path,
+			);
 		}
 
 		// Only proceed with update if file matches current ydoc state
@@ -791,7 +843,10 @@ export class BackgroundSync extends HasLogging {
 		const intent = doc.intent;
 		const connected = await doc.connect();
 		if (!connected) {
-			this.warn("[syncDocumentWebsocket] connect failed for", doc.path);
+			this.warn(
+				"[syncDocumentWebsocket] connect failed, body not written for",
+				doc.path,
+			);
 			return false;
 		}
 		if (intent === "disconnected") {
@@ -803,7 +858,10 @@ export class BackgroundSync extends HasLogging {
 			try {
 				await Promise.race([promise, timeout]);
 			} catch {
-				this.warn("[syncDocumentWebsocket] timed out for", doc.path);
+				this.warn(
+					"[syncDocumentWebsocket] timed out waiting for the relay, body not written for",
+					doc.path,
+				);
 				if (!doc.userLock) {
 					doc.disconnect();
 				}
@@ -1039,16 +1097,21 @@ export class BackgroundSync extends HasLogging {
 		await file.pull();
 	}
 
-	private async syncDocument(doc: Document | Canvas) {
+	/**
+	 * False when the document came back from this round without its body,
+	 * which the queue counts as a failed sync rather than a finished one.
+	 * Swallowing the answer here is how a fill that wrote nothing still
+	 * reported every document done (#38).
+	 */
+	private async syncDocument(doc: Document | Canvas): Promise<boolean> {
 		try {
-			if (isDocument(doc)) {
-				await this.syncDocumentWebsocket(doc);
-			} else if (isCanvas(doc)) {
-				await this.syncDocumentWebsocket(doc);
+			if (isDocument(doc) || isCanvas(doc)) {
+				return await this.syncDocumentWebsocket(doc);
 			}
+			return true;
 		} catch (e: unknown) {
-			console.error(e);
-			return;
+			this.error("[syncDocument] sync threw for", doc.path, e);
+			return false;
 		}
 	}
 
