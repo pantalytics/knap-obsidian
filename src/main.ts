@@ -323,10 +323,10 @@ export default class Live extends Plugin {
 		);
 		this.notifier = new ObsidianNotifier();
 
-		this.debug = curryLog("[Synced Vaults]", "debug");
-		this.log = curryLog("[Synced Vaults]", "log");
-		this.warn = curryLog("[Synced Vaults]", "warn");
-		this.error = curryLog("[Synced Vaults]", "error");
+		this.debug = curryLog("[Knap]", "debug");
+		this.log = curryLog("[Knap]", "log");
+		this.warn = curryLog("[Knap]", "warn");
+		this.error = curryLog("[Knap]", "error");
 
 		this.settings = new Settings<RelaySettings>(this, DEFAULT_SETTINGS);
 		await this.settings.load();
@@ -405,7 +405,7 @@ export default class Live extends Plugin {
 
 		// Our own ribbon icon: a note kept in step with a server
 		addIcon("synced-vaults", `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"><path d="M18.5 44.4a32 32 0 0 1 63 0"/><path d="M87.3 31.2 81.5 44.4 71.5 34"/><path d="M81.5 55.6a32 32 0 0 1-63 0"/><path d="M12.7 68.8 18.5 55.6 28.5 66"/><circle cx="50" cy="50" r="7" fill="currentColor" stroke="none"/></svg>`);
-		this.addRibbonIcon("synced-vaults", "Synced Vaults", () => {
+		this.addRibbonIcon("synced-vaults", "Knap", () => {
 			void this.openSettings();
 		});
 
@@ -791,7 +791,7 @@ export default class Live extends Plugin {
 							// server and nothing to configure about it (ADR-0033).
 							menu.addItem((item) => {
 								item
-									.setTitle("Synced Vaults: folder settings")
+									.setTitle("Knap: folder settings")
 									.setIcon("settings")
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
@@ -804,7 +804,7 @@ export default class Live extends Plugin {
 							menu.addItem((item) => {
 								item
 									.setTitle(
-										folder.connected ? "Synced Vaults: disconnect" : "Synced Vaults: connect",
+										folder.connected ? "Knap: disconnect" : "Knap: connect",
 									)
 									.setIcon("satellite")
 									.onClick(() => {
@@ -821,7 +821,7 @@ export default class Live extends Plugin {
 						} else {
 							menu.addItem((item) => {
 								item
-									.setTitle("Synced Vaults: folder settings")
+									.setTitle("Knap: folder settings")
 									.setIcon("settings")
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
@@ -835,7 +835,7 @@ export default class Live extends Plugin {
 						if (folder.relayId && folder.connected) {
 							menu.addItem((item) => {
 								item
-									.setTitle("Synced Vaults: sync")
+									.setTitle("Knap: sync")
 									.setIcon("folder-sync")
 									.onClick(async () => {
 										void folder.netSync();
@@ -864,7 +864,7 @@ export default class Live extends Plugin {
 						if (ifile && isSyncFile(ifile)) {
 							menu.addItem((item) => {
 								item
-									.setTitle("Synced Vaults: download")
+									.setTitle("Knap: download")
 									.setIcon("cloud-download")
 									.onClick(async () => {
 										await ifile.pull();
@@ -874,7 +874,7 @@ export default class Live extends Plugin {
 							if (this.debugSettings.get().debugging) {
 								menu.addItem((item) => {
 									item
-										.setTitle("Synced Vaults: verify upload")
+										.setTitle("Knap: verify upload")
 										.setIcon("search-check")
 										.onClick(async () => {
 											const present = await ifile.verifyUpload();
@@ -886,7 +886,7 @@ export default class Live extends Plugin {
 							}
 							menu.addItem((item) => {
 								item
-									.setTitle("Synced Vaults: upload")
+									.setTitle("Knap: upload")
 									.setIcon("cloud-upload")
 									.onClick(async () => {
 										await ifile.push(true);
@@ -1146,7 +1146,7 @@ export default class Live extends Plugin {
 	}
 
 	/**
-	 * The Synced Vaults item in the status bar.
+	 * The Knap item in the status bar.
 	 *
 	 * The icon carries the state, so the ordinary case is a green mark in the
 	 * corner and nothing to open. Behind it are two actions and the settings
@@ -1228,7 +1228,7 @@ export default class Live extends Plugin {
 		for (const dot of SYNC_DOT_NAMES) {
 			iconEl.toggleClass(`relay-status-${dot}`, dot === syncDot(word));
 		}
-		statusBarItem.setAttribute("aria-label", `Synced Vaults: ${word.toLowerCase()}`);
+		statusBarItem.setAttribute("aria-label", `Knap: ${word.toLowerCase()}`);
 	}
 
 	/**
@@ -1613,7 +1613,7 @@ export default class Live extends Plugin {
 			}),
 		);
 
-		const vaultLog = curryLog("[Synced Vaults][Vault]", "log");
+		const vaultLog = curryLog("[Knap][Vault]", "log");
 
 		const handlePromiseRejection = (event: PromiseRejectionEvent): void => {
 			//event.preventDefault();

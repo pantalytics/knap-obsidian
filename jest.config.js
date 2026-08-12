@@ -27,6 +27,9 @@ module.exports = {
         // esbuild.config.mjs (ADR-0033). A test address rather than the real
         // one, so a test that passes only against production fails here.
         "CONTROL_PLANE_URL": "https://cp.knap.test",
+        // Knap's own page, behind the Dashboard button. A test address for the
+        // same reason as the line above.
+        "PANEL_URL": "https://knap.test/sync",
     },
 	transform: {
 		".ts": [

@@ -436,7 +436,7 @@
 	padding: 2px 8px;
 }
 
-/* The Synced Vaults mark in the status bar. Green when the vault is up to
+/* The Knap mark in the status bar. Green when the vault is up to
    date, and the icon is the whole message: the menu behind it is for the two
    things somebody might want to force, not for finding out what is going on.
    One class per dot in syncStatus.ts, the same four the settings screen uses. */

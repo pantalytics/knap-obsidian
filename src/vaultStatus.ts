@@ -7,7 +7,7 @@
  * mirrors the admin repository's `status.py` string for string, and this file
  * only does the step in front of them: it turns the shared folders this plugin
  * holds into the three booleans `syncWord` reads. Doing it here rather than in
- * the status bar is what keeps the icon and the Synced Vaults screen from
+ * the status bar is what keeps the icon and the Knap screen from
  * describing the same vault two different ways.
  *
  * A vault with nothing shared reads as up to date, and that is deliberate:

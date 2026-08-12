@@ -218,7 +218,7 @@ export class InboundFileDownloader {
 					serverHash: serverSha256,
 				});
 				new Notice(
-					`Synced Vaults: skipped "${relativePath}". The relay version would ` +
+					`Knap: skipped "${relativePath}". The relay version would ` +
 						`have overwritten changes you made here. Merge them yourself ` +
 						`and it syncs normally again.`,
 					0,

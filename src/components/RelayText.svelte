@@ -4,7 +4,7 @@
 </script>
 
 <div class="synced-vaults-text" style="font-size: {fontSize}px;">
-	<span class="knap-text">Synced Vaults</span>
+	<span class="knap-text">Knap</span>
 </div>
 
 <style>

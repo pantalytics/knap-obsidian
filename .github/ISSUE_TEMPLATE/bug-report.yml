@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a bug in the Synced Vaults plugin or the relay it talks to
+description: Report a bug in the Knap plugin or the relay it talks to
 title: "[Bug]: "
 labels: ["bug"]
 body:
@@ -9,7 +9,7 @@ body:
       label: Component
       description: Where does the issue occur?
       options:
-        - Synced Vaults plugin (sync/collaboration)
+        - Knap plugin (sync/collaboration)
         - Relay Server (self-hosted)
         - Web Publish
         - Control Plane / Admin UI

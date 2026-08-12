@@ -1,9 +1,9 @@
 {
 	"id": "synced-vaults",
-	"name": "Synced Vaults",
+	"name": "Knap",
 	"version": "1.6.0",
 	"minAppVersion": "1.8.7",
-	"description": "Your vault on Knap: the whole vault, on desktop and on phone, with real-time collaborative editing on all of it.",
+	"description": "Your whole vault on Knap, on desktop and on phone, with real-time collaborative editing on all of it.",
 	"author": "Pantalytics",
 	"authorUrl": "https://github.com/pantalytics",
 	"isDesktopOnly": false

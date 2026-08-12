@@ -274,7 +274,7 @@ export class LoginManager extends Observable<LoginManager> {
 		const authUrl = this.endpointManager.getAuthUrl();
 		if (!authUrl) {
 			new Notice(
-				"Synced Vaults: relay-onprem mode is disabled and no server is configured. " +
+				"Knap: relay-onprem mode is disabled and no server is configured. " +
 					"Re-enable relay-onprem mode in plugin settings, or configure a server URL.",
 				10000
 			);

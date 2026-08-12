@@ -1,7 +1,7 @@
 {
 	"name": "synced-vaults",
 	"version": "1.6.0",
-	"description": "Your vault on Knap: a whole vault or one folder at a time, on desktop and on phone, with real-time collaborative editing on whatever you share.",
+	"description": "Your whole vault on Knap, on desktop and on phone, with real-time collaborative editing on all of it.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs watch",

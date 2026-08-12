@@ -173,7 +173,7 @@ describe("serverCompatMessage", () => {
 describe("the one server", () => {
 	test("the default settings hold exactly the Knap server, at the built address", () => {
 		expect(DEFAULT_RELAY_ONPREM_SETTINGS.servers).toEqual([
-			{ id: KNAP_SERVER_ID, name: "Synced Vaults", controlPlaneUrl: KNAP_CONTROL_PLANE_URL },
+			{ id: KNAP_SERVER_ID, name: "Knap", controlPlaneUrl: KNAP_CONTROL_PLANE_URL },
 		]);
 		expect(DEFAULT_RELAY_ONPREM_SETTINGS.defaultServerId).toBe(KNAP_SERVER_ID);
 	});
@@ -207,7 +207,7 @@ describe("migrateRelayOnPremSettings", () => {
 	test("a stored address from an older build is replaced by the built one", () => {
 		const result = migrateRelayOnPremSettings({
 			enabled: true,
-			servers: [{ id: KNAP_SERVER_ID, name: "Synced Vaults", controlPlaneUrl: "https://cp.old.example" }],
+			servers: [{ id: KNAP_SERVER_ID, name: "Knap", controlPlaneUrl: "https://cp.old.example" }],
 			defaultServerId: KNAP_SERVER_ID,
 		});
 		expect(result.settings.servers[0].controlPlaneUrl).toBe(KNAP_CONTROL_PLANE_URL);
@@ -253,7 +253,7 @@ describe("migrateRelayOnPremSettings", () => {
 		expect(result.settings.servers).toEqual([
 			{
 				id: KNAP_SERVER_ID,
-				name: "Synced Vaults",
+				name: "Knap",
 				controlPlaneUrl: KNAP_CONTROL_PLANE_URL,
 				lastUserEmail: "me@example.com",
 			},

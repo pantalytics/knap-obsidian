@@ -5,6 +5,7 @@
 	import {
 		KNAP_SERVER_ID,
 		KNAP_CONTROL_PLANE_URL,
+		KNAP_PANEL_URL,
 		isServerVersionSupported,
 		serverCompatMessage,
 	} from "../RelayOnPremConfig";
@@ -22,13 +23,7 @@
 		type ShareLike,
 	} from "../vaultShare";
 	import { RelayOnPremShareClientManager } from "../RelayOnPremShareClientManager";
-	import {
-		hasSignInButton,
-		syncDot,
-		syncInstruction,
-		syncWord,
-		SIGNED_OUT,
-	} from "../syncStatus";
+	import { hasSignInButton, syncDot, syncInstruction, syncWord } from "../syncStatus";
 
 	// One button, because there is one server and one account (ADR-0030,
 	// ADR-0033). No address to type, nothing to choose, and no code to paste:
@@ -73,11 +68,16 @@
 		syncing: vaultSyncing,
 	});
 	$: dot = syncDot(word);
-	$: instruction = syncInstruction(word);
 	// Somebody who has signed in here before is signed OUT, which is a state
 	// with its own words and its own button. Somebody who never has is simply
-	// new, and gets told what the button is for instead.
+	// new, and gets told what the button is for instead: the signed-out
+	// instruction promises their notes are still on this device, which is true
+	// and beside the point on an install that has never synced anything.
 	$: returning = Boolean(server?.lastUserEmail);
+	$: statusNote =
+		auth.isSignedIn || returning
+			? syncInstruction(word)
+			: "Sign in with your Knap account and this vault starts syncing.";
 
 	// Filled in by startSyncingTheVault, and by the folder it finds or makes.
 	let vaultPaused = false;
@@ -359,6 +359,18 @@
 		}
 	}
 
+	/**
+	 * Knap's page, in a browser.
+	 *
+	 * Everything about the vault is set here (ADR-0031), so this button leads
+	 * to the half that reports: which devices sync, and which AI is connected.
+	 * It opens a browser rather than a view inside Obsidian, because that is
+	 * where somebody is already signed in.
+	 */
+	function openDashboard() {
+		window.open(KNAP_PANEL_URL);
+	}
+
 	async function signOut() {
 		error = "";
 		vaultSyncing = false;
@@ -373,48 +385,45 @@
 	}
 </script>
 
+<!-- Two rows and two buttons (ADR-0045). Everything that used to sit here as a
+     sentence is either a row's value or the note under it, so the screen reads
+     like the settings pages either side of it: Obsidian's own setting-item,
+     label on the left and value on the right. -->
 <div class="knap-signin">
 	{#if auth.isSignedIn}
-		<div class="knap-account">
-			<span class="knap-dot knap-dot-{dot}"></span>
-			<span class="knap-account-text">
-				{word}{auth.email ? ` as ${auth.email}` : ""}
-			</span>
-			<!-- Sign out is the only button here. Who can read this led to a
-			     list of one share and the screens under it, which is a second
-			     level on a screen that has one thing to say: this vault syncs,
-			     as you. -->
-			<div class="knap-account-actions">
-				<button class="knap-btn" on:click={signOut}>Sign out</button>
+		<div class="setting-item">
+			<div class="setting-item-info">
+				<div class="setting-item-name">Account</div>
+			</div>
+			<div class="setting-item-control knap-value">
+				{auth.email ?? "Signed in"}
 			</div>
 		</div>
-		{#if instruction}
-			<p class="knap-signin-hint">{instruction}</p>
-		{/if}
-		{#each vaultLines as line}
-			<p class="knap-signin-hint">{line}</p>
-		{/each}
-		<!-- The only button on this screen about what syncs, and it is here to
-		     be grown out of: it exists for vaults an older build left syncing
-		     folders, and it goes the moment they are gone. -->
-		{#if leftoverFolders > 0}
-			<button class="knap-btn mod-cta" disabled={replacing} on:click={replaceFolders}>
-				{replacing ? "Working on it" : REPLACE_FOLDERS_LABEL}
-			</button>
-		{/if}
-	{:else}
-		{#if returning}
-			<div class="knap-account">
-				<span class="knap-dot knap-dot-{syncDot(SIGNED_OUT)}"></span>
-				<span class="knap-account-text">{SIGNED_OUT}</span>
-			</div>
-			<p class="knap-signin-hint">{syncInstruction(SIGNED_OUT)}</p>
-		{:else}
-			<p class="knap-signin-line">
-				Sign in with your Knap account and this vault starts syncing.
-			</p>
-		{/if}
-		{#if hasSignInButton(SIGNED_OUT)}
+	{/if}
+
+	<div class="setting-item">
+		<div class="setting-item-info">
+			<div class="setting-item-name">Status</div>
+			{#if statusNote}
+				<div class="setting-item-description">{statusNote}</div>
+			{/if}
+		</div>
+		<div class="setting-item-control knap-value">
+			<span class="knap-dot knap-dot-{dot}"></span>
+			<span>{word}</span>
+		</div>
+	</div>
+
+	<!-- What a first sync needs said while it runs, and nothing after it. -->
+	{#each vaultLines as line}
+		<p class="knap-note">{line}</p>
+	{/each}
+
+	<div class="knap-actions">
+		{#if auth.isSignedIn}
+			<button class="knap-btn" on:click={signOut}>Logout</button>
+			<button class="knap-btn" on:click={openDashboard}>Dashboard</button>
+		{:else if hasSignInButton(word)}
 			<button class="knap-btn mod-cta" disabled={signingIn} on:click={signIn}>
 				{signingIn
 					? "Waiting for the browser"
@@ -423,12 +432,22 @@
 						: "Sign in"}
 			</button>
 		{/if}
-		{#if signingIn}
-			<p class="knap-signin-hint">
-				Finish in the browser window that just opened. Obsidian picks it up from
-				there.
-			</p>
-		{/if}
+	</div>
+
+	{#if signingIn}
+		<p class="knap-note">
+			Finish in the browser window that just opened. Obsidian picks it up from
+			there.
+		</p>
+	{/if}
+
+	<!-- The only button on this screen about what syncs, and it is here to be
+	     grown out of: it exists for vaults an older build left syncing folders,
+	     and it goes the moment they are gone. -->
+	{#if leftoverFolders > 0}
+		<button class="knap-btn mod-cta" disabled={replacing} on:click={replaceFolders}>
+			{replacing ? "Working on it" : REPLACE_FOLDERS_LABEL}
+		</button>
 	{/if}
 
 	{#if error}
@@ -437,47 +456,45 @@
 </div>
 
 <style>
+	/* Stretch, not flex-start: a setting row has to span the pane for the
+	   value to sit against the right edge, the way every other row in
+	   Obsidian's settings does. */
 	.knap-signin {
 		display: flex;
 		flex-direction: column;
-		align-items: flex-start;
-		gap: 10px;
+		align-items: stretch;
 	}
 
-	.knap-signin-line {
-		margin: 0;
-		color: var(--text-normal);
-	}
-
-	.knap-signin-hint {
-		margin: 0;
-		color: var(--text-muted);
-		font-size: 12px;
-		max-width: 46em;
-	}
-
-	.knap-account {
+	/* The rows are Obsidian's, so only the value side needs anything: a dot
+	   next to a word, and the same muted weight the app gives a setting's
+	   current value. */
+	.knap-value {
 		display: flex;
 		align-items: center;
-		gap: 10px;
-		width: 100%;
-		padding: 12px 14px;
-		border: 1px solid var(--background-modifier-border);
-		border-radius: var(--radius-m, 8px);
-		background: var(--background-secondary);
+		gap: 8px;
+		color: var(--text-muted);
 		font-size: var(--font-ui-small, 13px);
-	}
-
-	.knap-account-text {
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
-	.knap-account-actions {
-		margin-left: auto;
+	.knap-note {
+		margin: 8px 0 0;
+		color: var(--text-muted);
+		font-size: 12px;
+		max-width: 46em;
+	}
+
+	.knap-actions {
 		display: flex;
-		gap: 6px;
+		gap: 8px;
+		margin-top: 16px;
+		align-self: flex-start;
+	}
+
+	.knap-actions:empty {
+		display: none;
 	}
 
 	.knap-dot {
@@ -507,9 +524,15 @@
 	}
 
 	.knap-btn {
-		padding: 4px 10px;
-		font-size: 12px;
+		padding: 6px 14px;
 		cursor: pointer;
+	}
+
+	/* The clean-up button stands on its own rather than in the actions row, so
+	   it needs the same shrink-to-fit the row gets. */
+	.knap-signin > .knap-btn {
+		align-self: flex-start;
+		margin-top: 12px;
 	}
 
 	.knap-btn:disabled {
@@ -518,6 +541,7 @@
 	}
 
 	.knap-form-error {
+		margin-top: 12px;
 		color: var(--text-error);
 		font-size: 12px;
 	}
