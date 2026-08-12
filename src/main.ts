@@ -114,6 +114,8 @@ import { RelayOnPremShareClientManager, type ShareWithServer } from "./RelayOnPr
 // It was being pulled in with require() at three call sites instead.
 import { ShareManagementModal } from "./ui/ShareManagementModal";
 import { LocalStorage } from "./LocalStorage";
+import { syncDot } from "./syncStatus";
+import { SYNC_DOT_NAMES, vaultSyncWord } from "./vaultStatus";
 
 interface DebugSettings {
 	debugging: boolean;
@@ -1144,7 +1146,12 @@ export default class Live extends Plugin {
 	}
 
 	/**
-	 * Add status bar item with menu for Relay On-Prem (v1.8.3)
+	 * The Synced Vaults item in the status bar.
+	 *
+	 * The icon carries the state, so the ordinary case is a green mark in the
+	 * corner and nothing to open. Behind it are two actions and the settings
+	 * screen, and nothing about folders: a vault is one share (ADR-0042), so
+	 * there is no list to manage from here.
 	 */
 	private addRelayStatusBarItem() {
 		const statusBarItem = this.addStatusBarItem();
@@ -1152,17 +1159,24 @@ export default class Live extends Plugin {
 		// Use the same registered synced-vaults icon as ribbon
 		const iconEl = statusBarItem.createSpan({ cls: "relay-status-icon" });
 		setIcon(iconEl, "synced-vaults");
-		statusBarItem.setAttribute("aria-label", "Synced Vaults status");
 		statusBarItem.setAttribute("data-tooltip-position", "top");
 		statusBarItem.addClass("evc-cursor-pointer");
 
+		const paint = () => this.paintRelayStatus(statusBarItem, iconEl);
+		paint();
+		// Nothing here is a subscription: the share comes and goes and its
+		// provider changes state without telling anybody, so the corner reads
+		// it rather than waiting to be told. It is two booleans a tick.
+		this.registerInterval(window.setInterval(paint, 4000));
+
 		statusBarItem.addEventListener("click", (event) => {
+			paint();
 			const menu = new Menu();
 
 			// Sync All option
 			menu.addItem((item) => {
 				item
-					.setTitle("Sync all shares")
+					.setTitle("Sync vault")
 					.setIcon("refresh-cw")
 					.onClick(async () => {
 						await this.syncAllShares();
@@ -1172,7 +1186,7 @@ export default class Live extends Plugin {
 			// Sync Current option
 			menu.addItem((item) => {
 				item
-					.setTitle("Sync current file")
+					.setTitle("Sync this file")
 					.setIcon("file-sync")
 					.onClick(async () => {
 						await this.syncCurrentFile();
@@ -1180,16 +1194,6 @@ export default class Live extends Plugin {
 			});
 
 			menu.addSeparator();
-
-			// Shares option
-			menu.addItem((item) => {
-				item
-					.setTitle("Manage shares")
-					.setIcon("folder-shared")
-					.onClick(() => {
-						new ShareManagementModal(this.app, this).open();
-					});
-			});
 
 			// Settings option
 			menu.addItem((item) => {
@@ -1203,6 +1207,28 @@ export default class Live extends Plugin {
 
 			menu.showAtMouseEvent(event);
 		});
+	}
+
+	/**
+	 * Colour the status bar icon and say the word behind it.
+	 *
+	 * Green is the point of the thing. Somebody who has just written a note
+	 * wants to know it left the building, and reading that off the corner of
+	 * the window beats opening a menu to find out.
+	 */
+	private paintRelayStatus(statusBarItem: HTMLElement, iconEl: HTMLElement) {
+		const signedIn = this.loginManager?.isLoggedInToServer?.(KNAP_SERVER_ID) ?? false;
+		const word = vaultSyncWord(
+			signedIn,
+			(this.sharedFolders?.items() ?? []).map((folder) => ({
+				shouldConnect: folder.shouldConnect,
+				synced: folder.synced,
+			})),
+		);
+		for (const dot of SYNC_DOT_NAMES) {
+			iconEl.toggleClass(`relay-status-${dot}`, dot === syncDot(word));
+		}
+		statusBarItem.setAttribute("aria-label", `Synced Vaults: ${word.toLowerCase()}`);
 	}
 
 	/**

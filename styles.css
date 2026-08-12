@@ -435,3 +435,29 @@
 	font-size: 0.85em;
 	padding: 2px 8px;
 }
+
+/* The Synced Vaults mark in the status bar. Green when the vault is up to
+   date, and the icon is the whole message: the menu behind it is for the two
+   things somebody might want to force, not for finding out what is going on.
+   One class per dot in syncStatus.ts, the same four the settings screen uses. */
+.relay-onprem-statusbar .relay-status-icon {
+	display: inline-flex;
+	align-items: center;
+	color: var(--text-muted);
+}
+
+.relay-onprem-statusbar .relay-status-icon.relay-status-ok {
+	color: var(--color-green, #28a745);
+}
+
+.relay-onprem-statusbar .relay-status-icon.relay-status-working {
+	color: var(--interactive-accent);
+}
+
+.relay-onprem-statusbar .relay-status-icon.relay-status-wait {
+	color: var(--text-faint);
+}
+
+.relay-onprem-statusbar .relay-status-icon.relay-status-error {
+	color: var(--text-error);
+}
