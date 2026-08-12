@@ -28,6 +28,8 @@ export interface ShareLike {
 	id: string;
 	kind: "doc" | "folder";
 	path: string;
+	/** When the vault was made on Knap. The one fact worth previewing (#42). */
+	created_at?: string;
 }
 
 export type VaultShareDecision =
@@ -98,6 +100,131 @@ export interface LocalShare {
  */
 export function planFolderCleanup(local: LocalShare[]): string[] {
 	return local.filter((share) => !share.isVaultScope).map((share) => share.id);
+}
+
+/**
+ * The rule the whole of `decideVaultShare` turns on, said out loud (#42).
+ *
+ * The name is the key a device joins on, and until this line existed nothing
+ * anywhere said so. One character apart and a second vault appears on Knap
+ * with nobody told, which is what happens to somebody who tidies a folder name
+ * on one device, and it is also what a person setting up on a phone risks
+ * every time, because iOS makes them type the name by hand into a fresh vault
+ * in Obsidian's own folder.
+ *
+ * It reads as a fact rather than a warning because it is one, and because it
+ * is also the handle: renaming a vault on purpose is the only way to end up
+ * somewhere other than where the name points, and somebody moving off a vault
+ * that has gone bad needs to know that.
+ */
+export const VAULT_NAME_IS_THE_KEY =
+	"Knap matches vaults by name. Another device joins this vault by having a vault with the same name on it. A different name starts a second vault instead.";
+
+/** What Knap will tell you about a vault before you join it. */
+export interface JoinPreview {
+	/** The name it matched on, which is this vault's name and the share's path. */
+	vaultName: string;
+	/** When the vault was made on Knap, ISO, from the share record. */
+	createdAt?: string;
+}
+
+/**
+ * What is about to be joined, said before it is joined (#42).
+ *
+ * **This is everything the control plane will tell us at this moment, and it
+ * is less than the issue asked for.** A share record carries an id, a kind, a
+ * path, a visibility, an owner and two timestamps. There is no note count in
+ * it: the files index is the web publishing artifact list, which is empty on a
+ * private vault, so reading a count off it would report 0 notes for a healthy
+ * vault of thousands. There is no device count either, anywhere in this
+ * plugin's half of the API. So the preview says the name, the rule it matched
+ * on and the day the vault was made, and invents neither of the other two.
+ *
+ * The date is the one that settles it in practice. Somebody adding their
+ * second device made the first one this week; somebody who has just typed a
+ * name into a phone and hit an eight-month-old vault has hit the wrong one.
+ */
+export function joinPreviewLines(preview: JoinPreview): string[] {
+	const lines = [
+		`Knap already has a vault called ${preview.vaultName}, and this device will sync with that one.`,
+		`It matched because the vault here is called ${preview.vaultName} too. The name is the only thing Knap matches on.`,
+	];
+	const made = formatDay(preview.createdAt);
+	if (made) {
+		lines.push(`It was added to Knap on ${made}.`);
+	}
+	lines.push(
+		"If that is not the vault you meant, rename this vault in Obsidian first, and Knap will start a separate one under the new name.",
+	);
+	return lines;
+}
+
+/** The button that joins it, with the name on it so nobody presses it blind. */
+export function joinButtonLabel(vaultName: string): string {
+	return `Sync with ${vaultName}`;
+}
+
+/** What the screen says while it is waiting to be told to join. */
+export const JOIN_HELD_NOTE =
+	"Nothing is syncing until you decide which vault this device belongs to.";
+
+/**
+ * A new vault beside the ones already there, said when that is what happens.
+ *
+ * The costly mistake is not creating a vault, it is creating a second one by
+ * accident when a first already exists under a name a character away. Naming
+ * what the account already has is the cheapest way to catch that, and it costs
+ * no extra call: the list was fetched to make the decision.
+ */
+export function newVaultBesideLine(
+	vaultName: string,
+	otherNames: readonly string[],
+): string | undefined {
+	if (otherNames.length === 0) return undefined;
+	const shown = otherNames.slice(0, 3);
+	const rest = otherNames.length - shown.length;
+	const list =
+		rest > 0 ? `${shown.join(", ")} and ${rest} more` : joinNames(shown);
+	return (
+		`Knap already has ${list} on your account, and this vault is called ${vaultName}. ` +
+		"The names do not match, so this one starts as a vault of its own."
+	);
+}
+
+/** "A", "A and B", "A, B and C". */
+function joinNames(names: readonly string[]): string {
+	if (names.length <= 1) return names[0] ?? "";
+	return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+const MONTHS = [
+	"January",
+	"February",
+	"March",
+	"April",
+	"May",
+	"June",
+	"July",
+	"August",
+	"September",
+	"October",
+	"November",
+	"December",
+] as const;
+
+/**
+ * "11 August 2026", from whatever the control plane sent.
+ *
+ * Written out rather than handed to `toLocaleDateString`, so the same date
+ * reads the same on every machine and a test can pin it. Anything unparseable
+ * gives nothing back and the line is left out, because a date that says
+ * "Invalid Date" is worse than no date at all.
+ */
+function formatDay(iso?: string): string | undefined {
+	if (!iso) return undefined;
+	const at = new Date(iso);
+	if (Number.isNaN(at.getTime())) return undefined;
+	return `${at.getUTCDate()} ${MONTHS[at.getUTCMonth()]} ${at.getUTCFullYear()}`;
 }
 
 /**

@@ -200,3 +200,42 @@ describe("the reading both screens draw from", () => {
 		expect(reading.progress).toBeUndefined();
 	});
 });
+
+describe("a vault that is not syncing and is not about to be", () => {
+	// A vault with nothing shared normally reads Up to date, because signing in
+	// shares the whole vault and the gap is a moment long. Two things make that
+	// gap permanent: something else syncing the same folder, which holds the
+	// vault back (#41), and a vault waiting to be told which one on Knap it
+	// belongs to (#42). Saying Up to date over either is the same lie as #40.
+
+	test("held with nothing shared reads Paused, not Up to date", () => {
+		expect(vaultSyncWord(true, [], true)).toBe(PAUSED);
+		expect(vaultReading(true, [], true).word).toBe(PAUSED);
+		expect(vaultReading(true, [], true).dot).toBe("wait");
+	});
+
+	test("the same vault unheld is the old answer, untouched", () => {
+		expect(vaultSyncWord(true, [])).toBe(UP_TO_DATE);
+		expect(vaultSyncWord(true, [], false)).toBe(UP_TO_DATE);
+	});
+
+	test("held never outranks being signed out", () => {
+		expect(vaultSyncWord(false, [], true)).toBe(SIGNED_OUT);
+	});
+
+	test("held is ignored once the vault has a folder to report on", () => {
+		// The flag is about a vault with nothing shared. A folder that is
+		// actually carrying notes says so itself, and a stale flag must not
+		// paint Paused over a vault that is working.
+		expect(vaultSyncWord(true, [{ ...synced, total: 10, completed: 3 }], true)).toBe(
+			SYNCING,
+		);
+		expect(vaultSyncWord(true, [synced], true)).toBe(UP_TO_DATE);
+	});
+
+	test("a held vault has nothing to count and no bar to draw", () => {
+		const reading = vaultReading(true, [], true);
+		expect(reading.counts).toBe("");
+		expect(reading.progress).toBeUndefined();
+	});
+});

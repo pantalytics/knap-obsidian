@@ -13,18 +13,24 @@
 	import { customFetch } from "../customFetch";
 	import {
 		decideVaultShare,
+		joinButtonLabel,
+		joinPreviewLines,
+		newVaultBesideLine,
 		planFolderCleanup,
 		replaceFoldersConfirmation,
 		replaceFoldersFailedLine,
 		replaceFoldersLine,
 		FIRST_SYNC_LINES,
+		JOIN_HELD_NOTE,
 		REPLACE_FOLDERS_LABEL,
+		VAULT_NAME_IS_THE_KEY,
 		type LocalShare,
 		type ShareLike,
 	} from "../vaultShare";
 	import { RelayOnPremShareClientManager } from "../RelayOnPremShareClientManager";
 	import { hasSignInButton, syncInstruction } from "../syncStatus";
 	import type { VaultReading } from "../vaultStatus";
+	import { holdsVaultBack, topHazard, type Hazard } from "../vaultHazards";
 
 	// One button, because there is one server and one account (ADR-0030,
 	// ADR-0033). No address to type, nothing to choose, and no code to paste:
@@ -71,6 +77,24 @@
 	let reading: VaultReading = plugin.readVaultStatus();
 	$: word = reading.word;
 	$: dot = reading.dot;
+
+	// The name of this vault in Obsidian, which is also its name on Knap and
+	// the only thing a second device matches on (#42). It is on the screen
+	// because nothing anywhere said so, and a person who tidies a folder name
+	// on one device gets a second vault without being told.
+	const vaultName = plugin.app.vault.getName();
+
+	// What else is syncing this vault (#41). Read when the screen opens rather
+	// than held from load, so turning the other plugin off and coming back
+	// here clears it.
+	let hazards: Hazard[] = plugin.readVaultHazards();
+	// One at a time. Two warnings competing on one screen is how neither gets
+	// read, and the one that holds the vault back always wins.
+	$: hazard = topHazard(hazards);
+
+	// The vault on Knap this device would join, once it has been shown what
+	// that is. Set instead of joining, and cleared by the button (#42).
+	let pendingJoin: { share: ShareLike; lines: string[] } | undefined;
 	// Somebody who has signed in here before is signed OUT, which is a state
 	// with its own words and its own button. Somebody who never has is simply
 	// new, and gets told what the button is for instead: the signed-out
@@ -86,11 +110,30 @@
 		reading = plugin.readVaultStatus();
 	}
 
+	/**
+	 * A vault standing still, and the corner of the window told about it.
+	 *
+	 * Without this the screen would say Up to date directly above a paragraph
+	 * explaining that nothing is syncing, which is the same lie #40 was about.
+	 * The plugin holds the flag rather than this component so the mark in the
+	 * corner reads it too.
+	 */
+	function hold(held: boolean) {
+		plugin.vaultHeld = held;
+		refreshReading();
+	}
+
 	// A second a tick while this screen is open. The bar is the thing somebody
 	// watches during a first sync, and four seconds of it standing still reads
 	// as stuck.
 	onMount(() => {
 		refreshReading();
+		// Once, not on the ticker: this one reads a file off disk, and what it
+		// answers only changes when somebody turns a plugin on or moves the
+		// vault, neither of which happens while this screen is open.
+		void plugin.refreshVaultHazards().then((found) => {
+			hazards = found;
+		});
 		const ticker = window.setInterval(refreshReading, 1000);
 		return () => window.clearInterval(ticker);
 	});
@@ -121,6 +164,10 @@
 			void startSyncingTheVault();
 		} else {
 			vaultLines = [];
+			// Signing out is not a vault waiting to be told anything. The word
+			// for it is Signed out and it has its own button.
+			pendingJoin = undefined;
+			hold(false);
 		}
 	}
 
@@ -163,12 +210,25 @@
 		const clients = shareClients();
 		if (!clients) return;
 
-		const vaultName = plugin.app.vault.getName();
 		const folders = plugin.sharedFolders.items();
 		const local = {
 			hasVaultShare: folders.some((folder) => folder.isVaultScope),
 			folderShareCount: folders.filter((folder) => !folder.isVaultScope).length,
 		};
+
+		// Something else syncing this vault stops it starting, and never stops
+		// one that is already going (#41). The order is deliberate: refusing to
+		// begin costs somebody a toggle, and disconnecting a vault halfway
+		// through a fill costs them the afternoon. The check runs before the
+		// call to Knap, because a vault that is not going to sync has no reason
+		// to ask what is on the server.
+		hazards = await plugin.refreshVaultHazards();
+		if (holdsVaultBack(hazards, local.hasVaultShare)) {
+			pendingJoin = undefined;
+			vaultLines = [];
+			hold(true);
+			return;
+		}
 
 		let remote: ShareLike[] = [];
 		try {
@@ -184,6 +244,25 @@
 		const decision = decideVaultShare(vaultName, remote, local);
 		if (decision.action === "already-syncing") {
 			leftoverFolders = 0;
+			pendingJoin = undefined;
+			hold(false);
+			return;
+		}
+		if (decision.action === "adopt") {
+			// Show what will be joined before joining it (#42). The match is on
+			// the name and nothing else, so a name a character away from the
+			// one somebody meant lands here silently and forks the vault in
+			// two. One button, with the name on it.
+			leftoverFolders = 0;
+			vaultLines = [];
+			pendingJoin = {
+				share: decision.share,
+				lines: joinPreviewLines({
+					vaultName,
+					createdAt: decision.share.created_at,
+				}),
+			};
+			hold(true);
 			return;
 		}
 		if (decision.action === "replace-folders") {
@@ -199,26 +278,53 @@
 
 		leftoverFolders = 0;
 		try {
-			const share =
-				decision.action === "adopt"
-					? decision.share
-					: await clients.createShare(KNAP_SERVER_ID, {
-							path: decision.path,
-							kind: "folder",
-							visibility: "private",
-						});
+			const share = await clients.createShare(KNAP_SERVER_ID, {
+				path: decision.path,
+				kind: "folder",
+				visibility: "private",
+			});
+			attachShare(share.id);
+			// A new vault beside the ones the account already has, named (#42).
+			// This is the fork as it actually happens: somebody meant to join
+			// the vault they made yesterday and the name is one character out.
+			// The list cost nothing, it was fetched to make the decision.
+			const beside = newVaultBesideLine(
+				vaultName,
+				remote.filter((one) => one.kind === "folder").map((one) => one.path),
+			);
+			vaultLines = beside ? [beside, ...FIRST_SYNC_LINES] : [...FIRST_SYNC_LINES];
+		} catch (e: unknown) {
+			error = e instanceof Error ? e.message : "Could not start syncing this vault";
+		}
+	}
 
-			// The empty path is the vault root, and "vault" is the scope that
-			// makes every path in the share resolve without a prefix.
-			const folder = plugin.sharedFolders.new("", share.id, "relay-onprem", false, "vault");
-			if (folder?.settings) {
-				folder.settings.onpremServerId = KNAP_SERVER_ID;
-			}
-			plugin.folderNavDecorations?.quickRefresh();
-			// The folder is brand new and has caught up with nothing yet, so
-			// the row says Syncing the moment it reads it.
-			refreshReading();
-			vaultLines = FIRST_SYNC_LINES;
+	/**
+	 * Start syncing against a share, wherever it came from.
+	 *
+	 * The empty path is the vault root, and "vault" is the scope that makes
+	 * every path in the share resolve without a prefix.
+	 */
+	function attachShare(shareId: string) {
+		const folder = plugin.sharedFolders.new("", shareId, "relay-onprem", false, "vault");
+		if (folder?.settings) {
+			folder.settings.onpremServerId = KNAP_SERVER_ID;
+		}
+		plugin.folderNavDecorations?.quickRefresh();
+		// The folder is brand new and has caught up with nothing yet, so the
+		// row says Syncing the moment it reads it, and the vault is no longer
+		// standing still waiting to be told what to do.
+		hold(false);
+	}
+
+	/** Join the vault the screen has just described. */
+	function joinPendingVault() {
+		if (!pendingJoin) return;
+		const share = pendingJoin.share;
+		error = "";
+		try {
+			attachShare(share.id);
+			pendingJoin = undefined;
+			vaultLines = [...FIRST_SYNC_LINES];
 		} catch (e: unknown) {
 			error = e instanceof Error ? e.message : "Could not start syncing this vault";
 		}
@@ -410,6 +516,18 @@
 				{auth.email ?? "Signed in"}
 			</div>
 		</div>
+
+		<!-- The name, and what it is for (#42). A device joins the vault whose
+		     name matches its own, and that was true and unsaid everywhere: on
+		     screen, in the plugin and on Knap's page. It sits above Status
+		     because it is the fact the row underneath depends on. -->
+		<div class="setting-item">
+			<div class="setting-item-info">
+				<div class="setting-item-name">Vault</div>
+				<div class="setting-item-description">{VAULT_NAME_IS_THE_KEY}</div>
+			</div>
+			<div class="setting-item-control knap-value">{vaultName}</div>
+		</div>
 	{/if}
 
 	<div class="setting-item">
@@ -440,6 +558,35 @@
 		<div class="knap-bar" aria-hidden="true">
 			<div class="knap-bar-fill" style:width="{Math.round(reading.progress * 100)}%"></div>
 		</div>
+	{/if}
+
+	<!-- One warning, never two (#41). A person with a second sync plugin on and
+	     a vault in Dropbox has one thing to fix first, and stacking both here
+	     is how neither gets read. `topHazard` picks it: anything holding the
+	     vault back comes first, the rest wait their turn. -->
+	{#if hazard}
+		<div class="knap-warning" class:knap-warning-holding={hazard.blocking}>
+			{#each hazard.lines as line}
+				<p>{line}</p>
+			{/each}
+		</div>
+	{/if}
+
+	<!-- What this device is about to join, before it joins it (#42). Nothing
+	     here is a guess: the name it matched, the rule it matched on and the
+	     day the vault was made are what Knap will say about a vault from the
+	     outside. The note count and the device count the issue asked for are
+	     not on this side of the API, so they are not on the screen either. -->
+	{#if pendingJoin}
+		<div class="knap-warning">
+			{#each pendingJoin.lines as line}
+				<p>{line}</p>
+			{/each}
+		</div>
+		<button class="knap-btn mod-cta" on:click={joinPendingVault}>
+			{joinButtonLabel(vaultName)}
+		</button>
+		<p class="knap-note">{JOIN_HELD_NOTE}</p>
 	{/if}
 
 	<!-- What a first sync needs said while it runs, and nothing after it. -->
@@ -512,6 +659,30 @@
 		color: var(--text-muted);
 		font-size: 12px;
 		max-width: 46em;
+	}
+
+	/* One block, never two, so it can afford to be the loudest thing on the
+	   screen. A rule down the side rather than a filled panel: this is a
+	   settings tab, and a coloured box in the middle of it reads as an error
+	   the plugin has hit rather than something to go and do. */
+	.knap-warning {
+		margin-top: 16px;
+		padding: 2px 0 2px 12px;
+		border-left: 3px solid var(--text-accent, var(--interactive-accent));
+		max-width: 46em;
+	}
+
+	/* Deeper when the vault is standing still because of it. The status row
+	   says Paused at the same time, so the colour is the second thing that
+	   says so rather than the only one. */
+	.knap-warning-holding {
+		border-left-color: var(--text-error);
+	}
+
+	.knap-warning p {
+		margin: 6px 0;
+		color: var(--text-normal);
+		font-size: 13px;
 	}
 
 	/* Tabular figures so the count does not shuffle sideways every time a

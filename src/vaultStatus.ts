@@ -81,14 +81,26 @@ export function folderCaughtUp(folder: FolderStatus): boolean {
  * disconnected a single folder has not paused their vault. Syncing means a
  * folder that wants to be connected has not caught up yet, which covers both
  * the first pass and a reconnect after the laptop was shut.
+ *
+ * `held` is a vault with no folders at all that is not about to get one:
+ * either something has to be dealt with before it can start (#41), or it is
+ * waiting to be told which vault on Knap it belongs to (#42). A vault with
+ * nothing shared normally reads as up to date, because signing in shares the
+ * whole vault and the gap is a moment long. When the gap is not a moment,
+ * saying up to date over a vault that is syncing nothing is the same lie #40
+ * was about, so it reads Paused instead: nothing is moving, and the screen
+ * underneath says why.
  */
 export function vaultSyncWord(
 	signedIn: boolean,
 	folders: readonly FolderStatus[],
+	held = false,
 ): SyncWord {
 	return syncWord({
 		signedIn,
-		paused: folders.length > 0 && folders.every((folder) => !folder.shouldConnect),
+		paused:
+			(held && folders.length === 0) ||
+			(folders.length > 0 && folders.every((folder) => !folder.shouldConnect)),
 		syncing: folders.some(
 			(folder) => folder.shouldConnect && !folderCaughtUp(folder),
 		),
@@ -140,8 +152,9 @@ export interface VaultReading {
 export function vaultReading(
 	signedIn: boolean,
 	folders: readonly FolderStatus[],
+	held = false,
 ): VaultReading {
-	const word = vaultSyncWord(signedIn, folders);
+	const word = vaultSyncWord(signedIn, folders, held);
 	const { done, total } = vaultCounts(folders);
 	const moving = word === SYNCING && total > 0;
 	return {
