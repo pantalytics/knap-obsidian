@@ -70,7 +70,7 @@ function makeServer(id: string): RelayOnPremServer {
 
 function seedAuth(serverId: string) {
 	mockStorage.set(
-		`knap-sync_onprem_auth_${APP_ID}_${serverId}`,
+		`synced-vaults_onprem_auth_${APP_ID}_${serverId}`,
 		JSON.stringify({
 			user: { id: `user-${serverId}`, email: `${serverId}@example.com` },
 			token: "token",

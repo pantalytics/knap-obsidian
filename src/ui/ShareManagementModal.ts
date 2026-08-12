@@ -44,11 +44,12 @@ export class ShareManagementModal extends Modal {
 		this.serverName = serverName;
 		this.initialShareId = initialShareId;
 
-		if (serverName) {
-			this.setTitle("What syncs");
-		} else {
-			this.setTitle("Knap Sync folders");
-		}
+		// One title either way. The named branch used to put the server's name
+		// in front of the word, and there is one server nobody chooses
+		// (ADR-0033), so the name was furniture in a modal heading. It says
+		// what syncs rather than counting folders, because one vault is one
+		// share (ADR-0042).
+		this.setTitle("What syncs");
 	}
 
 	onOpen() {
@@ -294,7 +295,7 @@ export class ShareManagementModal extends Modal {
 		// (ADR-0042), so this list reports rather than offers.
 		if (this.shares.length === 0) {
 			contentEl.createEl("p", {
-				text: "Nothing syncs yet. Sign in on the Knap Sync settings tab and the whole vault starts.",
+				text: "Nothing syncs yet. Sign in on the Synced Vaults settings tab and the whole vault starts.",
 				cls: "relay-onprem-empty",
 			});
 			return;

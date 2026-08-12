@@ -277,7 +277,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			await provider.loginWithPassword("test@example.com", "password123");
 
-			const storageKey = `knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`;
+			const storageKey = `synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			const stored = mockStorage.get(storageKey);
 			expect(stored).toBeDefined();
 
@@ -317,7 +317,7 @@ describe("RelayOnPremAuthProvider", () => {
 			expect(provider.isLoggedIn()).toBe(true);
 
 			// Check localStorage for refresh token
-			const storageKey = `knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`;
+			const storageKey = `synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			const stored = mockStorage.get(storageKey);
 			expect(stored).toBeDefined();
 
@@ -430,7 +430,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P20: Refresh with refresh_token", async () => {
 			// Set up initial auth with refresh token
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "old_token",
@@ -483,7 +483,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P21: Refresh without refresh_token (legacy)", async () => {
 			// Set up initial auth WITHOUT refresh token
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "current_token",
@@ -527,7 +527,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P22: Error clears auth", async () => {
 			// Set up initial auth
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -555,7 +555,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 		test("TR-28: calls onSessionExpired when the refresh token is rejected (401/403)", async () => {
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -584,7 +584,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 		test("TR-28: does NOT call onSessionExpired on a network/server error (auth stays valid for retry)", async () => {
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -624,7 +624,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P23: Restore with valid token", async () => {
 			const expiresAt = Date.now() + 3600000;
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "restored@example.com" },
 					token: "stored_token",
@@ -648,7 +648,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P24: Restore with expired token + refresh", async () => {
 			const expiredAt = Date.now() - 1000; // Expired 1 second ago
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "expired_token",
@@ -688,7 +688,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P25: Restore with expired + no refresh clears", async () => {
 			const expiredAt = Date.now() - 1000;
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "expired_token",
@@ -710,7 +710,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 		test("P26: Restore with corrupted data", async () => {
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				"invalid json{",
 			);
 
@@ -731,7 +731,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			// Token expires in 4 minutes (less than 5-minute buffer)
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -750,7 +750,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			// Token expires in 6 minutes (more than 5-minute buffer)
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -782,7 +782,7 @@ describe("RelayOnPremAuthProvider", () => {
 			const shortLived = jwt({ iat: nowSec, exp: nowSec + 300 }); // 5-minute TTL
 
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: shortLived,
@@ -807,7 +807,7 @@ describe("RelayOnPremAuthProvider", () => {
 			const shortLived = jwt({ iat: nowSec - 270, exp: nowSec + 30 });
 
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: shortLived,
@@ -833,7 +833,7 @@ describe("RelayOnPremAuthProvider", () => {
 			const longLived = jwt({ iat: nowSec - 86_160, exp: nowSec + 240 });
 
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: longLived,
@@ -859,7 +859,7 @@ describe("RelayOnPremAuthProvider", () => {
 	describe("refreshToken() single-flight (#14)", () => {
 		function loggedInStorage() {
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -938,7 +938,7 @@ describe("RelayOnPremAuthProvider", () => {
 			// refreshTokenWithRetry — 3 attempts at 0/1s/3s, retrying anything
 			// that was not a 401/403.
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "expired_token",
@@ -1084,7 +1084,7 @@ describe("RelayOnPremAuthProvider", () => {
 		test("P28: Success", async () => {
 			// Set up logged in state
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -1120,7 +1120,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 		test("P29: Network error still clears local state", async () => {
 			mockStorage.set(
-				`knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`,
+				`synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`,
 				JSON.stringify({
 					user: { id: "user-123", email: "test@example.com" },
 					token: "token",
@@ -1166,7 +1166,7 @@ describe("RelayOnPremAuthProvider", () => {
 
 			await provider.loginWithPassword("test@example.com", "password");
 
-			const storageKey = `knap-sync_onprem_auth_${APP_ID}_${SERVER_ID}`;
+			const storageKey = `synced-vaults_onprem_auth_${APP_ID}_${SERVER_ID}`;
 			const stored = mockStorage.get(storageKey);
 			expect(stored).toBeDefined();
 

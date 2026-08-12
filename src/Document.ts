@@ -317,7 +317,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 			return this._persistence;
 		}
 		try {
-			const key = `${this.sharedFolder.appId}-knap-sync-doc-${this.guid}`;
+			const key = `${this.sharedFolder.appId}-synced-vaults-doc-${this.guid}`;
 			this._persistence = new IndexeddbPersistence(key, this.ydoc);
 		} catch (e: unknown) {
 			this.warn("Unable to open persistence.", this.guid);

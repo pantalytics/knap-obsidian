@@ -1,4 +1,4 @@
-# CI for the Knap Sync Obsidian plugin
+# CI for the Synced Vaults Obsidian plugin
 # Based on F3 ci-ts-plugin template (bob/docs/ci-templates/ci-ts-plugin.yml)
 #
 # The gate enforces by default. Individual jobs keep continue-on-error: true so
@@ -63,7 +63,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: jest-coverage-knap-sync
+          name: jest-coverage-synced-vaults
           path: coverage/
 
   # ── Build smoke ─────────────────────────────────────────────────────────────
@@ -86,7 +86,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: knap-sync-dist
+          name: synced-vaults-dist
           path: main.js
 
   # ── Lint ────────────────────────────────────────────────────────────────────
@@ -160,7 +160,7 @@ jobs:
           # contain "obsidian" (docs.obsidian.md, Submit your plugin, read 2026-08-10).
           case "$ID" in *[Oo]bsidian*) echo "::error::plugin id '$ID' contains 'obsidian', which the directory rejects"; fail=1;; esac
           # A name carrying "Obsidian" reads as a first-party product, which is the
-          # reason this plugin is called Knap Sync in the first place.
+          # reason this plugin is called Synced Vaults in the first place.
           case "$NAME" in *[Oo]bsidian*) echo "::error::plugin name '$NAME' contains 'Obsidian', which reads as a first-party product"; fail=1;; esac
           [ -n "$(node -p "require('./manifest.json').author")" ] || { echo "::error::manifest.json needs an author"; fail=1; }
           # 250 is our own budget, not a published limit: the description is what

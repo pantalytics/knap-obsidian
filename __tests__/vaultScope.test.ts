@@ -120,4 +120,3 @@ describe("virtual path round trip", () => {
 		expect(toVirtualPath("vault", "", "a.md")).toBe("a.md");
 	});
 });
-

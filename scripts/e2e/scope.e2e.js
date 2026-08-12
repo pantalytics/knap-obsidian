@@ -14,8 +14,8 @@
  * with scripts/e2e/run.sh, which is where the assertions live.
  */
 (async () => {
-	const plugin = app.plugins.plugins["knap-sync"];
-	if (!plugin) throw new Error("knap-sync is not loaded");
+	const plugin = app.plugins.plugins["synced-vaults"];
+	if (!plugin) throw new Error("synced-vaults is not loaded");
 	const shares = plugin.sharedFolders;
 
 	const reset = async () => {

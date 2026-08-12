@@ -1,6 +1,6 @@
-# Contributing to Knap Sync
+# Contributing to Synced Vaults
 
-Thanks for your interest. Knap Sync is an Obsidian plugin that syncs a vault, or
+Thanks for your interest. Synced Vaults is an Obsidian plugin that syncs a vault, or
 a folder of one, to a relay you host yourself.
 
 ## Getting Started
@@ -30,9 +30,9 @@ npm test
 
 1. Build the plugin: `npm run build`
 2. Copy `main.js`, `manifest.json` and `styles.css` into your vault's
-   `.obsidian/plugins/knap-sync/`
+   `.obsidian/plugins/synced-vaults/`
 3. Enable the plugin in *Settings → Community plugins*
-4. Point it at your relay in *Settings → Knap Sync → Relay Servers*
+4. Point it at your relay in *Settings → Synced Vaults → Relay Servers*
 
 A vault you do not mind breaking is the right vault for this.
 

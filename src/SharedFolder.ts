@@ -222,7 +222,7 @@ export class SharedFolder extends HasProvider {
 		this.files = new Map();
 		this.fset = new Files();
 		this.pendingUpload = new LocalStorage<string>(
-			`${appId}-knap-sync/folders/${this.guid}/pendingUploads`,
+			`${appId}-synced-vaults/folders/${this.guid}/pendingUploads`,
 			this.obsidianApp,
 		);
 		this.pendingUpload.forEach((guid, vpath) => {
@@ -297,7 +297,7 @@ export class SharedFolder extends HasProvider {
 		});
 
 		try {
-			this._persistence = new IndexeddbPersistence(`knap-sync-folder-${this.guid}`, this.ydoc);
+			this._persistence = new IndexeddbPersistence(`synced-vaults-folder-${this.guid}`, this.ydoc);
 		} catch (e: unknown) {
 			this.warn("Unable to open persistence.", this.guid);
 			console.error(e);
@@ -2342,17 +2342,16 @@ export class SharedFolder extends HasProvider {
 	}
 
 	/**
-	 * Everything this path takes with it when it goes.
+	 * Remove one entry from the sync store, and tear its document down.
 	 *
-	 * A folder is an entry in the sync store like any other, and deleting only
-	 * that entry left its notes behind: they stayed in the store, so every
-	 * other device kept them and the folder came back the next time one of
-	 * them wrote. Deleting a folder has to remove what is inside it, which is
-	 * what somebody deleting a folder means and what every other sync does.
-	 *
-	 * `renameFile` already walks children this way for a `SyncFolder`. This is
-	 * the same walk, and it is done on the path rather than on the file's type
-	 * so a folder whose own entry is missing still clears out.
+	 * One entry is enough even when the path is a folder, which is not
+	 * obvious and was got wrong once. Obsidian fires a `delete` event for
+	 * every descendant before the folder's own, so each note has already
+	 * removed itself by the time this runs for the folder. Measured on
+	 * 2026-08-12 on both `vault.delete` and `fileManager.trashFile`, empty
+	 * nested folders included; the admin repo's
+	 * `scripts/dev/obsidian/checks/` has the run. A walk of the children here
+	 * is dead weight that costs a pass over the whole store per event.
 	 */
 	deleteFile(vpath: string) {
 		const guid = this.syncStore?.get(vpath);
