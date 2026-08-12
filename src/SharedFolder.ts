@@ -375,7 +375,15 @@ export class SharedFolder extends HasProvider {
 		RelayInstances.set(this, this.path);
 	}
 
-	private addLocalDocs = async () => {
+	/**
+	 * The first fill: every local file in the share gets a guid, a metadata
+	 * entry, and -- for a note this client is introducing -- its body copied
+	 * into the CRDT document.
+	 *
+	 * A method rather than a bound field so a test can drive it directly. It
+	 * is only ever called as `this.addLocalDocs()`.
+	 */
+	private async addLocalDocs(): Promise<void> {
 		const syncTFiles = this.getSyncFiles();
 		const files: IFile[] = [];
 		const newPaths = this.placeHold(syncTFiles);
@@ -412,10 +420,16 @@ export class SharedFolder extends HasProvider {
 
 		for (const tfile of syncTFiles) {
 			const vpath = this.getVirtualPath(tfile.path);
-			const upload = newPaths.contains(vpath) && !lostPaths.has(vpath);
+			const upload = newPaths.includes(vpath) && !lostPaths.has(vpath);
 
-			// Check if file already exists with correct type based on metadata
-			const existingFile = this.getFile(tfile, false);
+			// Only a file we have already built is finished. This has to be a
+			// lookup and nothing more: getFile() reads the metadata entry
+			// ensureFileMetadata wrote a few lines up and builds the missing
+			// Document as a side effect, so asking it here answered "yes,
+			// already handled" for every note on the very first pass and the
+			// upload branch below, the only thing that copies a note's body
+			// into its Y.Text, was never reached (#38, #27).
+			const existingFile = this.getLoadedFile(vpath);
 			if (existingFile) {
 				files.push(existingFile);
 				continue;
@@ -473,7 +487,7 @@ export class SharedFolder extends HasProvider {
 		if (files.length > 0) {
 			this.fset.update();
 		}
-	};
+	}
 
 	/**
 	 * Runs the claim/settle/decide protocol (uploadClaim.ts) for each
@@ -1781,6 +1795,21 @@ export class SharedFolder extends HasProvider {
 		}
 	}
 
+	/**
+	 * The file this vpath already has in memory, or undefined.
+	 *
+	 * The difference between this and `getFile` is the whole of #38: `getFile`
+	 * builds the file when it is missing, so it can never answer "no". Ask
+	 * this one when the answer is going to decide whether to do the work.
+	 */
+	getLoadedFile(vpath: string): IFile | undefined {
+		const guid = this.syncStore.get(vpath);
+		if (!guid) {
+			return undefined;
+		}
+		return this.files.get(guid);
+	}
+
 	getFile(tfile: TAbstractFile, update = true): IFile | null {
 		const vpath = this.getVirtualPath(tfile.path);
 		const guid = this.syncStore.get(vpath);
@@ -2094,7 +2123,14 @@ export class SharedFolder extends HasProvider {
 
 		void this.whenReady().then(async () => {
 			const synced = await doc.getServerSynced();
-			if (doc.tfile?.stat.size === 0 && !synced) {
+			// A file the operating system reports as 0 bytes is not proof the
+			// note is empty: a cloud folder hands back a placeholder until the
+			// file is pulled down. Downloading on the strength of that reads
+			// the empty relay over a note that has content, which is exactly
+			// backwards. On a relay folder the reconciling path below settles
+			// it in whichever direction the content actually is, so the size
+			// shortcut only stands where there is no relay to ask.
+			if (doc.tfile?.stat.size === 0 && !synced && !this.relayId) {
 				void this.backgroundSync.enqueueDownload(doc);
 			} else if (this.pendingUpload.get(doc.path)) {
 				void this.backgroundSync.enqueueSync(doc);
@@ -2615,20 +2651,23 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 			}
 		}
 		byPath.forEach((folder) => {
-			const tFolder = this.vault.getFolderByPath(folder.path);
+			const scope = folder.scope ?? "folder";
+			// A vault share carries path "", and there is no promise about
+			// what a path lookup makes of that. SharedFolder.rootTFolder
+			// resolves the root with getRoot() for the same reason; this is
+			// the one place that was still asking by path, so a vault share
+			// was dropped on the restart that reloaded it (#27).
+			const tFolder =
+				scope === "vault"
+					? this.vault.getRoot()
+					: this.vault.getFolderByPath(folder.path);
 			if (!tFolder) {
 				this.warn(`Invalid settings, ${folder.path} does not exist`);
 				return;
 			}
 			const relayId = folder?.relay;
 			try {
-				this._new(
-					folder.path,
-					folder.guid,
-					relayId,
-					undefined,
-					folder.scope ?? "folder",
-				);
+				this._new(folder.path, folder.guid, relayId, undefined, scope);
 				updated = true;
 			} catch (e: unknown) {
 				this.warn(`Skipping duplicate folder ${folder.path}: ${e instanceof Error ? e.message : String(e)}`);
