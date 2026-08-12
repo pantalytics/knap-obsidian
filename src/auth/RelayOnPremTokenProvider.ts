@@ -24,6 +24,32 @@ export interface RelayTokenResponse {
 	expires_at: string;
 }
 
+export interface RelayTokenBatchResponse {
+	relay_url: string;
+	expires_at: string;
+	tokens: Array<{ doc_id: string; token: string }>;
+}
+
+/**
+ * Documents one batch request may ask for. The control plane's own ceiling,
+ * and it refuses more rather than trimming, so the number lives on both sides.
+ */
+export const MAX_BATCH_DOCS = 200;
+
+interface TokenWaiter {
+	resolve: (token: ClientToken) => void;
+	reject: (err: Error) => void;
+}
+
+/**
+ * The batch forming for one share and mode: which documents are wanted, and
+ * who is waiting for each. A document asked for twice before the request goes
+ * out has two waiters and still costs one token.
+ */
+interface PendingBatch {
+	waiters: Map<string, TokenWaiter[]>;
+}
+
 export interface FileTokenRequest {
 	path: string;
 	sha256: string;
@@ -128,6 +154,15 @@ export class RelayOnPremTokenProvider {
 	private normalizedUrl: string;
 	/** Shared throttle — all token requests for this provider share one queue */
 	private throttle: TokenRequestThrottle;
+	/** Batches forming, keyed by relay, share and mode. See `joinBatch`. */
+	private batches = new Map<string, PendingBatch>();
+	/**
+	 * Whether the control plane serves the batch route. Assumed until one
+	 * answers 404, then off for this provider's life: the plugin and the
+	 * server it talks to are versioned separately, and a sync that will not
+	 * start is worse than one that is slow.
+	 */
+	private batchSupported = true;
 
 	constructor(private config: RelayOnPremTokenConfig) {
 		// Normalize URL - remove trailing slashes to prevent double-slash issues
@@ -149,9 +184,37 @@ export class RelayOnPremTokenProvider {
 
 	/**
 	 * Request a relay token for document access.
-	 * Requests are throttled to ≤25/min and throw RateLimitError on HTTP 429.
+	 *
+	 * Callers waiting on the same share and mode are served by one request.
+	 * The control plane allows 30 requests a minute and a token is scoped to
+	 * one document, so asking one at a time put a first sync of a few thousand
+	 * notes at over an hour before any of somebody's writing had moved. The
+	 * throttle below is what made that visible: a caller waits ~2.4s for its
+	 * slot, and everything that arrives during that wait now travels with it
+	 * rather than queueing behind it.
+	 *
+	 * Still ≤25 requests/min, still one token per document, still a
+	 * RateLimitError on HTTP 429. What changed is how many documents a request
+	 * carries.
 	 */
 	async requestToken(
+		relayId: string,
+		folderId: string,
+		docId: string,
+		mode: "read" | "write" = "read",
+		filePath?: string
+	): Promise<ClientToken> {
+		if (!this.batchSupported) {
+			return this.requestTokenAlone(relayId, folderId, docId, mode, filePath);
+		}
+		return this.joinBatch(relayId, folderId, docId, mode, filePath);
+	}
+
+	/**
+	 * One document, one request. What every token cost before batching, and
+	 * what they cost again against a control plane without the batch route.
+	 */
+	private async requestTokenAlone(
 		relayId: string,
 		folderId: string,
 		docId: string,
@@ -213,7 +276,7 @@ export class RelayOnPremTokenProvider {
 				this.log(
 					`Write access denied for doc ${docId} — retrying as read-only (viewer role)`
 				);
-				return this.requestToken(relayId, folderId, docId, "read", filePath);
+				return this.requestTokenAlone(relayId, folderId, docId, "read", filePath);
 			}
 
 			if (!response.ok) {
@@ -240,6 +303,181 @@ export class RelayOnPremTokenProvider {
 		} catch (error: unknown) {
 			this.log("Token request error:", error);
 			throw error;
+		}
+	}
+
+	/**
+	 * Wait for the batch forming for this share and mode, starting one if
+	 * there is none. Resolves with this document's own token.
+	 */
+	private joinBatch(
+		relayId: string,
+		folderId: string,
+		docId: string,
+		mode: "read" | "write",
+		filePath?: string
+	): Promise<ClientToken> {
+		const key = `${relayId}|${folderId}|${mode}`;
+		let batch = this.batches.get(key);
+		if (!batch) {
+			batch = { waiters: new Map() };
+			this.batches.set(key, batch);
+			// Kicked off now rather than on a timer: the wait for a throttle
+			// slot IS the window, so there is nothing to schedule and nothing
+			// to tune. A lone caller with the slot free is sent immediately.
+			void this.sendBatch(key, relayId, folderId, mode, filePath);
+		}
+		const pending = batch;
+		return new Promise<ClientToken>((resolve, reject) => {
+			const waiting = pending.waiters.get(docId);
+			if (waiting) {
+				// Two documents asking at once is one request and one answer.
+				waiting.push({ resolve, reject });
+			} else {
+				pending.waiters.set(docId, [{ resolve, reject }]);
+			}
+		});
+	}
+
+	private async sendBatch(
+		key: string,
+		relayId: string,
+		folderId: string,
+		mode: "read" | "write",
+		filePath?: string
+	): Promise<void> {
+		await this.throttle.acquire();
+
+		const batch = this.batches.get(key);
+		// Anything arriving from here on forms the next batch rather than
+		// joining one already on the wire.
+		this.batches.delete(key);
+		if (!batch || batch.waiters.size === 0) return;
+
+		let docIds = [...batch.waiters.keys()];
+		if (docIds.length > MAX_BATCH_DOCS) {
+			// Their route refuses more than this rather than trimming it, so
+			// the overflow goes back to form the next batch. It keeps its own
+			// waiters, so nobody is dropped and nobody is asked for twice.
+			const overflow = docIds.slice(MAX_BATCH_DOCS);
+			docIds = docIds.slice(0, MAX_BATCH_DOCS);
+			const next: PendingBatch = { waiters: new Map() };
+			for (const id of overflow) {
+				next.waiters.set(id, batch.waiters.get(id) ?? []);
+				batch.waiters.delete(id);
+			}
+			this.batches.set(key, next);
+			void this.sendBatch(key, relayId, folderId, mode, filePath);
+		}
+
+		const settle = (fn: (waiter: TokenWaiter, docId: string) => void) => {
+			for (const [docId, waiters] of batch.waiters) {
+				for (const waiter of waiters) fn(waiter, docId);
+			}
+		};
+
+		try {
+			const auth = await this.config.authProvider.getValidToken();
+			if (!auth) {
+				throw new Error("Not authenticated");
+			}
+
+			this.log(
+				`Requesting ${docIds.length} relay token(s) for folder ${folderId}`
+			);
+			const response = await customFetch(
+				`${this.normalizedUrl}/v1/tokens/relay/batch`,
+				{
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						Authorization: `Bearer ${auth}`,
+					},
+					body: JSON.stringify({
+						share_id: folderId,
+						doc_ids: docIds,
+						mode,
+					}),
+				}
+			);
+
+			if (response.status === 404 || response.status === 405) {
+				// A control plane without the batch route. Said once, then
+				// every caller goes back to one request per document: slower,
+				// and the alternative is a sync that does not start at all.
+				this.batchSupported = false;
+				this.log(
+					"Control plane has no batch token route - falling back to one request per document"
+				);
+				settle((waiter, docId) => {
+					this.requestTokenAlone(relayId, folderId, docId, mode, filePath)
+						.then(waiter.resolve)
+						.catch(waiter.reject);
+				});
+				return;
+			}
+
+			if (response.status === 429) {
+				const retryAfterSec = parseInt(
+					response.headers.get("Retry-After") ?? "60",
+					10
+				);
+				const retryAfterMs = (isNaN(retryAfterSec) ? 60 : retryAfterSec) * 1000;
+				const err = new RateLimitError(
+					retryAfterMs,
+					`Token request rate limited for ${docIds.length} document(s)`
+				);
+				settle((waiter) => waiter.reject(err));
+				return;
+			}
+
+			if (response.status === 403 && mode === "write") {
+				// A viewer's write request, refused for the share rather than
+				// for any one document -- the same fallback the single route
+				// takes (U3), applied to everyone in the batch.
+				this.log(
+					`Write access denied for folder ${folderId} - retrying as read-only (viewer role)`
+				);
+				settle((waiter, docId) => {
+					this.joinBatch(relayId, folderId, docId, "read", filePath)
+						.then(waiter.resolve)
+						.catch(waiter.reject);
+				});
+				return;
+			}
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(
+					`Batch token request failed: ${response.status} - ${errorText}`
+				);
+			}
+
+			const data = (await response.json()) as RelayTokenBatchResponse;
+			const issued = new Map(data.tokens.map((t) => [t.doc_id, t.token]));
+			const expiryTime = new Date(data.expires_at).getTime();
+
+			settle((waiter, docId) => {
+				const token = issued.get(docId);
+				if (!token) {
+					// A batch that answered for some and not others is not a
+					// reason to guess: this document was asked for, and is owed
+					// either a token or an error.
+					waiter.reject(new Error(`No relay token issued for ${docId}`));
+					return;
+				}
+				waiter.resolve({
+					token,
+					url: data.relay_url,
+					docId,
+					folder: folderId,
+					expiryTime,
+					authorization: mode === "write" ? "full" : "read-only",
+				});
+			});
+		} catch (error: unknown) {
+			this.log("Batch token request error:", error);
+			settle((waiter) => waiter.reject(error as Error));
 		}
 	}
 

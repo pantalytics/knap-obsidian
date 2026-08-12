@@ -15,6 +15,7 @@ import { describe, test, expect, jest, beforeEach, afterEach } from "@jest/globa
 import {
 	RelayOnPremTokenProvider,
 	type RelayTokenResponse,
+	type RelayTokenBatchResponse,
 	type FileTokenApiResponse,
 } from "../../src/auth/RelayOnPremTokenProvider";
 import type { IAuthProvider } from "../../src/auth/IAuthProvider";
@@ -63,6 +64,32 @@ const TOKEN_RESPONSE: RelayTokenResponse = {
 	expires_at: new Date(Date.now() + 60_000).toISOString(),
 };
 
+/**
+ * The batch route's answer for whatever was asked for. Since tokens are
+ * requested a slice at a time rather than a document at a time, this is the
+ * shape almost every path in this file now gets back; the single-document
+ * response above is what a control plane without the batch route answers.
+ */
+function batchFor(body: unknown): RelayTokenBatchResponse {
+	const asked = (body as { doc_ids?: string[] }).doc_ids ?? [];
+	return {
+		relay_url: TOKEN_RESPONSE.relay_url,
+		expires_at: TOKEN_RESPONSE.expires_at,
+		tokens: asked.map((doc_id) => ({ doc_id, token: TOKEN_RESPONSE.token })),
+	};
+}
+
+function mockBatchResponse(init: unknown) {
+	const data = batchFor(JSON.parse((init as RequestInit).body as string));
+	return Promise.resolve({
+		ok: true,
+		status: 200,
+		text: async () => JSON.stringify(data),
+		json: async () => data,
+		headers: new Headers(),
+	} as Response);
+}
+
 describe("RelayOnPremTokenProvider.updateControlPlaneUrl", () => {
 	beforeEach(() => {
 		jest.useFakeTimers();
@@ -73,7 +100,7 @@ describe("RelayOnPremTokenProvider.updateControlPlaneUrl", () => {
 	});
 
 	test("subsequent requestToken calls hit the new URL, not the one from construction", async () => {
-		mockFetch.mockImplementation(() => mockFetchResponse(TOKEN_RESPONSE));
+		mockFetch.mockImplementation((_url, init) => mockBatchResponse(init));
 
 		const provider = new RelayOnPremTokenProvider({
 			controlPlaneUrl: "https://old-server.example.com",
@@ -84,7 +111,7 @@ describe("RelayOnPremTokenProvider.updateControlPlaneUrl", () => {
 		await jest.advanceTimersByTimeAsync(0);
 		await first;
 		expect(mockFetch).toHaveBeenCalledWith(
-			"https://old-server.example.com/tokens/relay",
+			"https://old-server.example.com/v1/tokens/relay/batch",
 			expect.anything(),
 		);
 
@@ -95,13 +122,13 @@ describe("RelayOnPremTokenProvider.updateControlPlaneUrl", () => {
 		await jest.advanceTimersByTimeAsync(2_400);
 		await second;
 		expect(mockFetch).toHaveBeenLastCalledWith(
-			"https://new-server.example.com/tokens/relay",
+			"https://new-server.example.com/v1/tokens/relay/batch",
 			expect.anything(),
 		);
 	});
 
 	test("normalizes a trailing slash on the new URL, same as the constructor does", async () => {
-		mockFetch.mockImplementation(() => mockFetchResponse(TOKEN_RESPONSE));
+		mockFetch.mockImplementation((_url, init) => mockBatchResponse(init));
 
 		const provider = new RelayOnPremTokenProvider({
 			controlPlaneUrl: "https://old-server.example.com",
@@ -114,7 +141,7 @@ describe("RelayOnPremTokenProvider.updateControlPlaneUrl", () => {
 		await jest.advanceTimersByTimeAsync(0);
 		await request;
 		expect(mockFetch).toHaveBeenLastCalledWith(
-			"https://new-server.example.com/tokens/relay",
+			"https://new-server.example.com/v1/tokens/relay/batch",
 			expect.anything(),
 		);
 	});
@@ -159,7 +186,7 @@ describe("RelayOnPremTokenProvider.requestToken write->read fallback", () => {
 				return mockResponse(403, null);
 			}
 			expect(body.mode).toBe("read");
-			return mockResponse(200, TOKEN_RESPONSE);
+			return mockBatchResponse(init);
 		});
 
 		const provider = new RelayOnPremTokenProvider({
@@ -192,7 +219,7 @@ describe("RelayOnPremTokenProvider.requestToken write->read fallback", () => {
 	});
 
 	test("an editor's write request still succeeds on the first try, no fallback triggered", async () => {
-		mockFetch.mockImplementation(() => mockResponse(200, TOKEN_RESPONSE));
+		mockFetch.mockImplementation((_url, init) => mockBatchResponse(init));
 
 		const provider = new RelayOnPremTokenProvider({
 			controlPlaneUrl: "https://relay.example.com",
@@ -375,5 +402,241 @@ describe("RelayOnPremTokenProvider.requestFileToken", () => {
 		const assertion = expect(request).rejects.toThrow(/403/);
 		await jest.advanceTimersByTimeAsync(0);
 		await assertion;
+	});
+});
+
+/**
+ * Tests for batched token requests (ADR-0051 in knap-mcp-admin).
+ *
+ * The control plane allows 30 token requests a minute and a token is scoped to
+ * one document, so this provider throttles itself to 25 and a vault of a few
+ * thousand notes could not start syncing in under an hour. The batch route
+ * mints many at once; what these tests hold to is that everything waiting on a
+ * slot travels together, that each document still gets its own token, and that
+ * a control plane without the route still works.
+ */
+describe("RelayOnPremTokenProvider batched token requests", () => {
+	beforeEach(() => {
+		jest.useFakeTimers();
+		mockFetch.mockClear();
+	});
+
+	afterEach(() => {
+		jest.useRealTimers();
+	});
+
+	function bodiesOf(): Array<{ doc_ids?: string[]; doc_id?: string }> {
+		return mockFetch.mock.calls.map((call) =>
+			JSON.parse((call[1] as RequestInit).body as string),
+		);
+	}
+
+	test("documents asked for together cost one request", async () => {
+		mockFetch.mockImplementation((_url, init) => mockBatchResponse(init));
+		const provider = new RelayOnPremTokenProvider({
+			controlPlaneUrl: "https://relay.example.com",
+			authProvider: makeAuthProvider(),
+		});
+
+		const requests = ["doc1", "doc2", "doc3"].map((doc) =>
+			provider.requestToken("relay1", "folder1", doc, "write"),
+		);
+		await jest.advanceTimersByTimeAsync(0);
+		const tokens = await Promise.all(requests);
+
+		expect(mockFetch).toHaveBeenCalledTimes(1);
+		expect(bodiesOf()[0].doc_ids).toEqual(["doc1", "doc2", "doc3"]);
+		expect(tokens.map((t) => t.docId)).toEqual(["doc1", "doc2", "doc3"]);
+	});
+
+	test("what arrives while a slot is being waited for travels with it", async () => {
+		// The whole mechanism in one test. The first request takes the slot
+		// immediately; the second and third arrive during the 2.4s wait for
+		// the next one and go out together rather than one every 2.4s.
+		mockFetch.mockImplementation((_url, init) => mockBatchResponse(init));
+		const provider = new RelayOnPremTokenProvider({
+			controlPlaneUrl: "https://relay.example.com",
+			authProvider: makeAuthProvider(),
+		});
+
+		const first = provider.requestToken("relay1", "folder1", "doc1", "write");
+		await jest.advanceTimersByTimeAsync(0);
+		await first;
+
+		const later = [
+			provider.requestToken("relay1", "folder1", "doc2", "write"),
+			provider.requestToken("relay1", "folder1", "doc3", "write"),
+		];
+		await jest.advanceTimersByTimeAsync(2_400);
+		await Promise.all(later);
+
+		expect(mockFetch).toHaveBeenCalledTimes(2);
+		expect(bodiesOf()[1].doc_ids).toEqual(["doc2", "doc3"]);
+	});
+
+	test("each document gets its own token, never a shared one", async () => {
+		mockFetch.mockImplementation((_url, init) => {
+			const asked = JSON.parse((init as RequestInit).body as string)
+				.doc_ids as string[];
+			const data: RelayTokenBatchResponse = {
+				relay_url: "wss://relay.example.com",
+				expires_at: new Date(Date.now() + 60_000).toISOString(),
+				tokens: asked.map((doc_id) => ({ doc_id, token: `token-${doc_id}` })),
+			};
+			return Promise.resolve({
+				ok: true,
+				status: 200,
+				text: async () => JSON.stringify(data),
+				json: async () => data,
+				headers: new Headers(),
+			} as Response);
+		});
+		const provider = new RelayOnPremTokenProvider({
+			controlPlaneUrl: "https://relay.example.com",
+			authProvider: makeAuthProvider(),
+		});
+
+		const requests = ["doc1", "doc2"].map((doc) =>
+			provider.requestToken("relay1", "folder1", doc, "write"),
+		);
+		await jest.advanceTimersByTimeAsync(0);
+		const [one, two] = await Promise.all(requests);
+
+		expect(one.token).toBe("token-doc1");
+		expect(two.token).toBe("token-doc2");
+	});
+
+	test("two shares are two requests: a token is scoped to one of them", async () => {
+		mockFetch.mockImplementation((_url, init) => mockBatchResponse(init));
+		const provider = new RelayOnPremTokenProvider({
+			controlPlaneUrl: "https://relay.example.com",
+			authProvider: makeAuthProvider(),
+		});
+
+		const requests = [
+			provider.requestToken("relay1", "folderA", "doc1", "write"),
+			provider.requestToken("relay1", "folderB", "doc2", "write"),
+		];
+		await jest.advanceTimersByTimeAsync(2_400);
+		await Promise.all(requests);
+
+		expect(mockFetch).toHaveBeenCalledTimes(2);
+	});
+
+	test("the same document asked for twice is one token and two answers", async () => {
+		mockFetch.mockImplementation((_url, init) => mockBatchResponse(init));
+		const provider = new RelayOnPremTokenProvider({
+			controlPlaneUrl: "https://relay.example.com",
+			authProvider: makeAuthProvider(),
+		});
+
+		const requests = [
+			provider.requestToken("relay1", "folder1", "doc1", "write"),
+			provider.requestToken("relay1", "folder1", "doc1", "write"),
+		];
+		await jest.advanceTimersByTimeAsync(0);
+		const [one, two] = await Promise.all(requests);
+
+		expect(bodiesOf()[0].doc_ids).toEqual(["doc1"]);
+		expect(one.token).toBe(two.token);
+	});
+
+	test("a control plane without the batch route still hands out tokens", async () => {
+		// The plugin and the server it talks to are versioned separately, so a
+		// build can meet a control plane that has never heard of this route.
+		// Slower beats not starting.
+		mockFetch.mockImplementation((url, init) => {
+			if (String(url).endsWith("/v1/tokens/relay/batch")) {
+				return Promise.resolve({
+					ok: false,
+					status: 404,
+					text: async () => "Not Found",
+					json: async () => ({}),
+					headers: new Headers(),
+				} as Response);
+			}
+			return mockFetchResponse(TOKEN_RESPONSE);
+		});
+		const provider = new RelayOnPremTokenProvider({
+			controlPlaneUrl: "https://relay.example.com",
+			authProvider: makeAuthProvider(),
+		});
+
+		const requests = ["doc1", "doc2"].map((doc) =>
+			provider.requestToken("relay1", "folder1", doc, "write"),
+		);
+		await jest.advanceTimersByTimeAsync(5_000);
+		const tokens = await Promise.all(requests);
+
+		expect(tokens.map((t) => t.token)).toEqual(["relay-token", "relay-token"]);
+		const batchCalls = mockFetch.mock.calls.filter((call) =>
+			String(call[0]).endsWith("/batch"),
+		);
+		expect(batchCalls).toHaveLength(1);
+	});
+
+	test("after the route is known missing, nothing asks for it again", async () => {
+		mockFetch.mockImplementation((url) => {
+			if (String(url).endsWith("/v1/tokens/relay/batch")) {
+				return Promise.resolve({
+					ok: false,
+					status: 404,
+					text: async () => "Not Found",
+					json: async () => ({}),
+					headers: new Headers(),
+				} as Response);
+			}
+			return mockFetchResponse(TOKEN_RESPONSE);
+		});
+		const provider = new RelayOnPremTokenProvider({
+			controlPlaneUrl: "https://relay.example.com",
+			authProvider: makeAuthProvider(),
+		});
+
+		// The first one spends a slot on the batch attempt and another on the
+		// single request it falls back to, so it needs both intervals.
+		const first = provider.requestToken("relay1", "folder1", "doc1", "write");
+		await jest.advanceTimersByTimeAsync(5_000);
+		await first;
+		mockFetch.mockClear();
+
+		const later = provider.requestToken("relay1", "folder1", "doc2", "write");
+		await jest.advanceTimersByTimeAsync(2_400);
+		await later;
+
+		expect(
+			mockFetch.mock.calls.filter((call) => String(call[0]).endsWith("/batch")),
+		).toHaveLength(0);
+	});
+
+	test("a batch that skips a document refuses for it rather than guessing", async () => {
+		mockFetch.mockImplementation((_url, init) => {
+			const asked = JSON.parse((init as RequestInit).body as string)
+				.doc_ids as string[];
+			const data: RelayTokenBatchResponse = {
+				relay_url: "wss://relay.example.com",
+				expires_at: new Date(Date.now() + 60_000).toISOString(),
+				// Answers for the first and quietly drops the second.
+				tokens: asked.slice(0, 1).map((doc_id) => ({ doc_id, token: "t" })),
+			};
+			return Promise.resolve({
+				ok: true,
+				status: 200,
+				text: async () => JSON.stringify(data),
+				json: async () => data,
+				headers: new Headers(),
+			} as Response);
+		});
+		const provider = new RelayOnPremTokenProvider({
+			controlPlaneUrl: "https://relay.example.com",
+			authProvider: makeAuthProvider(),
+		});
+
+		const good = provider.requestToken("relay1", "folder1", "doc1", "write");
+		const bad = provider.requestToken("relay1", "folder1", "doc2", "write");
+		const assertion = expect(bad).rejects.toThrow(/No relay token issued/);
+		await jest.advanceTimersByTimeAsync(0);
+		await assertion;
+		await expect(good).resolves.toMatchObject({ docId: "doc1" });
 	});
 });
