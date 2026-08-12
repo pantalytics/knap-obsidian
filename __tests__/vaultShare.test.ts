@@ -4,7 +4,7 @@ import {
 	replaceFoldersConfirmation,
 	replaceFoldersFailedLine,
 	replaceFoldersLine,
-	FIRST_SYNC_LINES,
+	VAULT_SCOPE_NOTE,
 	REPLACE_FOLDERS_LABEL,
 	type LocalShare,
 	type ShareLike,
@@ -123,16 +123,25 @@ describe("clearing folder shares out of the way", () => {
 });
 
 describe("the copy that goes with it", () => {
-	test("the wait says what does not travel", () => {
-		const second = FIRST_SYNC_LINES[1].toLowerCase();
-		expect(second).toContain("settings");
-		expect(second).toContain("themes");
-		expect(second).toContain("plugins");
+	test("the one note says what does not travel", () => {
+		const note = VAULT_SCOPE_NOTE.toLowerCase();
+		expect(note).toContain("settings");
+		expect(note).toContain("themes");
+		expect(note).toContain("plugins");
+	});
+
+	// The screen said this twice at once: the status row's own instruction and
+	// the first sync line under it were the same sentence. A bar replaced both,
+	// so nothing here may go back to telling somebody to wait.
+	test("nothing tells anybody to leave Obsidian open", () => {
+		for (const line of onScreen()) {
+			expect(line.toLowerCase()).not.toContain("leave obsidian open");
+		}
 	});
 
 	/** Every string this module puts in front of a person. */
 	const onScreen = (): string[] => [
-		...FIRST_SYNC_LINES,
+		VAULT_SCOPE_NOTE,
 		REPLACE_FOLDERS_LABEL,
 		replaceFoldersLine(1),
 		replaceFoldersLine(4),
