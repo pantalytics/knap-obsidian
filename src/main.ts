@@ -27,6 +27,14 @@ interface ObsidianApp {
 	plugins: {
 		disablePlugin(id: string): Promise<void>;
 		enablePlugin(id: string): Promise<void>;
+		/**
+		 * The ids switched on in this vault, as a `Set`. Undocumented, so it
+		 * is typed as `unknown` and checked where it is read
+		 * (`loadedPluginIds`) rather than believed here.
+		 */
+		enabledPlugins?: unknown;
+		/** One entry per plugin installed, keyed by id. Undocumented too. */
+		manifests?: unknown;
 	};
 	setting: {
 		open(): Promise<void>;
@@ -115,7 +123,7 @@ import { RelayOnPremShareClientManager, type ShareWithServer } from "./RelayOnPr
 import { ShareManagementModal } from "./ui/ShareManagementModal";
 import { LocalStorage } from "./LocalStorage";
 import { SYNC_DOT_NAMES, vaultReading, type VaultReading } from "./vaultStatus";
-import { readVaultHazards, topHazard, type Hazard } from "./vaultHazards";
+import { loadedPluginIds, readVaultHazards, topHazard, type Hazard } from "./vaultHazards";
 
 interface DebugSettings {
 	debugging: boolean;
@@ -681,8 +689,7 @@ export default class Live extends Plugin {
 			// What else is syncing this vault, said once, in the corner (#41).
 			// After the folders load, because whether this vault already syncs
 			// is what decides between holding it back and telling somebody.
-			// Not awaited: nothing below depends on the answer.
-			void this.noticeVaultHazards();
+			this.noticeVaultHazards();
 
 			this._liveViews = new LiveViewManager(
 				this.app,
@@ -1279,24 +1286,28 @@ export default class Live extends Plugin {
 		return this.vaultHazards;
 	}
 
-	public async refreshVaultHazards(): Promise<Hazard[]> {
+	public refreshVaultHazards(): Hazard[] {
 		const adapter = this.app.vault.adapter as unknown as {
 			getBasePath?: () => string;
 			basePath?: string;
-			exists(path: string): Promise<boolean>;
-			read(path: string): Promise<string>;
 		};
 		try {
-			this.vaultHazards = await readVaultHazards(
+			// Obsidian's own account of what is running here, not the file it
+			// wrote the last time somebody changed something. `enabledPlugins`
+			// and `manifests` are undocumented, so they are read through a cast
+			// and checked before they are believed.
+			const loaded = loadedPluginIds((this.app as unknown as ObsidianApp).plugins);
+			if (loaded === undefined) {
+				this.warn("Obsidian did not say which plugins are loaded in this vault");
+			}
+			this.vaultHazards = readVaultHazards(
 				{
-					configDir: this.app.vault.configDir,
 					// Desktop has `getBasePath()`, the phone adapter has
 					// `basePath`, and a vault whose path neither will give up
 					// is simply not checked for a cloud folder. It never
 					// leaves this call.
 					basePath: adapter?.getBasePath?.() ?? adapter?.basePath ?? "",
-					exists: (path: string) => adapter.exists(path),
-					read: (path: string) => adapter.read(path),
+					loadedPlugins: loaded ?? [],
 				},
 				// Whether this vault is already syncing, which decides whether
 				// a second sync plugin holds it back or is only told about.
@@ -1316,8 +1327,8 @@ export default class Live extends Plugin {
 	 * plugin and a vault in Dropbox has one thing to fix first, and two
 	 * notices stacked in the corner is how neither gets read.
 	 */
-	private async noticeVaultHazards(): Promise<void> {
-		const hazard = topHazard(await this.refreshVaultHazards());
+	private noticeVaultHazards(): void {
+		const hazard = topHazard(this.refreshVaultHazards());
 		if (hazard) {
 			new Notice(hazard.notice, 15000);
 		}

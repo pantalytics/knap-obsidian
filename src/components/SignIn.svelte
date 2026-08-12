@@ -167,12 +167,11 @@
 		// somebody watches during a first sync and one standing still reads as
 		// stuck.
 		refreshReading();
-		// Once, not on the ticker: this one reads a file off disk, and what it
-		// answers only changes when somebody turns a plugin on or moves the
-		// vault, neither of which happens while this screen is open.
-		void plugin.refreshVaultHazards().then((found) => {
-			hazards = found;
-		});
+		// Once, not on the ticker: what it answers only changes when somebody
+		// turns a plugin on or moves the vault, and neither happens while this
+		// screen is open. Asked again on open, which is how turning the other
+		// plugin off and coming back here clears the warning.
+		hazards = plugin.refreshVaultHazards();
 		const ticker = window.setInterval(refreshReading, 1000);
 		return () => window.clearInterval(ticker);
 	});
@@ -236,7 +235,7 @@
 		// through a fill costs them the afternoon. The check runs before the
 		// call to Knap, because a vault that is not going to sync has no reason
 		// to ask what is on the server.
-		hazards = await plugin.refreshVaultHazards();
+		hazards = plugin.refreshVaultHazards();
 		if (holdsVaultBack(hazards, local.hasVaultShare)) {
 			pendingJoin = undefined;
 			vaultLines = [];
@@ -527,7 +526,7 @@
 				<div class="setting-item-name">Account</div>
 			</div>
 			<div class="setting-item-control knap-value">
-				{auth.email ?? "Signed in"}
+				<span class="knap-value-text">{auth.email ?? "Signed in"}</span>
 			</div>
 		</div>
 
@@ -540,7 +539,9 @@
 				<div class="setting-item-name">Vault</div>
 				<div class="setting-item-description">{VAULT_NAME_IS_THE_KEY}</div>
 			</div>
-			<div class="setting-item-control knap-value">{vaultName}</div>
+			<div class="setting-item-control knap-value">
+				<span class="knap-value-text">{vaultName}</span>
+			</div>
 		</div>
 	{/if}
 
@@ -693,9 +694,27 @@
 		gap: 8px;
 		color: var(--text-muted);
 		font-size: var(--font-ui-small, 13px);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		/* A long value wraps onto a second line rather than sliding off the
+		   left edge of the row. It used to be one line with the overflow
+		   hidden, and because the value sits against the right edge, a vault
+		   called 260812_RH_Obsidian_vault lost its front and read as
+		   )bsidian_vault. The front is the half that tells one vault from
+		   another, and the line under this row says the name is the only
+		   thing a second device matches on. Ellipsis never ran anyway: the
+		   text is an anonymous item inside a flex row, and text-overflow does
+		   not reach it. */
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		text-align: right;
+		min-width: 0;
+	}
+
+	/* The value itself, so it has something to break inside. A vault name is
+	   one word as often as not, and a word with no spaces in it needs telling
+	   that it may break mid-word. */
+	.knap-value-text {
+		min-width: 0;
+		overflow-wrap: anywhere;
 	}
 
 	.knap-note {

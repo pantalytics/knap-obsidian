@@ -18,6 +18,20 @@
  * The one call that touches the app is `readVaultHazards`, and it takes a
  * narrow interface rather than the app.
  *
+ * **Which plugins are on is asked of Obsidian, not of a file.** Up to 1.9.0
+ * this read `.obsidian/community-plugins.json`, and a person who uninstalled
+ * Relay by System 3 and restarted was still refused. Measured on their vault,
+ * desktop, 2026-08-12: **Obsidian does not take a plugin's id out of
+ * `community-plugins.json` when the plugin is uninstalled.** The file records
+ * what was once switched on, not what is here now, and we read it as the
+ * second thing. Deleting the line by hand and restarting cleared the refusal,
+ * which is not a thing to ask of anybody.
+ *
+ * So the question is `app.plugins`, which is where Obsidian keeps the answer
+ * it acts on itself, and the file is not consulted at all, not even as a
+ * fallback: a source known to name plugins that are not there cannot be
+ * allowed to hold a vault back.
+ *
  * **Neither check sends anything anywhere.** The vault's path is read on this
  * machine, compared against a handful of strings on this machine, and only the
  * name of the service ever reaches a screen. A path like
@@ -86,10 +100,10 @@ const SYNC_PLUGINS: readonly KnownPlugin[] = [
 export const OWN_PLUGIN_ID = "synced-vaults";
 
 /**
- * The sync plugins enabled beside this one, most serious first.
+ * The sync plugins loaded beside this one, most serious first.
  *
- * The list comes from `.obsidian/community-plugins.json`, which is the enabled
- * community plugins and nothing else: a plugin sitting in the folder switched
+ * The ids come from `loadedPluginIds`, which is Obsidian's own account of what
+ * is running in this vault right now: a plugin sitting in the folder switched
  * off is not in it, and is not a problem either.
  */
 export function otherSyncPlugins(
@@ -182,11 +196,14 @@ export function syncPluginHazard(
 	const they = many ? "they" : "it";
 	const are = many ? "are" : "is";
 	const them = many ? "them" : "it";
+	// One plugin syncs, two plugins sync. The verb has to move with the
+	// pronoun above it, and up to 1.9.0 it did not: "it sync the same notes".
+	const sync = many ? "sync" : "syncs";
 
 	const lines: string[] = [
 		sameDocuments
-			? `${names} ${are} switched on in this vault, and ${they} sync the same notes Knap does. ` +
-				"Two of them writing one note means the last write wins and the other one is lost."
+			? `${names} ${are} switched on in this vault, and ${they} ${sync} the same notes Knap does. ` +
+				"Two systems writing one note means the last write wins and the other one is lost."
 			: `${names} ${are} switched on in this vault, and so is Knap. ` +
 				"Two sync systems on one folder is how a note comes back as a conflicted copy, or comes back empty.",
 	];
@@ -263,12 +280,53 @@ export function holdsVaultBack(
 
 /** The little of the vault this file needs, so it never imports Obsidian. */
 export interface VaultReader {
-	/** Obsidian's config directory, `.obsidian` unless somebody changed it. */
-	configDir: string;
 	/** Where the vault sits on this machine. Empty when it cannot be read. */
 	basePath: string;
-	exists(path: string): Promise<boolean>;
-	read(path: string): Promise<string>;
+	/**
+	 * The plugins Obsidian is running in this vault, this second. Empty when
+	 * it will not say, which names no plugins rather than guessing at one.
+	 */
+	loadedPlugins: readonly string[];
+}
+
+/**
+ * What Obsidian keeps about the plugins it has loaded.
+ *
+ * None of this is in the public `obsidian` types, so it is read defensively
+ * and every field is treated as possibly absent, the way `main.ts` reads
+ * `appId` and the adapter's base path.
+ */
+export interface LoadedPlugins {
+	/** The ids switched on, as a `Set`. */
+	enabledPlugins?: unknown;
+	/** The manifests of the plugins installed, keyed by id. */
+	manifests?: unknown;
+}
+
+/**
+ * The plugin ids Obsidian is actually running, or `undefined` when it will not
+ * say.
+ *
+ * Two facts, and a plugin has to satisfy both. `enabledPlugins` is the set of
+ * ids switched on, and `manifests` holds one entry per plugin installed, so an
+ * id switched on with nothing installed behind it is a plugin that was
+ * uninstalled and cannot be writing to anything. That pair is the fix for the
+ * 1.9.0 refusal: `.obsidian/community-plugins.json` still listed
+ * `system3-relay` after the uninstall and a restart, measured on the affected
+ * vault on 2026-08-12, and neither of these did.
+ *
+ * `undefined` means the shape was not what we expect, which is a different
+ * thing from an empty vault and is why it is not an empty array. Obsidian
+ * moving this is a warning we can no longer give, not a vault we hold.
+ */
+export function loadedPluginIds(plugins: LoadedPlugins | undefined): string[] | undefined {
+	const enabled = plugins?.enabledPlugins;
+	if (!(enabled instanceof Set)) return undefined;
+	const ids = [...enabled].filter((id): id is string => typeof id === "string");
+	const manifests = plugins?.manifests;
+	if (typeof manifests !== "object" || manifests === null) return ids;
+	const installed = manifests as Record<string, unknown>;
+	return ids.filter((id) => Boolean(installed[id]));
 }
 
 /**
@@ -280,39 +338,19 @@ export interface VaultReader {
  * through costs them the afternoon, and disconnecting a vault is not obviously
  * the safer of the two anyway.
  *
- * A file that is missing or unreadable means no plugins are named. Obsidian
- * writes `community-plugins.json` the first time somebody enables one, so a
- * vault with no community plugins has no file, which is the ordinary case and
- * not an error.
+ * Nothing here reads a file, so nothing here is stale: the plugins are the
+ * ones loaded at the moment somebody asks, and turning one off and reopening
+ * this screen clears the finding. A vault with no community plugins names
+ * none, which is the ordinary case and not an error.
  */
-export async function readVaultHazards(
-	vault: VaultReader,
-	syncing: boolean,
-): Promise<Hazard[]> {
+export function readVaultHazards(vault: VaultReader, syncing: boolean): Hazard[] {
 	const hazards: Hazard[] = [];
 
-	const plugins = syncPluginHazard(
-		otherSyncPlugins(await enabledPlugins(vault)),
-		syncing,
-	);
+	const plugins = syncPluginHazard(otherSyncPlugins(vault.loadedPlugins), syncing);
 	if (plugins) hazards.push(plugins);
 
 	const cloud = cloudFolderHazard(cloudFolder(vault.basePath));
 	if (cloud) hazards.push(cloud);
 
 	return hazards;
-}
-
-async function enabledPlugins(vault: VaultReader): Promise<string[]> {
-	const path = `${vault.configDir}/community-plugins.json`;
-	try {
-		if (!(await vault.exists(path))) return [];
-		const parsed: unknown = JSON.parse(await vault.read(path));
-		if (!Array.isArray(parsed)) return [];
-		return parsed.filter((id): id is string => typeof id === "string");
-	} catch {
-		// Nothing here is worth a broken plugin load. A file we cannot read is
-		// a warning we cannot give, and the rest of the plugin does not care.
-		return [];
-	}
 }
