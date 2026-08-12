@@ -7,10 +7,9 @@
 
 import { App, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
 import type Live from "../main";
-import { RelayOnPremShareClient, type RelayOnPremShare, type ShareMember, type Invite, type FolderItem, type AgentKey, type CreateAgentKeyResponse } from "../RelayOnPremShareClient";
+import { RelayOnPremShareClient, type ShareMember, type Invite, type FolderItem, type AgentKey, type CreateAgentKeyResponse } from "../RelayOnPremShareClient";
 import { RelayOnPremShareClientManager, type ShareWithServer } from "../RelayOnPremShareClientManager";
 import { getDefaultServer, type RelayOnPremServer } from "../RelayOnPremConfig";
-import { findShareForPath } from "../shareDuplicates";
 import { S3RN } from "../S3RN";
 import { confirmDialog, promptDialog } from "./dialogs";
 import { withOutboundSyncGuard } from "../WebSyncManager";
@@ -1687,107 +1686,11 @@ export class ShareManagementModal extends Modal {
 	 * Nothing stops the control plane accepting a second share on the same
 	 * folder, so the form refuses it here.
 	 */
-	private findExistingShare(path: string, serverId: string): ShareWithServer | undefined {
-		return findShareForPath(
-			this.shares.filter((share) => share.serverId === serverId),
-			path,
-		);
-	}
-
-	private async createShare(
-		path: string,
-		kind: "doc" | "folder",
-		visibility: "private" | "public" | "protected",
-		serverId: string,
-		password?: string,
-		showError?: (message: string) => void,
-	) {
-		let share: RelayOnPremShare | undefined;
-		// Set when the share was found after a throw rather than returned by the
-		// create. Together with a list that was loaded before sending, which
-		// confirmed the folder was unshared a moment ago, that is what lets the
-		// throw be read as this create having landed anyway.
-		let recovered = false;
-		const knewShares = this.sharesLoaded;
-
-		try {
-			const createRequest = {
-				path,
-				kind,
-				visibility,
-				...(password && { password }), // Include password only if provided
-			};
-
-			if (this.plugin.shareClientManager) {
-				share = await this.plugin.shareClientManager.createShare(serverId, createRequest);
-			} else if (this.plugin.shareClient) {
-				share = await this.plugin.shareClient.createShare(createRequest);
-			} else {
-				throw new Error("No share client available");
-			}
-		} catch (error: unknown) {
-			// A create that throws has not always failed: the server can write the
-			// share and then the reply is what goes wrong. Ask it what it has
-			// before saying the share was not created.
-			await this.reloadSharesQuietly();
-			share = this.findExistingShare(path, serverId);
-
-			if (!share) {
-				const message = `${path} was not shared. ${error instanceof Error ? error.message : "The server gave no reason."}`;
-				if (showError) {
-					showError(message);
-				} else {
-					new Notice(message);
-				}
-				return;
-			}
-			recovered = true;
-		}
-
-		new Notice(
-			recovered && !knewShares
-				? `${share.path} is already shared.`
-				: `${share.path} is now shared.`,
-		);
-
-		// Create local SharedFolder for visual indicators and sync
-		if (share.kind === "folder") {
-			this.createLocalSharedFolder(share.path, share.id, serverId);
-		}
-
-		await this.reloadSharesQuietly();
-		this.renderContent();
-	}
-
 	private async reloadSharesQuietly() {
 		try {
 			await this.loadShares();
 		} catch (error: unknown) {
 			console.warn("[RelayOnPrem] Could not reload the share list:", error);
-		}
-	}
-
-	private createLocalSharedFolder(folderPath: string, shareGuid: string, serverId: string) {
-		try {
-			// Create SharedFolder with relay-onprem marker for CRDT sync
-			const sharedFolder = this.plugin.sharedFolders.new(
-				folderPath,
-				shareGuid,
-				"relay-onprem",
-				false
-			);
-
-			// Store the server ID in the shared folder settings
-			if (sharedFolder && sharedFolder.settings) {
-				sharedFolder.settings.onpremServerId = serverId;
-			}
-
-			// Trigger visual indicators refresh
-			this.plugin.folderNavDecorations?.quickRefresh();
-
-			console.debug(`[RelayOnPrem] Created SharedFolder for ${folderPath} on server ${serverId}`);
-		} catch (error: unknown) {
-			console.error(`[RelayOnPrem] Failed to create SharedFolder:`, error);
 		}
 	}
 

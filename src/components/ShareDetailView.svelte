@@ -7,7 +7,6 @@
 	import type { ShareMember, Invite, FolderItem } from "../RelayOnPremShareClient";
 	import { LimitExceededApiError, VisibilityNotAllowedApiError } from "../RelayOnPremShareClient";
 	import type { ShareWithServer } from "../RelayOnPremShareClientManager";
-	import { FolderSuggestModal } from "../ui/FolderSuggestModal";
 	import { S3RN } from "../S3RN";
 	import { confirmDialog, promptDialog, choiceDialog } from "../ui/dialogs";
 	import { withOutboundSyncGuard } from "../WebSyncManager";
@@ -546,44 +545,42 @@
 	$: syncMode = currentShare.web_sync_mode ?? "manual";
 	$: noindex = currentShare.web_noindex ?? true;
 
-	// Local folder connection
+	// Whether this device syncs it
 	let isConnectedLocally = false;
-	let localFolderPath = "";
 
 	function checkLocalConnection() {
 		const localFolder = plugin.sharedFolders.find((sf) => sf.guid === share.id);
 		isConnectedLocally = !!localFolder;
-		localFolderPath = localFolder ? localFolder.path : "";
 	}
 
 	// Check on mount and whenever loading finishes
 	$: if (!loading) checkLocalConnection();
 
-	function connectToFolder() {
-		const modal = new FolderSuggestModal(
-			plugin.app,
-			"Choose a folder on this device…",
-			new Set(),
-			plugin.sharedFolders,
-			(folderPath: string) => {
-				try {
-					const sharedFolder = plugin.sharedFolders.new(folderPath, share.id, "relay-onprem", true);
-					if (sharedFolder && sharedFolder.settings) {
-						sharedFolder.settings.onpremServerId = share.serverId;
-					}
-					plugin.folderNavDecorations?.quickRefresh();
-					new Notice("Folder connected! Syncing...");
-					checkLocalConnection();
-				} catch (e: unknown) {
-					new Notice(`Failed to connect folder: ${e instanceof Error ? e.message : "Unknown error"}`);
-				}
-			},
-		);
-		modal.open();
+	/**
+	 * Start syncing this share into this vault.
+	 *
+	 * A share is a vault (ADR-0042), so there is no folder to choose: it
+	 * attaches at the vault root with the vault scope, the same way signing in
+	 * does. This used to open a folder picker, which made a folder-scope record
+	 * for a share the rest of the plugin treats as a whole vault, and that
+	 * disagreement is exactly what one share per vault exists to end.
+	 */
+	function syncHere() {
+		try {
+			const sharedFolder = plugin.sharedFolders.new("", share.id, "relay-onprem", false, "vault");
+			if (sharedFolder && sharedFolder.settings) {
+				sharedFolder.settings.onpremServerId = share.serverId;
+			}
+			plugin.folderNavDecorations?.quickRefresh();
+			new Notice("Syncing. The notes arrive as they come.");
+			checkLocalConnection();
+		} catch (e: unknown) {
+			new Notice(`Could not start syncing: ${e instanceof Error ? e.message : "Unknown error"}`);
+		}
 	}
 
 	async function disconnectFolder() {
-		if (!(await confirmDialog(plugin.app, `Disconnect "${localFolderPath}" from this folder? Nothing on this device is deleted.`))) return;
+		if (!(await confirmDialog(plugin.app, "Stop syncing this vault on this device? Nothing on this device is deleted, and it keeps syncing everywhere else."))) return;
 		const localFolder = plugin.sharedFolders.find((sf) => sf.guid === share.id);
 		if (localFolder) {
 			plugin.sharedFolders.delete(localFolder);
@@ -609,24 +606,23 @@
 			</div>
 		</div>
 
-		<!-- Local Folder Connection (folder shares only) -->
+		<!-- Whether this device syncs it -->
 		{#if currentShare.kind === "folder"}
 			<div class="evc-section">
-				<div class="evc-section-title">Local Folder</div>
+				<div class="evc-section-title">On this device</div>
 				{#if isConnectedLocally}
 					<div class="evc-connection-row">
 						<div class="evc-connection-info">
-							<span class="evc-connection-path">{localFolderPath}</span>
-							<span class="evc-connection-status">Connected and syncing</span>
+							<span class="evc-connection-status">Syncing here</span>
 						</div>
-						<button class="evc-btn-danger evc-small-btn" on:click={disconnectFolder}>Disconnect</button>
+						<button class="evc-btn-danger evc-small-btn" on:click={disconnectFolder}>Stop syncing here</button>
 					</div>
 				{:else}
 					<div class="evc-connection-row">
 						<div class="evc-connection-info">
-							<span class="evc-connection-status">Not connected to a local folder</span>
+							<span class="evc-connection-status">Not syncing on this device</span>
 						</div>
-						<button class="mod-cta" on:click={connectToFolder}>Connect to local folder</button>
+						<button class="mod-cta" on:click={syncHere}>Sync this vault here</button>
 					</div>
 				{/if}
 			</div>

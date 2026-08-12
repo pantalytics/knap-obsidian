@@ -82,6 +82,13 @@ sync store like any other, and deleting only its own entry left the notes inside
 it in the store, so every other device kept them. `deleteFile` walks the folder's
 children now, the same walk `renameFile` has always done for a move.
 
+**Adopting a share does not ask either.** The member screen's *Sync this vault
+here* attaches at the vault root with the vault scope, the same way signing in
+does. It used to open a folder picker, which made a folder-scope record for a
+share the rest of the plugin treats as a whole vault: that disagreement is
+exactly what one share per vault exists to end, so a picker here would have
+reintroduced it through the back door.
+
 The one screen that still names a folder is for vaults an older build left
 syncing them: whole vault and folder shares are exclusive in both directions
 (`SharedFolder._new`), so the folders come off before the vault share can be
@@ -152,6 +159,14 @@ purpose. `Relays.svelte`, `ManageRelay.svelte`, `ManageSharedFolder.svelte` and
 which it never is here, so nobody reads them. Renaming a file we rebase from
 upstream costs every future rebase to buy a word that is never shown.
 
+**That is also where every remaining folder picker lives**, and it is the check
+to run before believing the pickers are gone: `FolderSuggestModal`,
+`ShareFolderModal`, `AddToVaultModal`, `RemoteFolderSuggestModal` and
+`FolderSelectInput` are all reached only from those four. `PluginSettings.svelte`
+branches to `RelayOnPremSettings` on `isRelayOnPremMode()`, so in this fork they
+are unreachable rather than merely unused. A picker that turns up on a screen we
+do render is a bug, not upstream's business.
+
 ## Permissions come from one place
 
 Invites are set here, stored by the control plane, and read by everything else.
@@ -173,6 +188,7 @@ week somebody leaves.
 | `RelayOnPremServerList.svelte`, `EndpointConfigModal`, `SelfHostModal` | One server (ADR-0033). The largest single file in the fork, serving a question nobody is asked |
 | `Discord.svelte`, `GetInTouch.svelte`, the icon and button rows | Already gone. They sent people away from the screen before it had said anything |
 | `CreateShareView.svelte`, `QuickShareModal` | Already gone (ADR-0042). A vault is one share and nothing creates a second |
+| `ShareManagementModal`'s `createShare` and `createLocalSharedFolder` | Dead with the form above them. The modal itself stays: it is the other route to the member list |
 
 ## What stays, and gets rewritten
 
