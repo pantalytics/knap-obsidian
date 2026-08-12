@@ -13,8 +13,6 @@
  * collapses anything older down to it.
  */
 
-import { DEFAULT_VAULT_SYNC_MODE, type VaultSyncMode } from "./vaultShare";
-
 declare const CONTROL_PLANE_URL: string;
 
 /** The id every share, folder record and stored credential is keyed by. */
@@ -42,17 +40,6 @@ export interface RelayOnPremServer {
 	/** Last signed-in email, for display */
 	lastUserEmail?: string;
 
-	/**
-	 * What this vault syncs to this server: the whole thing, or the folders
-	 * somebody picked. Absent means the whole vault, which is the default and
-	 * what signing in gets you (ADR-0032).
-	 *
-	 * It is a setting on this side and nowhere else. The server is told what
-	 * to share, never what the preference behind it was (ADR-0031), so a
-	 * second device reads the mode off the shares that arrive rather than off
-	 * an account.
-	 */
-	syncMode?: VaultSyncMode;
 }
 
 /**
@@ -76,20 +63,16 @@ export interface RelayOnPremSettings {
 }
 
 /**
- * The Knap server, as the settings hold it. `lastUserEmail` and `syncMode`
- * survive a rebuild against a different address, because they are the two
- * fields a person put there. Everything else is build configuration.
+ * The Knap server, as the settings hold it. `lastUserEmail` survives a rebuild
+ * against a different address, because it is the one field a person put there.
+ * Everything else is build configuration.
  */
-export function knapServer(
-	lastUserEmail?: string,
-	syncMode?: VaultSyncMode,
-): RelayOnPremServer {
+export function knapServer(lastUserEmail?: string): RelayOnPremServer {
 	return {
 		id: KNAP_SERVER_ID,
 		name: KNAP_SERVER_NAME,
 		controlPlaneUrl: KNAP_CONTROL_PLANE_URL,
 		...(lastUserEmail ? { lastUserEmail } : {}),
-		...(syncMode ? { syncMode } : {}),
 	};
 }
 
@@ -183,7 +166,7 @@ export function migrateRelayOnPremSettings(
 				}
 			: undefined;
 
-	const server = knapServer(stored?.lastUserEmail, stored?.syncMode);
+	const server = knapServer(stored?.lastUserEmail);
 	const settings: RelayOnPremSettings = {
 		enabled: true,
 		servers: [server],
@@ -307,37 +290,3 @@ export function withUpdatedLastUserEmail(
 	};
 }
 
-/**
- * What this vault syncs to the given server. A server that is not there, or
- * one written before the setting existed, syncs the whole vault: that is the
- * default and it is what those installs are already doing.
- */
-export function syncModeFor(
-	settings: RelayOnPremSettings,
-	serverId: string
-): VaultSyncMode {
-	return getServerById(settings, serverId)?.syncMode ?? DEFAULT_VAULT_SYNC_MODE;
-}
-
-/**
- * Return a new settings object with the given server's syncMode set, for
- * persisting via NamespacedSettings.update(). Leaves settings unchanged (same
- * reference) when there is nothing to change, so callers can skip a no-op
- * write by comparing references.
- */
-export function withUpdatedSyncMode(
-	settings: RelayOnPremSettings,
-	serverId: string,
-	syncMode: VaultSyncMode
-): RelayOnPremSettings {
-	const server = getServerById(settings, serverId);
-	if (!server || server.syncMode === syncMode) {
-		return settings;
-	}
-	return {
-		...settings,
-		servers: settings.servers.map((s) =>
-			s.id === serverId ? { ...s, syncMode } : s
-		),
-	};
-}

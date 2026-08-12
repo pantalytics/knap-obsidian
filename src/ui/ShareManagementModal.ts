@@ -7,11 +7,9 @@
 
 import { App, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
 import type Live from "../main";
-import { RelayOnPremShareClient, type RelayOnPremShare, type ShareMember, type Invite, type FolderItem, type AgentKey, type CreateAgentKeyResponse } from "../RelayOnPremShareClient";
+import { RelayOnPremShareClient, type ShareMember, type Invite, type FolderItem, type AgentKey, type CreateAgentKeyResponse } from "../RelayOnPremShareClient";
 import { RelayOnPremShareClientManager, type ShareWithServer } from "../RelayOnPremShareClientManager";
-import { FolderSuggestModal } from "./FolderSuggestModal";
 import { getDefaultServer, type RelayOnPremServer } from "../RelayOnPremConfig";
-import { findShareForPath } from "../shareDuplicates";
 import { S3RN } from "../S3RN";
 import { confirmDialog, promptDialog } from "./dialogs";
 import { withOutboundSyncGuard } from "../WebSyncManager";
@@ -48,8 +46,10 @@ export class ShareManagementModal extends Modal {
 
 		// One title either way. The named branch used to put the server's name
 		// in front of the word, and there is one server nobody chooses
-		// (ADR-0033), so the name was furniture in a modal heading.
-		this.setTitle("Synced folders");
+		// (ADR-0033), so the name was furniture in a modal heading. It says
+		// what syncs rather than counting folders, because one vault is one
+		// share (ADR-0042).
+		this.setTitle("What syncs");
 	}
 
 	onOpen() {
@@ -291,20 +291,11 @@ export class ShareManagementModal extends Modal {
 	private renderShareList() {
 		const { contentEl } = this;
 
-		// Create button row (no duplicate header - modal title is enough)
-		const headerDiv = contentEl.createDiv({ cls: "relay-onprem-share-header" });
-		headerDiv.addClass("evc-flex", "evc-justify-end", "evc-mb-3");
-
-		const createButton = headerDiv.createEl("button", {
-			text: "Add a folder",
-			cls: "mod-cta",
-		});
-		createButton.addEventListener("click", () => { void this.showCreateShareForm(); });
-
-		// Shares list
+		// No button to add one. A vault is one share and signing in makes it
+		// (ADR-0042), so this list reports rather than offers.
 		if (this.shares.length === 0) {
 			contentEl.createEl("p", {
-				text: "Nothing syncs yet. Add a folder and it starts.",
+				text: "Nothing syncs yet. Sign in on the Synced Vaults settings tab and the whole vault starts.",
 				cls: "relay-onprem-empty",
 			});
 			return;
@@ -381,7 +372,7 @@ export class ShareManagementModal extends Modal {
 
 		// Section order (v1.9.2): Local Folder → Members → Add Member → Invites → Agent Keys → Web Publishing → Actions
 
-		// Local folder connection section (folder shares only)
+		// Whether this device syncs the vault this share is
 		if (this.selectedShare.kind === "folder") {
 			this.renderLocalFolderSection();
 		}
@@ -499,7 +490,7 @@ export class ShareManagementModal extends Modal {
 			(sf) => sf.guid === this.selectedShare!.id
 		);
 
-		contentEl.createEl("h4", { text: "Local folder" });
+		contentEl.createEl("h4", { text: "On this device" });
 
 		if (localFolder) {
 			new Setting(contentEl)
@@ -522,39 +513,36 @@ export class ShareManagementModal extends Modal {
 						});
 				});
 		} else {
+			// A share is a vault (ADR-0042), so there is no folder to choose:
+			// it attaches at the vault root with the vault scope, the same way
+			// signing in does. Asking for a folder here would make a
+			// folder-scope record for a share the rest of the plugin treats as
+			// a whole vault.
 			new Setting(contentEl)
-				.setName("Not connected")
-				.setDesc("Connect a local folder to start syncing")
+				.setName("Not syncing on this device")
+				.setDesc("Start syncing it here and the notes arrive in this vault")
 				.addButton((button) => {
 					button
-						.setButtonText("Connect to local folder")
+						.setButtonText("Sync this vault here")
 						.setCta()
 						.onClick(() => {
-							const modal = new FolderSuggestModal(
-								this.plugin.app,
-								"Choose a folder on this device…",
-								new Set(),
-								this.plugin.sharedFolders,
-								(folderPath: string) => {
-									try {
-										const sharedFolder = this.plugin.sharedFolders.new(
-											folderPath,
-											this.selectedShare!.id,
-											"relay-onprem",
-											true
-										);
-										if (sharedFolder && sharedFolder.settings) {
-											sharedFolder.settings.onpremServerId = this.selectedShare!.serverId;
-										}
-										this.plugin.folderNavDecorations?.quickRefresh();
-										new Notice("Folder connected! Syncing...");
-										this.renderContent();
-									} catch (e: unknown) {
-										new Notice(`Failed to connect folder: ${e instanceof Error ? e.message : "Unknown error"}`);
-									}
-								},
-							);
-							modal.open();
+							try {
+								const sharedFolder = this.plugin.sharedFolders.new(
+									"",
+									this.selectedShare!.id,
+									"relay-onprem",
+									false,
+									"vault"
+								);
+								if (sharedFolder && sharedFolder.settings) {
+									sharedFolder.settings.onpremServerId = this.selectedShare!.serverId;
+								}
+								this.plugin.folderNavDecorations?.quickRefresh();
+								new Notice("Syncing. The notes arrive as they come.");
+								this.renderContent();
+							} catch (e: unknown) {
+								new Notice(`Could not start syncing: ${e instanceof Error ? e.message : "Unknown error"}`);
+							}
 						});
 				});
 		}
@@ -1693,281 +1681,17 @@ export class ShareManagementModal extends Modal {
 		return settings.servers.filter(s => loggedInServerIds.includes(s.id));
 	}
 
-	private showCreateShareForm() {
-		const { contentEl } = this;
-		contentEl.empty();
-
-		// Back button
-		const backButton = contentEl.createEl("button", {
-			text: "Cancel",
-			cls: "mod-muted evc-mb-3",
-		});
-		backButton.addEventListener("click", () => this.renderContent());
-
-		contentEl.createEl("h3", { text: "Add a folder" });
-
-		let selectedPath: string = "";
-		let kindSelect: HTMLSelectElement;
-		let visibilitySelect: HTMLSelectElement;
-		let selectedServerId: string | undefined;
-
-		// Smart server selection
-		const loggedInServers = this.getLoggedInServers();
-
-		if (loggedInServers.length === 0) {
-			contentEl.createEl("p", {
-				text: "Sign in before adding a folder.",
-				cls: "relay-onprem-error",
-			});
-			return;
-		}
-
-		// Server selector - only show if multiple servers are logged in
-		if (loggedInServers.length > 1) {
-			const settings = this.plugin.relayOnPremSettings.get();
-			const defaultServer = getDefaultServer(settings);
-			selectedServerId = defaultServer?.id || loggedInServers[0].id;
-
-			new Setting(contentEl)
-				.setName("Account")
-				.setDesc("Which account this folder syncs under")
-				.addDropdown((dropdown) => {
-					loggedInServers.forEach(server => {
-						const label = server.id === settings.defaultServerId
-							? `${server.name} (Default)`
-							: server.name;
-						dropdown.addOption(server.id, label);
-					});
-					dropdown.setValue(selectedServerId!);
-					dropdown.onChange((value) => {
-						selectedServerId = value;
-					});
-				});
-		} else {
-			// Single server, use it automatically
-			selectedServerId = loggedInServers[0].id;
-		}
-
-		// Path selector with folder suggester
-		const pathSetting = new Setting(contentEl)
-			.setName("Path")
-			.setDesc("Path to the document or folder");
-
-		pathSetting.addButton((button) => {
-			button
-				.setButtonText(selectedPath || "Choose folder...")
-				.setCta()
-				.onClick(() => {
-					const modal = new FolderSuggestModal(
-						this.app,
-						"Choose a folder…",
-						new Set(),
-						this.plugin.sharedFolders,
-						(folderPath: string) => {
-							selectedPath = folderPath;
-							button.setButtonText(folderPath);
-						}
-					);
-					modal.open();
-				});
-		});
-
-		new Setting(contentEl)
-			.setName("Type")
-			.setDesc("A whole folder, or one note")
-			.addDropdown((dropdown) => {
-				kindSelect = dropdown.selectEl;
-				dropdown.addOption("doc", "Document");
-				dropdown.addOption("folder", "Folder");
-				dropdown.setValue("doc");
-			});
-
-		// Password field container (hidden by default)
-		let passwordInput: HTMLInputElement;
-		const passwordSettingEl = contentEl.createDiv({ cls: "relay-onprem-password-setting" });
-		passwordSettingEl.addClass("evc-hidden");
-
-		new Setting(passwordSettingEl)
-			.setName("Password")
-			.setDesc("Password needed to open this folder")
-			.addText((text) => {
-				passwordInput = text.inputEl;
-				text.setPlaceholder("Enter password for protected share");
-				text.inputEl.type = "password";
-			});
-
-		new Setting(contentEl)
-			.setName("Visibility")
-			.setDesc("Who can reach this folder")
-			.addDropdown((dropdown) => {
-				visibilitySelect = dropdown.selectEl;
-				dropdown.addOption("private", "Private");
-				dropdown.addOption("public", "Public");
-				dropdown.addOption("protected", "Protected (password required)");
-				dropdown.setValue("private");
-				dropdown.onChange((value) => {
-					// Show/hide password field based on visibility
-					passwordSettingEl.toggleClass("evc-hidden", value !== "protected");
-				});
-			});
-
-		// What the form has to say stays in the form. A Notice is gone in a few
-		// seconds and leaves a refused create looking like a button that did
-		// nothing.
-		const errorEl = contentEl.createDiv({ cls: "relay-onprem-form-error" });
-		errorEl.addClass("evc-text-error", "evc-text-sm", "evc-mt-2", "evc-hidden");
-		const showError = (message: string) => {
-			errorEl.setText(message);
-			errorEl.removeClass("evc-hidden");
-		};
-
-		new Setting(contentEl).addButton((button) => {
-			button
-				.setButtonText("Create share")
-				.setCta()
-				.onClick(async () => {
-					errorEl.addClass("evc-hidden");
-
-					const path = selectedPath.trim();
-					const kind = kindSelect.value as "doc" | "folder";
-					const visibility = visibilitySelect.value as "private" | "public" | "protected";
-					const password = passwordInput?.value?.trim();
-
-					if (!path) {
-						showError("Pick a folder first.");
-						return;
-					}
-
-					if (!selectedServerId) {
-						showError("Pick a server first.");
-						return;
-					}
-
-					// Validate password for protected shares
-					if (visibility === "protected" && !password) {
-						showError("A protected folder needs a password.");
-						return;
-					}
-
-					const duplicate = this.findExistingShare(path, selectedServerId);
-					if (duplicate) {
-						showError(
-							`${duplicate.path} is already shared. Open it from the list instead of making a second one.`,
-						);
-						return;
-					}
-
-					await this.createShare(path, kind, visibility, selectedServerId, password, showError);
-				});
-		});
-	}
 
 	/**
 	 * The share already covering this path on this server, if there is one.
 	 * Nothing stops the control plane accepting a second share on the same
 	 * folder, so the form refuses it here.
 	 */
-	private findExistingShare(path: string, serverId: string): ShareWithServer | undefined {
-		return findShareForPath(
-			this.shares.filter((share) => share.serverId === serverId),
-			path,
-		);
-	}
-
-	private async createShare(
-		path: string,
-		kind: "doc" | "folder",
-		visibility: "private" | "public" | "protected",
-		serverId: string,
-		password?: string,
-		showError?: (message: string) => void,
-	) {
-		let share: RelayOnPremShare | undefined;
-		// Set when the share was found after a throw rather than returned by the
-		// create. Together with a list that was loaded before sending, which
-		// confirmed the folder was unshared a moment ago, that is what lets the
-		// throw be read as this create having landed anyway.
-		let recovered = false;
-		const knewShares = this.sharesLoaded;
-
-		try {
-			const createRequest = {
-				path,
-				kind,
-				visibility,
-				...(password && { password }), // Include password only if provided
-			};
-
-			if (this.plugin.shareClientManager) {
-				share = await this.plugin.shareClientManager.createShare(serverId, createRequest);
-			} else if (this.plugin.shareClient) {
-				share = await this.plugin.shareClient.createShare(createRequest);
-			} else {
-				throw new Error("No share client available");
-			}
-		} catch (error: unknown) {
-			// A create that throws has not always failed: the server can write the
-			// share and then the reply is what goes wrong. Ask it what it has
-			// before saying the share was not created.
-			await this.reloadSharesQuietly();
-			share = this.findExistingShare(path, serverId);
-
-			if (!share) {
-				const message = `${path} was not shared. ${error instanceof Error ? error.message : "The server gave no reason."}`;
-				if (showError) {
-					showError(message);
-				} else {
-					new Notice(message);
-				}
-				return;
-			}
-			recovered = true;
-		}
-
-		new Notice(
-			recovered && !knewShares
-				? `${share.path} is already shared.`
-				: `${share.path} is now shared.`,
-		);
-
-		// Create local SharedFolder for visual indicators and sync
-		if (share.kind === "folder") {
-			this.createLocalSharedFolder(share.path, share.id, serverId);
-		}
-
-		await this.reloadSharesQuietly();
-		this.renderContent();
-	}
-
 	private async reloadSharesQuietly() {
 		try {
 			await this.loadShares();
 		} catch (error: unknown) {
 			console.warn("[RelayOnPrem] Could not reload the share list:", error);
-		}
-	}
-
-	private createLocalSharedFolder(folderPath: string, shareGuid: string, serverId: string) {
-		try {
-			// Create SharedFolder with relay-onprem marker for CRDT sync
-			const sharedFolder = this.plugin.sharedFolders.new(
-				folderPath,
-				shareGuid,
-				"relay-onprem",
-				false
-			);
-
-			// Store the server ID in the shared folder settings
-			if (sharedFolder && sharedFolder.settings) {
-				sharedFolder.settings.onpremServerId = serverId;
-			}
-
-			// Trigger visual indicators refresh
-			this.plugin.folderNavDecorations?.quickRefresh();
-
-			console.debug(`[RelayOnPrem] Created SharedFolder for ${folderPath} on server ${serverId}`);
-		} catch (error: unknown) {
-			console.error(`[RelayOnPrem] Failed to create SharedFolder:`, error);
 		}
 	}
 

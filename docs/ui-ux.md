@@ -8,26 +8,23 @@ This page is the design the fork is being cut down to. It was settled on
 2026-08-11 against an interactive mockup, and the decisions behind it live as
 ADRs in the private admin repository, `knap-mcp-admin/docs/adr/`: **0030**
 (sign-in), **0031** (one control surface), **0032** (whole vault by default),
-**0033** (one server), **0034** (permissions), **0039** (individual folders is
-one toggle). Where this page and an ADR disagree, the ADR wins.
+**0033** (one server), **0034** (permissions), **0042** (a vault is one share,
+which retired 0039's toggle). Where this page and an ADR disagree, the ADR
+wins.
 
 ## The one rule
 
-**Everything a person can change about their notes is changed here.** Which
-folders sync, whether this device syncs, and who may read them. Knap's web page
-sets nothing about the vault: it connects an AI and reports whether the chain is
-working.
+**Everything a person can change about their notes is changed here.** Whether
+this device syncs, and who may read the vault. Knap's web page sets nothing
+about the vault: it connects an AI and reports whether the chain is working.
 
-The tempting alternative is to split it, keeping folders here because a folder is
-device-shaped and putting membership on the web because a membership is
-account-shaped. That distinction is real in the architecture and invisible to the
-person using it: from where they sit, *which folders* and *who can see them* are
-the same decision about the same vault, made in the same sitting.
-
-Note which way the collapse had to go. Everything-on-the-web is not available,
-because a browser cannot list a laptop's folders, so folder selection would stay
-here regardless and we would be back to two places. **Obsidian is the only
-surface that can hold all of it**, and it is where the person already is.
+*What* syncs is no longer on that list, because it is no longer a question: a
+vault syncs whole (ADR-0042). What is left is device-shaped or account-shaped,
+and both live here rather than
+being split across two surfaces. That distinction is real in the architecture
+and invisible to the person using it: from where they sit, *does this laptop
+sync* and *who can see this* are the same decision about the same vault, made in
+the same sitting.
 
 ## The flow
 
@@ -51,7 +48,9 @@ and the self-host dialog all answer a question nobody is asked now.
 
 Signing in shares the vault at its root, through the vault scope in
 `src/vaultScope.ts`. The person watches notes move instead of answering a
-question about a vault they have not yet seen us handle.
+question about a vault they have not yet seen us handle. There is no second
+answer to give: one vault is one share, the way it is in Obsidian Sync and in
+every other sync a person has used.
 
 Two lines of copy while they wait, and both earn their place:
 
@@ -67,37 +66,41 @@ moment they are looking at the screen.
 ### 3. Working
 
 One row for the vault: a dot, the name, the state, when it last moved. Open, it
-carries the facts, the shared folders, who may read them, and the two actions
-that belong to this device.
+carries the facts, who may read them, and the two actions that belong to this
+device.
 
-### 4. Shared folders instead
+### 4. Folders are content, not settings
 
-Somebody who wants less turns on **Sync individual folders**, the one setting on
-this screen, and then shares folders **from the file explorer, the way this
-plugin already works**: right-click a folder, *Synced Vaults: sync this folder*, at
-any depth.
-`Clients` and `Personal/Reading list` are both ordinary cases, which is why the
-table shows the path rather than the leaf name.
+A folder is a thing inside the vault, and the vault is what syncs. So there is
+no folder picker, no *Synced Vaults: sync this folder* on the context menu, and no
+*Add a folder* button. **Making a folder makes it everywhere, moving it moves it
+everywhere, and deleting it deletes it everywhere**, which is what a person
+already expects from a sync and what they get from Obsidian Sync.
 
-The settings screen lists what exists. It never becomes a second way to create
-one.
+That last one looks like it needs code and does not, which is worth writing
+down because it cost a wrong change to find out. `deleteFile` removes one entry
+from the sync store, and a folder is an entry like any other, so deleting a
+folder reads like it would leave the notes inside it behind. **Measured in a
+real Obsidian on 2026-08-12** (`make obsidian` in the admin repo, against the
+build at `4a72663`): Obsidian fires a `delete` event for every descendant
+before the folder's own, empty subfolders included, on both `vault.delete` and
+the file explorer's `fileManager.trashFile`. Every note removes itself, and the
+shared map is clean afterwards with a same-prefix sibling untouched. A cascade
+inside `deleteFile` is not needed, and the one written for it walked the whole
+sync store once per delete event.
 
-**This is an either/or, not a preference**, and the code enforces it in both
-directions (`SharedFolder._new`): *syncing the whole vault cannot be combined
-with folder shares*, and *this vault is already synced whole, so a folder cannot
-be shared separately*. So the toggle is a switch between two states rather than
-a third one, and flipping it is a single act: the shares the old mode owned come
-off the server first, and the setting is written only once they have all gone.
+**Adopting a share does not ask either.** The member screen's *Sync this vault
+here* attaches at the vault root with the vault scope, the same way signing in
+does. It used to open a folder picker, which made a folder-scope record for a
+share the rest of the plugin treats as a whole vault: that disagreement is
+exactly what one share per vault exists to end, so a picker here would have
+reintroduced it through the back door.
 
-**That order is the point of it existing** (ADR-0039). Unsharing folders one at a
-time used to leave this plugin syncing nothing and the server still holding the
-shares, and neither half noticed. A refusal now stops the switch: what came off
-stays off, the setting still describes what is happening, and pressing the toggle
-again picks up from there.
-
-Both directions delete shares and make new ones, so both re-upload. The
-confirmation says that before anything moves, and says the notes on the device
-are not touched.
+The one screen that still names a folder is for vaults an older build left
+syncing them: whole vault and folder shares are exclusive in both directions
+(`SharedFolder._new`), so the folders come off before the vault share can be
+made. It is a button, it asks first because deleting a share deletes its
+documents, and it goes when the last of those vaults has been through it.
 
 ### 5. Signed out
 
@@ -105,11 +108,12 @@ The row turns red, the shares pause, and *Sign in again* is the primary button
 inside it. Nothing has been lost, and the copy says so: every note is still on
 this device.
 
-## Vault, then shared folders, and never a third level
+## One vault, one row, and never a second level
 
-Two levels, here and on Knap's page. The vault is the row; inside it sits either
-**Whole vault** as one line, or the table of shared folders. Anything that wants
-to be a third level is a fact on the second, or it does not exist.
+The vault is the row and there is nothing under it. Anything that wants to be a
+second level is a fact on the first, or it does not exist. This is the shape
+ADR-0042 bought: the table of folders that used to sit inside the row was the
+only reason there were ever two.
 
 ## One status, written once
 
@@ -138,8 +142,8 @@ their job.
 | On screen | What it means |
 |---|---|
 | **Vault** | This Obsidian vault |
-| **Folder** | A folder in it that syncs. *Synced folder* the first time on a screen, plain *folder* after that |
-| **Sync** | What happens between them. **Synced Vaults** is this settings tab and Knap's own page, the same two words on both sides |
+| **Folder** | A folder inside the vault. It syncs because the vault does, so it is never a thing to turn on |
+| **Sync** | What happens between them. **Synced Vaults** is this settings tab, and Knap's own page says the same words |
 | **MCP** | How an AI reaches the vault |
 
 | Not on screen | Say instead |
@@ -152,14 +156,23 @@ their job.
 
 *Relay* is upstream's word for their product and their server. Neither is
 something a person using this plugin has to know about, so neither reaches the
-screen. `Relay: share folder` became `Synced Vaults: sync this folder`, for the same
-reason the settings section stopped being called Relay Servers.
+screen. `Relay: share folder` became `Synced Vaults: sync this folder` for that
+reason, and then went altogether when there stopped being a folder to sync on
+its own.
 
 **Upstream's own screens still say all of it**, and they are left that way on
 purpose. `Relays.svelte`, `ManageRelay.svelte`, `ManageSharedFolder.svelte` and
 `ManageRemoteFolder.svelte` only render when `isRelayOnPremMode()` is false,
 which it never is here, so nobody reads them. Renaming a file we rebase from
 upstream costs every future rebase to buy a word that is never shown.
+
+**That is also where every remaining folder picker lives**, and it is the check
+to run before believing the pickers are gone: `FolderSuggestModal`,
+`ShareFolderModal`, `AddToVaultModal`, `RemoteFolderSuggestModal` and
+`FolderSelectInput` are all reached only from those four. `PluginSettings.svelte`
+branches to `RelayOnPremSettings` on `isRelayOnPremMode()`, so in this fork they
+are unreachable rather than merely unused. A picker that turns up on a screen we
+do render is a bug, not upstream's business.
 
 ## Permissions come from one place
 
@@ -181,6 +194,8 @@ week somebody leaves.
 | `AgentKeysView.svelte` | Write-only, per share, and they need web publishing on. Reading needs an account, so this was never our credential |
 | `RelayOnPremServerList.svelte`, `EndpointConfigModal`, `SelfHostModal` | One server (ADR-0033). The largest single file in the fork, serving a question nobody is asked |
 | `Discord.svelte`, `GetInTouch.svelte`, the icon and button rows | Already gone. They sent people away from the screen before it had said anything |
+| `CreateShareView.svelte`, `QuickShareModal` | Already gone (ADR-0042). A vault is one share and nothing creates a second |
+| `ShareManagementModal`'s `createShare` and `createLocalSharedFolder` | Dead with the form above them. The modal itself stays: it is the other route to the member list |
 
 ## What stays, and gets rewritten
 

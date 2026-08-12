@@ -12,8 +12,9 @@ that was offline catches up when it reconnects.
 
 ## What it does
 
-- **Sync a whole vault, or pick folders.** Sync everything, or sync
-  `Projects/` and leave the rest of the vault alone.
+- **The whole vault, and nothing to pick.** Sign in and everything syncs.
+  Making a folder makes it everywhere, moving it moves it everywhere, deleting
+  it deletes it everywhere, the way any other sync behaves.
 - **Two people, one note.** Edits merge as you type. No conflict copies, no
   last-writer-wins.
 - **Offline is normal.** Edit on a plane, reconnect, and Knap catches up.

@@ -2341,6 +2341,18 @@ export class SharedFolder extends HasProvider {
 		return this.pendingDeletes.has(vpath);
 	}
 
+	/**
+	 * Remove one entry from the sync store, and tear its document down.
+	 *
+	 * One entry is enough even when the path is a folder, which is not
+	 * obvious and was got wrong once. Obsidian fires a `delete` event for
+	 * every descendant before the folder's own, so each note has already
+	 * removed itself by the time this runs for the folder. Measured on
+	 * 2026-08-12 on both `vault.delete` and `fileManager.trashFile`, empty
+	 * nested folders included; the admin repo's
+	 * `scripts/dev/obsidian/checks/` has the run. A walk of the children here
+	 * is dead weight that costs a pass over the whole store per event.
+	 */
 	deleteFile(vpath: string) {
 		const guid = this.syncStore?.get(vpath);
 		if (guid) {

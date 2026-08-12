@@ -3,7 +3,7 @@
 	"name": "Synced Vaults",
 	"version": "1.5.0",
 	"minAppVersion": "1.8.7",
-	"description": "Your vault on Knap: a whole vault or one folder at a time, on desktop and on phone, with real-time collaborative editing on whatever you share.",
+	"description": "Your vault on Knap: the whole vault, on desktop and on phone, with real-time collaborative editing on all of it.",
 	"author": "Pantalytics",
 	"authorUrl": "https://github.com/pantalytics",
 	"isDesktopOnly": false
