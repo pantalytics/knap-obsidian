@@ -1,11 +1,14 @@
 import {
 	cloudFolder,
 	cloudFolderHazard,
+	coreSyncPlugins,
+	enabledCorePluginIds,
 	holdsVaultBack,
 	loadedPluginIds,
 	otherSyncPlugins,
 	readVaultHazards,
 	syncPluginHazard,
+	syncPluginsInVault,
 	topHazard,
 	type Hazard,
 	type VaultReader,
@@ -26,10 +29,17 @@ import {
  */
 
 /** A vault, as little of it as this module reads. */
-function vault(options: { plugins?: string[]; basePath?: string }): VaultReader {
+function vault(options: {
+	plugins?: string[];
+	corePlugins?: string[];
+	basePath?: string;
+	onPhone?: boolean;
+}): VaultReader {
 	return {
 		basePath: options.basePath ?? "/Users/someone/Notes",
 		loadedPlugins: options.plugins ?? [],
+		loadedCorePlugins: options.corePlugins ?? [],
+		onPhone: options.onPhone ?? false,
 	};
 }
 
@@ -38,6 +48,16 @@ function runtime(enabled: string[], installed: string[] = enabled) {
 	return {
 		enabledPlugins: new Set(enabled),
 		manifests: Object.fromEntries(installed.map((id) => [id, { id }])),
+	};
+}
+
+/** Obsidian's core plugins, which are a record rather than a set. */
+function core(enabled: string[], off: string[] = []) {
+	return {
+		plugins: {
+			...Object.fromEntries(enabled.map((id) => [id, { enabled: true }])),
+			...Object.fromEntries(off.map((id) => [id, { enabled: false }])),
+		},
 	};
 }
 
@@ -97,6 +117,76 @@ describe("another sync plugin on the same vault", () => {
 	});
 });
 
+describe("Obsidian's own sync, which is not a community plugin", () => {
+	test("it is found where core plugins live, not in the enabled set", () => {
+		// The gap this closes: `loadedPluginIds` reads `app.plugins`, and
+		// Obsidian Sync has never been in there. Somebody paying for it got no
+		// warning at all, which is the one pairing Obsidian's own help and
+		// ADR-0004 both tell people not to make.
+		expect(otherSyncPlugins(["sync", "synced-vaults"])).toEqual([]);
+		expect(coreSyncPlugins(["sync"]).map((one) => one.name)).toEqual(["Obsidian Sync"]);
+	});
+
+	test("a core plugin that is off, or is not sync, is nothing", () => {
+		expect(coreSyncPlugins([])).toEqual([]);
+		expect(coreSyncPlugins(["graph", "backlink", "daily-notes"])).toEqual([]);
+	});
+
+	test("it warns and never holds, the same as the other file-level ones", () => {
+		// Turning off a sync somebody pays for is their migration to schedule,
+		// not a toggle to demand halfway through setting Knap up (ADR-0004).
+		for (const syncing of [true, false]) {
+			const hazard = syncPluginHazard(coreSyncPlugins(["sync"]), syncing);
+			expect(hazard?.blocking).toBe(false);
+			expect(hazard?.notice).toContain("Obsidian Sync");
+		}
+	});
+
+	test("it sends people to Core plugins, where the switch actually is", () => {
+		const hazard = syncPluginHazard(coreSyncPlugins(["sync"]), false);
+		expect(hazard?.lines.join(" ")).toContain("Settings, Core plugins");
+		expect(hazard?.lines.join(" ")).not.toContain("Community plugins");
+	});
+
+	test("one of each names both lists rather than the wrong one", () => {
+		const both = syncPluginsInVault(["remotely-save"], ["sync"]);
+		expect(both.map((one) => one.name)).toEqual(["Remotely Save", "Obsidian Sync"]);
+		expect(syncPluginHazard(both, false)?.lines.join(" ")).toContain(
+			"in Core plugins and Community plugins",
+		);
+	});
+
+	test("a second copy of Knap still outranks it", () => {
+		const found = syncPluginsInVault(["remotely-save", "knap-sync"], ["sync"]);
+		expect(found.map((one) => one.id)).toEqual(["knap-sync", "remotely-save", "sync"]);
+		// And the vault is held, because one of them writes the same documents.
+		expect(syncPluginHazard(found, false)?.blocking).toBe(true);
+	});
+
+	test("read off the app, on at true and not merely present", () => {
+		expect(enabledCorePluginIds(core(["sync", "graph"], ["publish"]))).toEqual([
+			"sync",
+			"graph",
+		]);
+		expect(enabledCorePluginIds(core([], ["sync"]))).toEqual([]);
+	});
+
+	test("an app that will not say is not a vault without Sync", () => {
+		// Same rule as the community half: undefined rather than empty, so the
+		// caller logs it instead of quietly warning about nothing.
+		expect(enabledCorePluginIds(undefined)).toBeUndefined();
+		expect(enabledCorePluginIds({})).toBeUndefined();
+		expect(enabledCorePluginIds({ plugins: null })).toBeUndefined();
+		expect(enabledCorePluginIds({ plugins: ["sync"] })?.length).toBe(0);
+	});
+
+	test("a vault on Obsidian Sync is finally told something", () => {
+		const hazards = readVaultHazards(vault({ corePlugins: ["sync"] }), false);
+		expect(hazards.map((one) => one.kind)).toEqual(["second-sync-plugin"]);
+		expect(holdsVaultBack(hazards, false)).toBeUndefined();
+	});
+});
+
 describe("a vault inside a cloud drive", () => {
 	test("the reported path, straight off a phone's own vault folder", () => {
 		expect(
@@ -130,6 +220,39 @@ describe("a vault inside a cloud drive", () => {
 		const hazard = cloudFolderHazard("Dropbox");
 		expect(hazard?.blocking).toBe(false);
 		expect(hazard?.lines.join(" ")).toContain("Knap carries on");
+	});
+
+	test("the way out on a phone is not the way out on a laptop", () => {
+		// Quitting the app and dragging a folder is desktop advice, and it was
+		// the only advice up to 1.9.1. On iOS the vault Obsidian offers to make
+		// is in iCloud Drive to begin with, so this is the case most phones
+		// land in rather than an edge one.
+		const phone = cloudFolderHazard("iCloud Drive", true);
+		expect(phone?.blocking).toBe(false);
+		const said = phone?.lines.join(" ") ?? "";
+		expect(said).not.toContain("quit Obsidian");
+		expect(said).toContain("stored on this device");
+		// A new vault only joins the one already on Knap if the name matches,
+		// so the instruction is wrong without that half (`vaultShare.ts`).
+		expect(said).toContain("the same name");
+	});
+
+	test("the laptop keeps the instruction a laptop can follow", () => {
+		const desktop = cloudFolderHazard("Dropbox", false);
+		expect(desktop?.lines.join(" ")).toContain("quit Obsidian");
+		expect(cloudFolderHazard("Dropbox")).toEqual(desktop);
+	});
+
+	test("the phone reads it off the vault, not off the path", () => {
+		const hazards = readVaultHazards(
+			vault({
+				basePath: "/var/mobile/.../iCloud~md~obsidian/Documents/V",
+				onPhone: true,
+			}),
+			false,
+		);
+		expect(hazards.map((one) => one.kind)).toEqual(["cloud-folder"]);
+		expect(hazards[0].lines.join(" ")).toContain("on a phone");
 	});
 
 	test("no path ever reaches the copy, only the name of the drive", () => {
@@ -291,7 +414,10 @@ describe("the copy that goes with it", () => {
 			syncPluginHazard(otherSyncPlugins(["system3-relay", "knap-sync"]), false),
 			syncPluginHazard(otherSyncPlugins(["remotely-save"]), false),
 			syncPluginHazard(otherSyncPlugins(["obsidian-git", "obsidian-livesync"]), true),
+			syncPluginHazard(coreSyncPlugins(["sync"]), false),
+			syncPluginHazard(syncPluginsInVault(["remotely-save"], ["sync"]), true),
 			cloudFolderHazard("iCloud Drive"),
+			cloudFolderHazard("iCloud Drive", true),
 			cloudFolderHazard("OneDrive"),
 			cloudFolderHazard("Dropbox"),
 		].filter((one): one is Hazard => one !== undefined);
