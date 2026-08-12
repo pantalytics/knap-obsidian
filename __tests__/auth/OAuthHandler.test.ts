@@ -23,8 +23,8 @@ import { customFetch } from "../../src/customFetch";
 const mockFetch = customFetch as jest.MockedFunction<typeof customFetch>;
 
 jest.mock("../../src/auth/OAuthDeepLinkReceiver", () => ({
-	OAUTH_CALLBACK_ACTION: "knap-sync/oauth-callback",
-	OAUTH_RETURN_URL: "obsidian://knap-sync/oauth-callback",
+	OAUTH_CALLBACK_ACTION: "synced-vaults/oauth-callback",
+	OAUTH_RETURN_URL: "obsidian://synced-vaults/oauth-callback",
 	oauthDeepLinkReceiver: {
 		waitForCallback: jest.fn(),
 		cancel: jest.fn(),
@@ -105,7 +105,7 @@ describe("OAuthHandler", () => {
 			);
 			expect(result).toEqual({
 				authorizeUrl,
-				returnUrl: "obsidian://knap-sync/oauth-callback",
+				returnUrl: "obsidian://synced-vaults/oauth-callback",
 			});
 		});
 
@@ -121,7 +121,7 @@ describe("OAuthHandler", () => {
 				`${CONTROL_PLANE_URL}/v1/auth/oauth/${PROVIDER}/callback`,
 			);
 			expect(url.searchParams.get("return_url")).toBe(
-				"obsidian://knap-sync/oauth-callback",
+				"obsidian://synced-vaults/oauth-callback",
 			);
 		});
 

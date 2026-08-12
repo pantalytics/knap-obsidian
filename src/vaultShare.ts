@@ -8,7 +8,7 @@
  * folder picker or a scope, and asking them to choose one is asking about a
  * vault they have not seen us handle.
  *
- * Leaving that default is a setting on the Knap Sync screen rather than a
+ * Leaving that default is a setting on the Synced Vaults screen rather than a
  * sequence of unshares, and that is what this file grew for. The old way out
  * was to unshare the vault by hand and share folders one at a time, which left
  * the two halves free to disagree: the plugin stopped syncing a folder and the

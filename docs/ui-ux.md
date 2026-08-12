@@ -1,6 +1,6 @@
 # What this plugin should do, and what it should not
 
-Knap Sync is a fork of EVC Team Relay's Obsidian plugin. The fork exists because
+Synced Vaults is a fork of EVC Team Relay's Obsidian plugin. The fork exists because
 we run one service and upstream builds a hosted product, and most of what this
 plugin still renders answers questions our stack does not have.
 
@@ -35,7 +35,7 @@ surface that can hold all of it**, and it is where the person already is.
 
 The settings tab is a sentence and a button. No server field, no email, no
 password, no code to paste. Pressing it opens a browser, Zitadel asks, and the
-callback comes back through `obsidian://knap-sync/oauth-callback`.
+callback comes back through `obsidian://synced-vaults/oauth-callback`.
 
 That button is the only way in. There is no *Other ways to sign in*, and no email
 and password form behind it: an account created through the identity service has
@@ -74,7 +74,7 @@ that belong to this device.
 
 Somebody who wants less turns on **Sync individual folders**, the one setting on
 this screen, and then shares folders **from the file explorer, the way this
-plugin already works**: right-click a folder, *Knap Sync: sync this folder*, at
+plugin already works**: right-click a folder, *Synced Vaults: sync this folder*, at
 any depth.
 `Clients` and `Personal/Reading list` are both ordinary cases, which is why the
 table shows the path rather than the leaf name.
@@ -139,20 +139,20 @@ their job.
 |---|---|
 | **Vault** | This Obsidian vault |
 | **Folder** | A folder in it that syncs. *Synced folder* the first time on a screen, plain *folder* after that |
-| **Sync** | What happens between them. **Knap Sync** is this settings tab and Knap's own page, the same two words on both sides |
+| **Sync** | What happens between them. **Synced Vaults** is this settings tab and Knap's own page, the same two words on both sides |
 | **MCP** | How an AI reaches the vault |
 
 | Not on screen | Say instead |
 |---|---|
 | share, workspace, space | folder |
-| Relay Server, relay-onprem, Knap servers, Obsidian servers | Knap Sync |
+| Relay Server, relay-onprem, Knap servers, Obsidian servers | Synced Vaults |
 | relay, control plane, any hostname | Knap, or the vault |
 | pair, pairing code, token | **Sign in** |
 | viewer, editor, role | **can read**, **can edit** |
 
 *Relay* is upstream's word for their product and their server. Neither is
 something a person using this plugin has to know about, so neither reaches the
-screen. `Relay: share folder` became `Knap Sync: sync this folder`, for the same
+screen. `Relay: share folder` became `Synced Vaults: sync this folder`, for the same
 reason the settings section stopped being called Relay Servers.
 
 **Upstream's own screens still say all of it**, and they are left that way on

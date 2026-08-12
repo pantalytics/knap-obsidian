@@ -1,10 +1,10 @@
-# Knap Sync
+# Synced Vaults
 
 **Your vault on Knap, on every device you use.** A whole vault or one folder at
 a time, on desktop and on phone, with real-time collaborative editing on
 whatever syncs.
 
-Knap Sync keeps your notes as plain markdown in your vault. Knap holds a CRDT
+Synced Vaults keeps your notes as plain markdown in your vault. Knap holds a CRDT
 copy, so two people can edit the same note without a merge conflict and a device
 that was offline catches up when it reconnects.
 
@@ -23,7 +23,7 @@ that was offline catches up when it reconnects.
   `obsidian://` link rather than a local port, so iOS and Android work the same
   way the laptop does.
 
-Knap Sync is the Obsidian half of [Knap](https://github.com/pantalytics), where
+Synced Vaults is the Obsidian half of [Knap](https://github.com/pantalytics), where
 the same vault is reachable by an AI assistant over MCP. You do not need to use
 that half: sign in, and the plugin syncs.
 
@@ -31,7 +31,7 @@ that half: sign in, and the plugin syncs.
 
 ## Install
 
-Knap Sync is not in the community catalog yet. Two ways to install it today.
+Synced Vaults is not in the community catalog yet. Two ways to install it today.
 
 ### BRAT
 
@@ -41,20 +41,33 @@ from GitHub and keeps them updated.
 1. Install and enable **BRAT** from *Settings → Community plugins → Browse*
 2. *Settings → BRAT → Add beta plugin*
 3. Paste `pantalytics/knap-obsidian`, pick the latest version, **Add plugin**
-4. Enable **Knap Sync** in *Settings → Community plugins*
+4. Enable **Synced Vaults** in *Settings → Community plugins*
 
 ### Manual
 
 1. Download `main.js`, `manifest.json` and `styles.css` from the
    [latest release](https://github.com/pantalytics/knap-obsidian/releases/latest)
-2. Put all three in `<your vault>/.obsidian/plugins/knap-sync/`
-3. Reload Obsidian and enable **Knap Sync**
+2. Put all three in `<your vault>/.obsidian/plugins/synced-vaults/`
+3. Reload Obsidian and enable **Synced Vaults**
+
+### Coming from Knap Sync
+
+The plugin was called Knap Sync up to 1.4.0, and Obsidian keys a plugin by its
+identifier rather than its name, so 1.5.0 installs beside the old one instead of
+replacing it. Delete `.obsidian/plugins/knap-sync/` once the new one is enabled,
+or two copies will sync the same vault against each other. On BRAT, remove the
+beta plugin first and add `pantalytics/knap-obsidian` again.
+
+You stay signed in. What does not carry over is the offline copy each synced
+folder keeps, so every folder downloads itself again on first run. Let a device
+finish syncing before you upgrade it, or anything still waiting to upload goes
+with the old copy.
 
 ---
 
 ## Sign in
 
-*Settings → Knap Sync → Sign in.* A browser opens, you sign in with your Knap
+*Settings → Synced Vaults → Sign in.* A browser opens, you sign in with your Knap
 account, and Obsidian picks it up from there. There is no address to type and no
 code to paste, on a laptop or on a phone.
 
@@ -79,10 +92,10 @@ enter. What a Knap account costs is a question for Knap, not for the plugin.
 
 ## Network use
 
-**A Knap account is required.** Knap Sync is a client, and with nothing to sign
+**A Knap account is required.** Synced Vaults is a client, and with nothing to sign
 in to there is nothing for it to sync against.
 
-Knap Sync talks to Knap, and to an identity provider only while you are signing
+Synced Vaults talks to Knap, and to an identity provider only while you are signing
 in through one.
 
 | Connection | Protocol | What for | When |
@@ -93,7 +106,7 @@ in through one.
 | Identity provider | HTTPS | The sign-in page itself | Only while you are signing in |
 | `obsidian://` callback | Obsidian URL scheme | Receiving the sign-in redirect | During sign-in only |
 
-The identity provider row is worth being precise about. Knap Sync never contacts
+The identity provider row is worth being precise about. Synced Vaults never contacts
 an identity provider on its own account, and it holds no client id and no secret
 for one. It opens the sign-in page Knap sent it to, and catches the redirect
 coming back.
@@ -105,7 +118,7 @@ notes anywhere except to Knap.
 
 ## Where this comes from
 
-Knap Sync is a fork of
+Synced Vaults is a fork of
 [EVC Team Relay](https://github.com/entire-vc/evc-team-relay-obsidian-plugin),
 which is itself derived from [Relay](https://github.com/No-Instructions/Relay)
 by No Instructions, LLC. Both are MIT licensed and both copyright lines are

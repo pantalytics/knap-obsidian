@@ -52,14 +52,14 @@ export class RelayOnPremAuthStore {
 	 * Get storage key for a specific server
 	 */
 	private getStorageKey(serverId: string): string {
-		return `knap-sync_onprem_auth_${this.appId}_${serverId}`;
+		return `synced-vaults_onprem_auth_${this.appId}_${serverId}`;
 	}
 
 	/**
 	 * Get storage key prefix for listing all server keys
 	 */
 	private getStorageKeyPrefix(): string {
-		return `knap-sync_onprem_auth_${this.appId}_`;
+		return `synced-vaults_onprem_auth_${this.appId}_`;
 	}
 
 	/**

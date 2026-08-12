@@ -20,8 +20,8 @@
  * relay and is not.
  */
 (async () => {
-	const plugin = app.plugins.plugins["knap-sync"];
-	if (!plugin) throw new Error("knap-sync is not loaded");
+	const plugin = app.plugins.plugins["synced-vaults"];
+	if (!plugin) throw new Error("synced-vaults is not loaded");
 	const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 	// The note lives in Projects/ either way, so the same file is carried by a
 	// vault share and by a folder share rooted at Projects. That is the point:

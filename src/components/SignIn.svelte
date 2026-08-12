@@ -39,7 +39,7 @@
 	// One button, because there is one server and one account (ADR-0030,
 	// ADR-0033). No address to type, nothing to choose, and no code to paste:
 	// pressing Sign in opens a browser, and the callback comes back through
-	// obsidian://knap-sync/oauth-callback.
+	// obsidian://synced-vaults/oauth-callback.
 	//
 	// There is one way in and this is it. The email and password form that used
 	// to sit behind "Other ways to sign in" is gone: an account made through the

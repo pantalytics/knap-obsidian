@@ -1,4 +1,4 @@
-# Submitting Knap Sync to the community catalog
+# Submitting Synced Vaults to the community catalog
 
 What the Obsidian community directory asks for, what this repo already has, and
 what is genuinely left. Everything here was read off
@@ -66,10 +66,10 @@ Verified against the live repo and the live catalog on 2026-08-11, not assumed.
 |---|---|
 | Repository is public | Public. This was the blocker in the previous draft and it is gone. |
 | `README.md`, `LICENSE`, `manifest.json` in the repo root | Present. CI checks they stay present. |
-| Default branch carries the Knap Sync manifest and README | `knap/fork-base` is the default branch and holds both. There is no `main`, so there is nothing to merge first. |
-| Plugin id unique across published plugins | `knap-sync` is free. Checked against all 6558 entries in `community-plugins.json` on 2026-08-11. |
-| Plugin id does not contain `obsidian` | `knap-sync`. CI checks it. |
-| Name does not read as a first-party Obsidian product | Knap Sync. 275 catalog plugins carry "Sync" in the name, so the word itself is not a problem. CI checks for "Obsidian". |
+| Default branch carries the Synced Vaults manifest and README | `knap/fork-base` is the default branch and holds both. There is no `main`, so there is nothing to merge first. |
+| Plugin id unique across published plugins | `synced-vaults` is free, and so is the name: no entry carries either. Re-checked against all 6582 entries in `community-plugins.json` on 2026-08-12, after the rename off `knap-sync`. The old id was checked against 6558 entries on 2026-08-11 and was free too, which is worth knowing only because it means nothing was forced here. |
+| Plugin id does not contain `obsidian` | `synced-vaults`. CI checks it. |
+| Name does not read as a first-party Obsidian product | Synced Vaults. 275 catalog plugins carry "Sync" in the name, so the word itself is not a problem. CI checks for "Obsidian". |
 | `manifest.json` carries id, name, version, minAppVersion, description, author, `isDesktopOnly` | All set. `isDesktopOnly: false`, so the phone is a supported target and the scan will hold it to that. |
 | Semantic version, matching across manifest, package.json, versions.json, manifest-beta.json | CI fails the build when any two disagree. |
 | Release tagged bare semver, equal to `manifest.version` | 1.1.41 and 1.1.42 are published. `release.yml` refuses a `v` prefix and refuses a tag that differs from the manifest. 1.1.43 still needs tagging, see below. |
@@ -91,7 +91,7 @@ warnings to **0 errors and 5 warnings**:
 
 | Was | Now |
 |---|---|
-| `eslint-comments/no-restricted-disable`, 2 | Gone. Both were `eslint-disable` comments switching off `ui/sentence-case` for the string "Knap Sync". The ruleset forbids disabling that rule, so the suppression had become the finding. The rule's `brands` option names the product once instead. |
+| `eslint-comments/no-restricted-disable`, 2 | Gone. Both were `eslint-disable` comments switching off `ui/sentence-case` for the product name, "Knap Sync" as it read then. The ruleset forbids disabling that rule, so the suppression had become the finding. The rule's `brands` option names the product once instead. |
 | `@typescript-eslint/no-floating-promises`, 1 | Fixed. `netSync()` did not await `addLocalDocs()`, so `syncFileTree()` could start while the divergent-guid claim was still in flight. |
 | `obsidianmd/prefer-create-el`, 15 | Fixed. `activeDocument.createElement()` became `createDiv()`, `createSpan()` and `createEl()`. Note the rule's message suggests `activeWindow.createDiv()`, which does not type-check: Obsidian puts `createDiv` on `Node`, where it appends, and the bare global is the one that returns a detached element. |
 | `obsidianmd/ui/sentence-case`, 9 | 2 were the product name and are handled by `brands`. 1 was a placeholder, now "Notes/shared". The other 6 are duration labels like "30 days", where the rule asks for "30 Days"; that is title case, so the rule is wrong and `ignoreRegex` exempts strings that open with a digit rather than breaking correct English. |

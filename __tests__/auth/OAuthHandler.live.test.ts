@@ -47,7 +47,7 @@ live("OAuthHandler against a live control plane", () => {
 
 		// 1. The plugin asks the control plane to start a flow.
 		const { authorizeUrl, returnUrl } = await handler.prepareOAuthFlow(PROVIDER);
-		expect(returnUrl).toBe("obsidian://knap-sync/oauth-callback");
+		expect(returnUrl).toBe("obsidian://synced-vaults/oauth-callback");
 
 		// The IdP is only ever told to come back to the control plane.
 		const authorizeParams = new URL(authorizeUrl).searchParams;
@@ -66,7 +66,7 @@ live("OAuthHandler against a live control plane", () => {
 
 		const callback = await fetch(backToCp as string, { redirect: "manual" });
 		const deepLink = callback.headers.get("location");
-		expect(deepLink).toMatch(/^obsidian:\/\/knap-sync\/oauth-callback\?/);
+		expect(deepLink).toMatch(/^obsidian:\/\/synced-vaults\/oauth-callback\?/);
 
 		// 3. Obsidian's job: hand those parameters to the protocol handler.
 		const waiting = handler.waitForCallbackAndExchange(PROVIDER, 10_000);

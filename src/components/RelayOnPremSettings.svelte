@@ -113,7 +113,7 @@
 	}
 </script>
 
-<div class="knap-sync-settings">
+<div class="synced-vaults-settings">
 	<!-- The header is a title and a line of description. The link row that used
 	     to sit under it (documentation, MCP server, mesh) and the icon buttons
 	     beside it all led off this screen, which is not what somebody opened
@@ -121,7 +121,7 @@
 	<div class="evc-settings-header">
 		<div class="evc-header-top">
 			<div class="evc-header-text">
-				<div class="evc-header-title">Knap Sync</div>
+				<div class="evc-header-title">Synced Vaults</div>
 				<div class="evc-header-desc">Your vault on Knap, on every device you use</div>
 			</div>
 		</div>
@@ -183,7 +183,7 @@
 </div>
 
 <style>
-	.knap-sync-settings {
+	.synced-vaults-settings {
 		padding: 0;
 	}
 

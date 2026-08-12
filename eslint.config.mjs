@@ -23,13 +23,13 @@ export default [
             },
         },
         rules: {
-            // "Knap Sync" is the product's name, so sentence case does not apply
+            // "Synced Vaults" is the product's name, so sentence case does not apply
             // to it. Declaring the brand once beats an eslint-disable at every
             // mention, which the ruleset now rejects outright anyway.
             "obsidianmd/ui/sentence-case": [
                 "error",
                 {
-                    brands: ["Knap Sync", "Knap", "Obsidian", "GitHub", "Google", "Microsoft", "Discord"],
+                    brands: ["Synced Vaults", "Knap", "Obsidian", "GitHub", "Google", "Microsoft", "Discord"],
                     // Strings that open with a number: the rule reads the word
                     // after the digits as the first word of the sentence and
                     // asks for "30 Days", which is title case, not sentence
