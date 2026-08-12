@@ -123,7 +123,13 @@ import { RelayOnPremShareClientManager, type ShareWithServer } from "./RelayOnPr
 import { ShareManagementModal } from "./ui/ShareManagementModal";
 import { LocalStorage } from "./LocalStorage";
 import { SYNC_DOT_NAMES, vaultReading, type VaultReading } from "./vaultStatus";
-import { loadedPluginIds, readVaultHazards, topHazard, type Hazard } from "./vaultHazards";
+import {
+	enabledCorePluginIds,
+	loadedPluginIds,
+	readVaultHazards,
+	topHazard,
+	type Hazard,
+} from "./vaultHazards";
 
 interface DebugSettings {
 	debugging: boolean;
@@ -1300,6 +1306,14 @@ export default class Live extends Plugin {
 			if (loaded === undefined) {
 				this.warn("Obsidian did not say which plugins are loaded in this vault");
 			}
+			// Obsidian Sync ships with the app, so it is in neither of the two
+			// fields above: core plugins are a separate record in a separate
+			// place. Asked separately, and a failure to answer one is not a
+			// failure to answer the other.
+			const core = enabledCorePluginIds((this.app as unknown as ObsidianApp).internalPlugins);
+			if (core === undefined) {
+				this.warn("Obsidian did not say which core plugins are on in this vault");
+			}
 			this.vaultHazards = readVaultHazards(
 				{
 					// Desktop has `getBasePath()`, the phone adapter has
@@ -1308,6 +1322,11 @@ export default class Live extends Plugin {
 					// leaves this call.
 					basePath: adapter?.getBasePath?.() ?? adapter?.basePath ?? "",
 					loadedPlugins: loaded ?? [],
+					loadedCorePlugins: core ?? [],
+					// The way out of a cloud folder is a different one on a
+					// phone, and on iOS the vault Obsidian makes for itself is
+					// in iCloud Drive to begin with.
+					onPhone: Platform.isMobileApp,
 				},
 				// Whether this vault is already syncing, which decides whether
 				// a second sync plugin holds it back or is only told about.
