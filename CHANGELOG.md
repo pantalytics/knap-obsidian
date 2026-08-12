@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.9.0
 - Connecting a vault that already has notes now writes the notes (#38, #27). It registered every path on the relay and wrote no bodies: every document arrived 0 bytes, and the plugin said the vault was up to date. The first fill wrote each note's metadata entry before walking the vault, and then asked whether the file already existed with a call that builds the missing file as a side effect. It could only answer yes, so the branch that copies a note off disk into its document was never reached. Local files were never touched, so nothing was lost, but nothing was uploaded either.
 - A document sync that did not write the body no longer counts as a document done. Four ways out of the sync leave a document registered and empty, and the queue treated all four as finished, which is how a fill of thousands of notes reached the end and reported success. They are failures now, and each says in the log what it could not do.
 - A note whose file will not open is no longer treated as an empty note. The read error was swallowed and turned into an empty string, which matched the empty document and skipped the upload without a word. The sync stops on that file instead, and says which one.
