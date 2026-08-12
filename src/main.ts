@@ -1623,16 +1623,11 @@ export default class Live extends Plugin {
 				if (folder) {
 					vaultLog("Delete", file.path);
 					const vpath = folder.getVirtualPath(file.path);
-					// A folder goes with everything in it, so everything in it is
-					// pending too. Without the children on the list, an inbound
-					// event for one of them arriving mid-delete would write the
-					// note back to a folder that is on its way out.
-					const pending = folder.deleteWithDescendants(vpath);
-					pending.forEach((path) => folder.markPendingDelete(path));
+					folder.markPendingDelete(vpath);
 					void folder.whenReady().then((folder) => {
 						folder.proxy.deleteFile(file.path);
 					}).finally(() => {
-						pending.forEach((path) => folder.clearPendingDelete(path));
+						folder.clearPendingDelete(vpath);
 					});
 				}
 				// Update web_folder_items for auto-sync folder shares

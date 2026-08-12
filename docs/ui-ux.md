@@ -77,10 +77,17 @@ no folder picker, no *Knap Sync: sync this folder* on the context menu, and no
 everywhere, and deleting it deletes it everywhere**, which is what a person
 already expects from a sync and what they get from Obsidian Sync.
 
-That last one is the half that used to be missing. A folder is an entry in the
-sync store like any other, and deleting only its own entry left the notes inside
-it in the store, so every other device kept them. `deleteFile` walks the folder's
-children now, the same walk `renameFile` has always done for a move.
+That last one looks like it needs code and does not, which is worth writing
+down because it cost a wrong change to find out. `deleteFile` removes one entry
+from the sync store, and a folder is an entry like any other, so deleting a
+folder reads like it would leave the notes inside it behind. **Measured in a
+real Obsidian on 2026-08-12** (`make obsidian` in the admin repo, against the
+build at `4a72663`): Obsidian fires a `delete` event for every descendant
+before the folder's own, empty subfolders included, on both `vault.delete` and
+the file explorer's `fileManager.trashFile`. Every note removes itself, and the
+shared map is clean afterwards with a same-prefix sibling untouched. A cascade
+inside `deleteFile` is not needed, and the one written for it walked the whole
+sync store once per delete event.
 
 **Adopting a share does not ask either.** The member screen's *Sync this vault
 here* attaches at the vault root with the vault scope, the same way signing in
