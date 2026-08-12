@@ -2,6 +2,7 @@ import {
 	cloudFolder,
 	cloudFolderHazard,
 	holdsVaultBack,
+	loadedPluginIds,
 	otherSyncPlugins,
 	readVaultHazards,
 	syncPluginHazard,
@@ -17,32 +18,26 @@ import {
  * 2026-08-11 had `system3-relay`, `knap-sync` and `synced-vaults` enabled at
  * once, and another vault was connected straight out of
  * `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/`.
+ *
+ * The third case is the 1.9.0 regression: a person uninstalled Relay by
+ * System 3, restarted Obsidian, and was still refused, because the check read
+ * a file rather than asking the app. `a plugin Obsidian is not running` below
+ * is that case.
  */
 
-/** A vault on disk, as little of it as this module reads. */
-function vault(options: {
-	plugins?: string[] | string;
-	basePath?: string;
-	configDir?: string;
-}): VaultReader {
-	const configDir = options.configDir ?? ".obsidian";
-	const body =
-		typeof options.plugins === "string"
-			? options.plugins
-			: JSON.stringify(options.plugins ?? []);
+/** A vault, as little of it as this module reads. */
+function vault(options: { plugins?: string[]; basePath?: string }): VaultReader {
 	return {
-		configDir,
 		basePath: options.basePath ?? "/Users/someone/Notes",
-		exists: (path: string) =>
-			Promise.resolve(
-				options.plugins !== undefined && path === `${configDir}/community-plugins.json`,
-			),
-		read: (path: string) => {
-			if (path !== `${configDir}/community-plugins.json`) {
-				return Promise.reject(new Error(`no such file: ${path}`));
-			}
-			return Promise.resolve(body);
-		},
+		loadedPlugins: options.plugins ?? [],
+	};
+}
+
+/** Obsidian, holding the ids it has switched on and the plugins installed. */
+function runtime(enabled: string[], installed: string[] = enabled) {
+	return {
+		enabledPlugins: new Set(enabled),
+		manifests: Object.fromEntries(installed.map((id) => [id, { id }])),
 	};
 }
 
@@ -148,9 +143,64 @@ describe("a vault inside a cloud drive", () => {
 	});
 });
 
+describe("asking Obsidian which plugins are loaded", () => {
+	test("a plugin Obsidian is not running does not hold the vault back", () => {
+		// The 1.9.0 report, exactly as it came in: Relay by System 3
+		// uninstalled, Obsidian restarted, and `community-plugins.json` still
+		// carrying the id. Nothing reads that file any more, so the only
+		// question left is what the app has loaded.
+		const stillInTheFile = ["system3-relay", "synced-vaults"];
+		expect(stillInTheFile).toContain("system3-relay");
+
+		const loaded = loadedPluginIds(runtime(["synced-vaults", "dataview"]));
+		expect(loaded).not.toContain("system3-relay");
+
+		const hazards = readVaultHazards(vault({ plugins: loaded }), false);
+		expect(hazards).toEqual([]);
+		expect(holdsVaultBack(hazards, false)).toBeUndefined();
+	});
+
+	test("an id switched on with the plugin uninstalled is not a plugin", () => {
+		// The other half of the same failure: the id can outlive the install
+		// in the enabled set as well as in the file. A plugin with no manifest
+		// has no code behind it and cannot be writing to anything.
+		expect(
+			loadedPluginIds(runtime(["system3-relay", "synced-vaults"], ["synced-vaults"])),
+		).toEqual(["synced-vaults"]);
+	});
+
+	test("a plugin that is running is still caught", () => {
+		const loaded = loadedPluginIds(runtime(["system3-relay", "synced-vaults"]));
+		const hazards = readVaultHazards(vault({ plugins: loaded }), false);
+		expect(hazards.map((one) => one.kind)).toEqual(["second-sync-plugin"]);
+		expect(holdsVaultBack(hazards, false)).toBeDefined();
+	});
+
+	test("nothing installed and nothing enabled is a clean vault, not a broken read", () => {
+		expect(loadedPluginIds(runtime([]))).toEqual([]);
+	});
+
+	test("an app that will not say is not an empty vault", () => {
+		// Undefined rather than an empty list, so the caller can say so in the
+		// log instead of quietly warning about nothing forever.
+		expect(loadedPluginIds(undefined)).toBeUndefined();
+		expect(loadedPluginIds({})).toBeUndefined();
+		expect(loadedPluginIds({ enabledPlugins: ["system3-relay"] })).toBeUndefined();
+		expect(loadedPluginIds({ enabledPlugins: null })).toBeUndefined();
+	});
+
+	test("manifests it will not give up are not held against the enabled set", () => {
+		// Half an answer is still an answer: the ids are what the warning is
+		// built on, and the manifests only ever take names off that list.
+		expect(loadedPluginIds({ enabledPlugins: new Set(["system3-relay"]) })).toEqual([
+			"system3-relay",
+		]);
+	});
+});
+
 describe("reading it off the vault", () => {
-	test("the migration vault, both at once, most serious first", async () => {
-		const hazards = await readVaultHazards(
+	test("the migration vault, both at once, most serious first", () => {
+		const hazards = readVaultHazards(
 			vault({
 				plugins: ["system3-relay", "knap-sync", "synced-vaults"],
 				basePath: "/Users/someone/Library/Mobile Documents/iCloud~md~obsidian/Documents/V",
@@ -184,28 +234,13 @@ describe("reading it off the vault", () => {
 		expect(topHazard([])).toBeUndefined();
 	});
 
-	test("a vault with no community plugins has no file, which is not an error", async () => {
-		expect(await readVaultHazards(vault({}), false)).toEqual([]);
+	test("a vault running no other plugins is told nothing", () => {
+		expect(readVaultHazards(vault({}), false)).toEqual([]);
 	});
 
-	test("a config directory that is not .obsidian is still read", async () => {
-		const hazards = await readVaultHazards(
-			vault({ plugins: ["knap-sync"], configDir: ".config" }),
-			false,
-		);
+	test("the plugins Obsidian names are the ones warned about", () => {
+		const hazards = readVaultHazards(vault({ plugins: ["knap-sync"] }), false);
 		expect(hazards.map((one) => one.kind)).toEqual(["second-sync-plugin"]);
-	});
-
-	test("a file that will not parse warns about nothing rather than throwing", async () => {
-		await expect(
-			readVaultHazards(vault({ plugins: "{ not json" }), false),
-		).resolves.toEqual([]);
-	});
-
-	test("a file holding something other than a list of names is ignored", async () => {
-		await expect(
-			readVaultHazards(vault({ plugins: '{"enabled": ["knap-sync"]}' }), false),
-		).resolves.toEqual([]);
 	});
 });
 
@@ -289,6 +324,19 @@ describe("the copy that goes with it", () => {
 		const holding = syncPluginHazard(otherSyncPlugins(["knap-sync"]), false);
 		expect(holding?.lines.join(" ")).toContain("Community plugins");
 		expect(cloudFolderHazard("Dropbox")?.lines.join(" ")).toContain("move the vault");
+	});
+
+	test("one plugin syncs and two plugins sync", () => {
+		// 1.9.0 shipped "it sync the same notes Knap does". The verb is built
+		// from the same count as the pronoun in front of it, so both readings
+		// are worth pinning.
+		const one = syncPluginHazard(otherSyncPlugins(["system3-relay"]), false);
+		expect(one?.lines.join(" ")).toContain("it syncs the same notes Knap does");
+		const two = syncPluginHazard(
+			otherSyncPlugins(["system3-relay", "knap-sync"]),
+			false,
+		);
+		expect(two?.lines.join(" ")).toContain("they sync the same notes Knap does");
 	});
 
 	test("the notice is one line, because it goes in the corner of the screen", () => {
