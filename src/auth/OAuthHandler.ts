@@ -9,7 +9,7 @@
  *
  *   redirect_uri  the control plane's own https callback -- the only URI the
  *                 IdP ever sees, and one it already has registered
- *   return_url    obsidian://knap-sync/oauth-callback -- where the control
+ *   return_url    obsidian://synced-vaults/oauth-callback -- where the control
  *                 plane sends the finished session afterwards
  *
  * The other way round, the custom scheme reached the IdP and was refused. So

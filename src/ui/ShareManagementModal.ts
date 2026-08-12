@@ -46,11 +46,10 @@ export class ShareManagementModal extends Modal {
 		this.serverName = serverName;
 		this.initialShareId = initialShareId;
 
-		if (serverName) {
-			this.setTitle("Synced folders");
-		} else {
-			this.setTitle("Knap Sync folders");
-		}
+		// One title either way. The named branch used to put the server's name
+		// in front of the word, and there is one server nobody chooses
+		// (ADR-0033), so the name was furniture in a modal heading.
+		this.setTitle("Synced folders");
 	}
 
 	onOpen() {

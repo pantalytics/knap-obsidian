@@ -18,10 +18,10 @@ import { DEFAULT_VAULT_SYNC_MODE, type VaultSyncMode } from "./vaultShare";
 declare const CONTROL_PLANE_URL: string;
 
 /** The id every share, folder record and stored credential is keyed by. */
-export const KNAP_SERVER_ID = "knap-sync";
+export const KNAP_SERVER_ID = "synced-vaults";
 
 /** What the server is called on screen, the rare times it is named at all. */
-export const KNAP_SERVER_NAME = "Knap Sync";
+export const KNAP_SERVER_NAME = "Synced Vaults";
 
 /** Where the plugin talks, fixed at build time. */
 export const KNAP_CONTROL_PLANE_URL = CONTROL_PLANE_URL;
@@ -94,7 +94,7 @@ export function knapServer(
 }
 
 export const DEFAULT_RELAY_ONPREM_SETTINGS: RelayOnPremSettings = {
-	// Knap Sync always uses relay-onprem mode (no System 3 cloud)
+	// Synced Vaults always uses relay-onprem mode (no System 3 cloud)
 	enabled: true,
 	servers: [knapServer()],
 	defaultServerId: KNAP_SERVER_ID,
@@ -253,10 +253,10 @@ export function isServerVersionSupported(serverVersion: string | undefined | nul
  */
 export function serverCompatMessage(serverVersion: string | undefined | null): string {
 	if (!serverVersion) {
-		return "The server did not say which version it is running, and Knap Sync needs " +
+		return "The server did not say which version it is running, and Synced Vaults needs " +
 			`${MIN_SUPPORTED_SERVER_VERSION} or newer. Nothing to fix on your side.`;
 	}
-	return `The server is on version ${serverVersion} and Knap Sync needs ` +
+	return `The server is on version ${serverVersion} and Synced Vaults needs ` +
 		`${MIN_SUPPORTED_SERVER_VERSION} or newer. Nothing to fix on your side, it will ` +
 		"work once the server catches up.";
 }

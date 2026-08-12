@@ -323,10 +323,10 @@ export default class Live extends Plugin {
 		);
 		this.notifier = new ObsidianNotifier();
 
-		this.debug = curryLog("[Knap Sync]", "debug");
-		this.log = curryLog("[Knap Sync]", "log");
-		this.warn = curryLog("[Knap Sync]", "warn");
-		this.error = curryLog("[Knap Sync]", "error");
+		this.debug = curryLog("[Synced Vaults]", "debug");
+		this.log = curryLog("[Synced Vaults]", "log");
+		this.warn = curryLog("[Synced Vaults]", "warn");
+		this.error = curryLog("[Synced Vaults]", "error");
 
 		this.settings = new Settings<RelaySettings>(this, DEFAULT_SETTINGS);
 		await this.settings.load();
@@ -347,14 +347,24 @@ export default class Live extends Plugin {
 			const oldId = migration.renamedServerId;
 			// Must match RelayOnPremAuthStore.getStorageKey()'s format, which is
 			// keyed by appId (stable across vault renames), not vault display name.
-			const prefix = "knap-sync_onprem_auth_";
-			const oldKey = `${prefix}${this.appId}_${oldId}`;
+			const prefix = "synced-vaults_onprem_auth_";
+			// The prefix was part of the rename, so a key written before it says
+			// knap-sync on both halves. Read the old shape as well as the old id,
+			// or the one device that has been signed in the longest is the one
+			// that gets signed out.
+			const legacyPrefixes = [prefix, "knap-sync_onprem_auth_"];
 			const newKey = `${prefix}${this.appId}_${KNAP_SERVER_ID}`;
 			try {
-				const oldData = window.localStorage.getItem(oldKey);
-				if (oldData && !window.localStorage.getItem(newKey)) {
-					window.localStorage.setItem(newKey, oldData);
-					window.localStorage.removeItem(oldKey);
+				if (!window.localStorage.getItem(newKey)) {
+					for (const legacy of legacyPrefixes) {
+						const oldKey = `${legacy}${this.appId}_${oldId}`;
+						const oldData = window.localStorage.getItem(oldKey);
+						if (oldData) {
+							window.localStorage.setItem(newKey, oldData);
+							window.localStorage.removeItem(oldKey);
+							break;
+						}
+					}
 				}
 			} catch {
 				// localStorage may not be available during startup
@@ -394,8 +404,8 @@ export default class Live extends Plugin {
 		this.settingsTab = new LiveSettingsTab(this.app, this);
 
 		// Our own ribbon icon: a note kept in step with a server
-		addIcon("knap-sync", `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"><path d="M18.5 44.4a32 32 0 0 1 63 0"/><path d="M87.3 31.2 81.5 44.4 71.5 34"/><path d="M81.5 55.6a32 32 0 0 1-63 0"/><path d="M12.7 68.8 18.5 55.6 28.5 66"/><circle cx="50" cy="50" r="7" fill="currentColor" stroke="none"/></svg>`);
-		this.addRibbonIcon("knap-sync", "Knap Sync", () => {
+		addIcon("synced-vaults", `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"><path d="M18.5 44.4a32 32 0 0 1 63 0"/><path d="M87.3 31.2 81.5 44.4 71.5 34"/><path d="M81.5 55.6a32 32 0 0 1-63 0"/><path d="M12.7 68.8 18.5 55.6 28.5 66"/><circle cx="50" cy="50" r="7" fill="currentColor" stroke="none"/></svg>`);
+		this.addRibbonIcon("synced-vaults", "Synced Vaults", () => {
 			void this.openSettings();
 		});
 
@@ -458,8 +468,8 @@ export default class Live extends Plugin {
 		// Store app reference for reload function (avoid window.app per Obsidian guidelines)
 		const appRef = this.app as unknown as ObsidianApp;
 		appRef.reloadRelay = async () => {
-			await appRef.plugins.disablePlugin("knap-sync");
-			await appRef.plugins.enablePlugin("knap-sync");
+			await appRef.plugins.disablePlugin("synced-vaults");
+			await appRef.plugins.enablePlugin("synced-vaults");
 		};
 
 		this.addCommand({
@@ -778,7 +788,7 @@ export default class Live extends Plugin {
 							) {
 								menu.addItem((item) => {
 									item
-										.setTitle("Knap Sync: sync this folder")
+										.setTitle("Synced Vaults: sync this folder")
 										.setIcon("share-2")
 										.onClick(() => {
 											const modal = new QuickShareModal(this.app, this, file.path);
@@ -795,7 +805,7 @@ export default class Live extends Plugin {
 							// server and nothing to configure about it (ADR-0033).
 							menu.addItem((item) => {
 								item
-									.setTitle("Knap Sync: folder settings")
+									.setTitle("Synced Vaults: folder settings")
 									.setIcon("settings")
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
@@ -808,7 +818,7 @@ export default class Live extends Plugin {
 							menu.addItem((item) => {
 								item
 									.setTitle(
-										folder.connected ? "Knap Sync: disconnect" : "Knap Sync: connect",
+										folder.connected ? "Synced Vaults: disconnect" : "Synced Vaults: connect",
 									)
 									.setIcon("satellite")
 									.onClick(() => {
@@ -825,7 +835,7 @@ export default class Live extends Plugin {
 						} else {
 							menu.addItem((item) => {
 								item
-									.setTitle("Knap Sync: folder settings")
+									.setTitle("Synced Vaults: folder settings")
 									.setIcon("settings")
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
@@ -839,7 +849,7 @@ export default class Live extends Plugin {
 							if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
 								menu.addItem((item) => {
 									item
-										.setTitle("Knap Sync: stop syncing this folder")
+										.setTitle("Synced Vaults: stop syncing this folder")
 										.setIcon("folder-x")
 										.onClick(async () => {
 											const confirmed = await confirmDialog(
@@ -872,7 +882,7 @@ export default class Live extends Plugin {
 						if (folder.relayId && folder.connected) {
 							menu.addItem((item) => {
 								item
-									.setTitle("Knap Sync: sync")
+									.setTitle("Synced Vaults: sync")
 									.setIcon("folder-sync")
 									.onClick(async () => {
 										void folder.netSync();
@@ -901,7 +911,7 @@ export default class Live extends Plugin {
 						if (ifile && isSyncFile(ifile)) {
 							menu.addItem((item) => {
 								item
-									.setTitle("Knap Sync: download")
+									.setTitle("Synced Vaults: download")
 									.setIcon("cloud-download")
 									.onClick(async () => {
 										await ifile.pull();
@@ -911,7 +921,7 @@ export default class Live extends Plugin {
 							if (this.debugSettings.get().debugging) {
 								menu.addItem((item) => {
 									item
-										.setTitle("Knap Sync: verify upload")
+										.setTitle("Synced Vaults: verify upload")
 										.setIcon("search-check")
 										.onClick(async () => {
 											const present = await ifile.verifyUpload();
@@ -923,7 +933,7 @@ export default class Live extends Plugin {
 							}
 							menu.addItem((item) => {
 								item
-									.setTitle("Knap Sync: upload")
+									.setTitle("Synced Vaults: upload")
 									.setIcon("cloud-upload")
 									.onClick(async () => {
 										await ifile.push(true);
@@ -1188,10 +1198,10 @@ export default class Live extends Plugin {
 	private addRelayStatusBarItem() {
 		const statusBarItem = this.addStatusBarItem();
 		statusBarItem.addClass("relay-onprem-statusbar");
-		// Use the same registered knap-sync icon as ribbon
+		// Use the same registered synced-vaults icon as ribbon
 		const iconEl = statusBarItem.createSpan({ cls: "relay-status-icon" });
-		setIcon(iconEl, "knap-sync");
-		statusBarItem.setAttribute("aria-label", "Knap Sync status");
+		setIcon(iconEl, "synced-vaults");
+		statusBarItem.setAttribute("aria-label", "Synced Vaults status");
 		statusBarItem.setAttribute("data-tooltip-position", "top");
 		statusBarItem.addClass("evc-cursor-pointer");
 
@@ -1508,7 +1518,7 @@ export default class Live extends Plugin {
 	async openSettings(path: string = "/") {
 		const setting = (this.app as unknown as ObsidianApp).setting;
 		await setting.open();
-		await setting.openTabById("knap-sync");
+		await setting.openTabById("synced-vaults");
 		this.settingsTab.navigateTo(path);
 	}
 
@@ -1626,7 +1636,7 @@ export default class Live extends Plugin {
 			}),
 		);
 
-		const vaultLog = curryLog("[Knap Sync][Vault]", "log");
+		const vaultLog = curryLog("[Synced Vaults][Vault]", "log");
 
 		const handlePromiseRejection = (event: PromiseRejectionEvent): void => {
 			//event.preventDefault();
@@ -1880,7 +1890,7 @@ export default class Live extends Plugin {
 			oauthDeepLinkReceiver.handleCallback(e as unknown as Record<string, string>);
 		});
 
-		this.registerObsidianProtocolHandler("knap-sync/settings/relays", (e) => {
+		this.registerObsidianProtocolHandler("synced-vaults/settings/relays", (e) => {
 			const parameters = e as unknown as Parameters;
 			const query = new URLSearchParams({ ...parameters }).toString();
 			const path = `/${parameters.action.split("/").slice(-1).join("")}?${query}`;
@@ -1888,7 +1898,7 @@ export default class Live extends Plugin {
 		});
 
 		this.registerObsidianProtocolHandler(
-			"knap-sync/settings/shared-folders",
+			"synced-vaults/settings/shared-folders",
 			(e) => {
 				const parameters = e as unknown as Parameters;
 				const query = new URLSearchParams({ ...parameters }).toString();
@@ -1897,7 +1907,7 @@ export default class Live extends Plugin {
 			},
 		);
 
-		this.registerObsidianProtocolHandler("knap-sync/billing-ok", (e) => {
+		this.registerObsidianProtocolHandler("synced-vaults/billing-ok", (e) => {
 			new Notice("Payment successful! Refreshing billing data...");
 			// Clear billing cache by refreshing settings
 			void this.openSettings();
@@ -1914,7 +1924,7 @@ export default class Live extends Plugin {
 		} else {
 			const appAny = this.app as unknown as ObsidianApp;
 			const appCommands = appAny.commands;
-			const qualifiedCommand = `knap-sync:${command}`;
+			const qualifiedCommand = `synced-vaults:${command}`;
 			if (
 				Object.prototype.hasOwnProperty.call(appCommands.commands, qualifiedCommand) ||
 				appAny.hotkeyManager.removeDefaultHotkeys(qualifiedCommand)

@@ -75,7 +75,7 @@ export class Canvas extends HasProvider implements IFile, HasMimeType {
 
 		this.setLoggers(`[Canvas](${this.path})`);
 		try {
-			const key = `${this.sharedFolder.appId}-knap-sync-canvas-${this.guid}`;
+			const key = `${this.sharedFolder.appId}-synced-vaults-canvas-${this.guid}`;
 			this._persistence = new IndexeddbPersistence(key, this.ydoc);
 		} catch (e: unknown) {
 			this.warn("Unable to open persistence.", this.guid);

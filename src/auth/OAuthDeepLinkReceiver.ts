@@ -66,7 +66,7 @@ interface Pending {
  * control plane's allowlist has to carry the same prefix, so this is the one
  * place it is spelled.
  */
-export const OAUTH_CALLBACK_ACTION = "knap-sync/oauth-callback";
+export const OAUTH_CALLBACK_ACTION = "synced-vaults/oauth-callback";
 
 /**
  * The full return URL. Never registered at the IdP, which refuses custom

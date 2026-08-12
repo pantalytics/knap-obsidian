@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.0
+- Name: the plugin is **Synced Vaults**. Every screen, notice, menu item and log prefix that said Knap Sync says the new name, and so does Knap's own page, because the two are deliberately the same words on both sides.
+- Name, the identifier: unlike the 1.4.0 wording pass, this one moved the identifiers too. The plugin id is `synced-vaults`, the sign-in deep link is `obsidian://synced-vaults/oauth-callback`, the settings tab, ribbon icon, commands, CSS classes and the differences view all follow, and so do the localStorage and IndexedDB keys. That was the decision rather than a side effect: the id is what a person sees in the plugin folder and in the URL their browser hands back after signing in, and leaving it on the old word would have meant explaining two names forever.
+- Upgrading, and this needs a hand: Obsidian keys a plugin by its id, so this release installs beside the old one instead of replacing it. Remove `.obsidian/plugins/knap-sync/` after installing, or two plugins will try to sync the same vault. BRAT users: remove the beta plugin and add `pantalytics/knap-obsidian` again.
+- Upgrading, what survives: the sign-in does. The stored credential is copied from the old key to the new one on first load, over the same migration path that already carried a server rename, so nobody has to sign in again.
+- Upgrading, what does not: the local CRDT cache is keyed by the old name and is not migrated, so every synced folder downloads itself again from the relay on first run. Anything still queued for upload when you switch goes with it, so let a device finish syncing before you upgrade it.
+- The control plane's allowlist for native sign-in callbacks moved with the deep link. An old plugin build signing in against the updated server is refused with a 400, which is the allowlist doing its job rather than a fault.
+
 ## 1.4.0
 - Wording (#29): the screens use the four words Knap settled on, vault, folder, sync and MCP. Shared folders are Synced folders, Create Share is Add a folder, and the context menu says sync this folder and stop syncing this folder. Identifiers are untouched, and upstream's System 3 screens keep their own headings because they never render here.
 - Vault name (#28): a synced folder now carries the vault it belongs to, in a map of ours on the folder's own document. Knap's page drew a vault and had nothing to call it, so it drew the hostname. The name lives in Obsidian and nowhere else, so the side that knows writes it down, after the first sync and only when it changed.
