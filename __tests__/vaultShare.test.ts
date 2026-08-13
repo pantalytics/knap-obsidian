@@ -205,12 +205,23 @@ describe("joining one, and starting one", () => {
 	test("joining says both directions, because it moves notes both ways", () => {
 		const said = joinConfirmation("Clients", 42);
 		expect(said).toContain("Clients downloads into this local vault");
-		expect(said).toContain("uploads into Clients");
+		expect(said).toContain("files already here upload into it");
+	});
+
+	test("it says the outcome first, and the vault's name only once", () => {
+		// The name can be forty characters of date and initials, so it is said
+		// where it has to be said and nowhere else, and the four words in front
+		// of it are the decision being made.
+		const said = joinConfirmation("260812_RH_Obsidian_vault", 2933);
+		expect(said.startsWith("Both end up with everything:")).toBe(true);
+		expect(said.split("260812_RH_Obsidian_vault")).toHaveLength(2);
 	});
 
 	test("it counts what is already here, in words a person would use", () => {
-		expect(joinConfirmation("V", 1)).toContain("The one file already in this vault stays");
-		expect(joinConfirmation("V", 9)).toContain("The 9 files already in this vault stay");
+		expect(joinConfirmation("V", 1)).toContain("the one file already here uploads");
+		expect(joinConfirmation("V", 9)).toContain("the 9 files already here upload");
+		// Grouped past a thousand, the way the status line writes its counts.
+		expect(joinConfirmation("V", 2933)).toContain("the 2,933 files already here upload");
 	});
 
 	test("it names the way out, which is Obsidian's own answer", () => {

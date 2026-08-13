@@ -186,19 +186,27 @@ export const NEW_VAULT_LABEL = "Create new";
  * vault that is already on Knap into this folder on disk, and if there is
  * anything here it ends up holding both. Obsidian's own answer is to start
  * from an empty vault, so that is what the sentence says, and it says it with
- * the two numbers that make it concrete.
+ * the number that makes it concrete.
+ *
+ * The outcome comes first, in four words, because that is the decision being
+ * made: everything, in both vaults. The two directions under it are what it
+ * means, not a second telling of it. An earlier draft said the upload twice,
+ * once as *everything here uploads* and again as *stays where it is, and ends
+ * up on Knap too*, and spent the vault's name twice on a dialog where the name
+ * can be forty characters of date and initials.
  *
  * One paragraph, because `confirmDialog` renders the message as one.
  */
 export function joinConfirmation(vaultName: string, localFiles: number): string {
+	// Grouped, the way syncStatus writes its counts: a vault holds thousands of
+	// files, and 2933 is a number somebody has to read twice.
 	const here =
 		localFiles === 1
-			? "The one file already in this vault stays"
-			: `The ${localFiles} files already in this vault stay`;
+			? "the one file already here uploads"
+			: `the ${localFiles.toLocaleString("en-US")} files already here upload`;
 	return (
-		`${vaultName} downloads into this local vault in Obsidian, and everything here uploads into ${vaultName}. ` +
-		`${here} where they are, and end up on Knap too. ` +
-		"If you meant to keep them apart, make an empty vault in Obsidian and join from there instead."
+		`Both end up with everything: ${vaultName} downloads into this local vault, and ${here} into it. ` +
+		"To keep them apart, sync from an empty vault in Obsidian instead."
 	);
 }
 
