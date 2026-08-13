@@ -94,7 +94,7 @@ export function vaultChecklist(vault: VaultReader): Check[] {
 			kind: "cloud-folder",
 			label: drive
 				? `This vault sits in ${drive}`
-				: "The vault folder is not in a cloud drive",
+				: "This vault is not in a cloud drive",
 			ok: !drive,
 			blocking: Boolean(driveHazard?.blocking),
 			lines: driveHazard?.lines ?? [],
