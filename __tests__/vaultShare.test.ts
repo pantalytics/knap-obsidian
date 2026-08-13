@@ -196,12 +196,12 @@ describe("joining one, and starting one", () => {
 
 	test("a new vault takes its name from Obsidian, and the button says which", () => {
 		expect(newVaultLabel("Second Brain")).toBe("Start a new vault called Second Brain");
-		expect(newVaultLine("Second Brain")).toContain("called Second Brain on Knap");
+		expect(newVaultLine("Second Brain")).toContain("cloud vault will be called Second Brain");
 	});
 
 	test("joining says both directions, because it moves notes both ways", () => {
 		const said = joinConfirmation("Clients", 42);
-		expect(said).toContain("Clients downloads into this vault");
+		expect(said).toContain("Clients downloads into this local vault");
 		expect(said).toContain("uploads into Clients");
 	});
 

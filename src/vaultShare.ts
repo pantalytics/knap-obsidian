@@ -10,6 +10,12 @@
  * reaches and waits to be told**, which is the only answer that is right in
  * every one of those cases.
  *
+ * The words are the panel's, and since ADR-0055 that includes the pair this
+ * file is about: the **local vault** is the one Obsidian has open, the **cloud
+ * vault** is the one on Knap, and picking is one being pointed at the other.
+ * Both halves are in view in most sentences here, which is exactly when the
+ * qualifier is called for. Where only one of them is, it says plain vault.
+ *
  * This replaces matching on the vault's name. That rule was cheap and it was
  * wrong in both directions: two vaults called the same thing on one account
  * joined each other silently, and a vault renamed in Obsidian, or typed by
@@ -137,10 +143,10 @@ export function planFolderCleanup(local: LocalShare[]): string[] {
  * has no opinion about it. Renaming either side changes nothing.
  */
 export const VAULT_CHOICE_IS_YOURS =
-	"You pick which vault on Knap this one syncs with. The names do not have to match, and renaming either of them does not change the pairing.";
+	"You pick which cloud vault this local vault syncs with. The names do not have to match, and renaming either of them does not change the pairing.";
 
 /** The heading over the list, and the line under it. */
-export const CHOOSE_A_VAULT = "Pick the vault this device syncs with.";
+export const CHOOSE_A_VAULT = "Pick the cloud vault this device syncs with.";
 
 /**
  * What to say when the account reaches nothing yet.
@@ -149,7 +155,7 @@ export const CHOOSE_A_VAULT = "Pick the vault this device syncs with.";
  * one button under this and it is the one to press.
  */
 export const NO_VAULTS_YET =
-	"Your Knap account has no vaults yet. Start one from the notes already on this device.";
+	"Your Knap account has no cloud vaults yet. Start one from the notes already on this device.";
 
 /** What the screen says while it is waiting to be told. */
 export const JOIN_HELD_NOTE =
@@ -186,7 +192,7 @@ export function newVaultLabel(vaultName: string): string {
  */
 export function newVaultLine(vaultName: string): string {
 	return (
-		`It takes its name from this vault in Obsidian, so it will be called ${vaultName} on Knap, ` +
+		`It takes its name from this local vault, so your cloud vault will be called ${vaultName}, ` +
 		"and everything here uploads into it."
 	);
 }
@@ -208,7 +214,7 @@ export function joinConfirmation(vaultName: string, localFiles: number): string 
 			? "The one file already in this vault stays"
 			: `The ${localFiles} files already in this vault stay`;
 	return (
-		`${vaultName} downloads into this vault in Obsidian, and everything here uploads into ${vaultName}. ` +
+		`${vaultName} downloads into this local vault in Obsidian, and everything here uploads into ${vaultName}. ` +
 		`${here} where they are, and end up on Knap too. ` +
 		"If you meant to keep them apart, make an empty vault in Obsidian and join from there instead."
 	);
