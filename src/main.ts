@@ -1400,28 +1400,39 @@ export default class Live extends Plugin {
 	}
 
 	/**
-	 * Sync all web-published shares
+	 * Sync the vault now: reconnect it, and push anything published to the web.
+	 *
+	 * The notices say vault and folder and nothing else (ADR-0038, and
+	 * `docs/ui-ux.md`). They also come in an order that can be read: this used
+	 * to open with *Syncing all shares* whatever it found and then close with
+	 * *No shares to sync*, which told somebody two opposite things about one
+	 * click. So the work is counted first and the vault is only announced as
+	 * syncing when there is something to sync.
 	 */
 	private async syncAllShares() {
 		if (!this.shareClientManager) {
-			new Notice("No share client available");
+			new Notice("Not signed in yet. Open the Knap tab in settings to sign in.");
 			return;
 		}
 
 		try {
-			new Notice("Syncing all shares...");
 			const shares = await this.shareClientManager.getAllSharesFlat();
+			const webShares = shares.filter(s => s.web_published);
+			const folders = shares
+				.filter(share => share.kind === "folder")
+				.map(share => this.sharedFolders.find(sf => sf.guid === share.id))
+				.filter((folder): folder is SharedFolder => folder !== undefined);
 
-			// 1. Reconnect CRDT relay for all folder shares
-			let relaySynced = 0;
-			for (const share of shares) {
-				if (share.kind === "folder") {
-					const folder = this.sharedFolders.find(sf => sf.guid === share.id);
-					if (folder) {
-						void folder.connect();
-						relaySynced++;
-					}
-				}
+			if (folders.length === 0 && webShares.length === 0) {
+				new Notice("This vault is not syncing yet. Open the Knap tab in settings.");
+				return;
+			}
+
+			new Notice("Syncing this vault...");
+
+			// 1. Reconnect CRDT relay for the vault's folders
+			for (const folder of folders) {
+				void folder.connect();
 			}
 
 			// 2. Sync web-published shares
@@ -1431,8 +1442,6 @@ export default class Live extends Plugin {
 			// InboundSyncPoller/InboundFileDownloader don't race this manual
 			// push the way TR-25 fixed for the debounced auto-sync path.
 			const { withOutboundSyncGuard } = await import("./WebSyncManager");
-			let webSynced = 0;
-			const webShares = shares.filter(s => s.web_published);
 			await withOutboundSyncGuard(this.webSyncManager, async () => {
 				for (const share of webShares) {
 					try {
@@ -1443,7 +1452,6 @@ export default class Live extends Plugin {
 								await this.shareClientManager!.updateShare(share.serverId, share.id, {
 									web_content: content,
 								});
-								webSynced++;
 							}
 						} else if (share.kind === "folder") {
 							const folderAbs = this.vault.getAbstractFileByPath(share.path);
@@ -1465,7 +1473,6 @@ export default class Live extends Plugin {
 													await this.shareClientManager!.syncFolderFileContent(
 														share.serverId, share.web_slug, item.path, content
 													);
-													webSynced++;
 												}
 											} catch { /* skip individual file errors */ }
 										}
@@ -1479,10 +1486,14 @@ export default class Live extends Plugin {
 				}
 			});
 
-			const parts = [];
-			if (relaySynced > 0) parts.push(`${relaySynced} relay`);
-			if (webSynced > 0) parts.push(`${webSynced} web`);
-			new Notice(parts.length > 0 ? `Synced: ${parts.join(", ")}` : "No shares to sync");
+			// A reconnected folder keeps working after this returns, so the
+			// vault is syncing rather than synced. Web pages are pushed and
+			// finished by the time we get here.
+			new Notice(
+				folders.length > 0
+					? "Syncing. Leave Obsidian open until it finishes."
+					: "Vault synced",
+			);
 		} catch (error: unknown) {
 			new Notice(`Sync failed: ${error instanceof Error ? error.message : "Unknown error"}`);
 		}
