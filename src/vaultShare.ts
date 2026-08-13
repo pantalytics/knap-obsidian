@@ -3,6 +3,13 @@
 /**
  * What a vault syncs: the whole thing, and nothing else on offer.
  *
+ * The words on every line below are the panel's, and since ADR-0055 that
+ * includes the pair this file is entirely about: the **local vault** is the one
+ * Obsidian has open, the **cloud vault** is the one on Knap, and joining is one
+ * meeting the other. Every sentence here has both halves in it, which is
+ * exactly when the qualifier is called for. Say plain vault where only one half
+ * is in view.
+ *
  * Signing in is the consent for it (ADR-0032) and there is no second answer to
  * give (ADR-0042). A vault is one share, the way a vault is one thing to the
  * person who keeps it, and every question that used to hang off picking
@@ -119,7 +126,7 @@ export function planFolderCleanup(local: LocalShare[]): string[] {
  * that has gone bad needs to know that.
  */
 export const VAULT_NAME_IS_THE_KEY =
-	"Knap matches vaults by name. Another device joins this vault by having a vault with the same name on it. A different name starts a second vault instead.";
+	"Knap matches your cloud vault by name. Another device joins it by having a local vault with the same name on it. A different name starts a second cloud vault instead.";
 
 /** What Knap will tell you about a vault before you join it. */
 export interface JoinPreview {
@@ -147,15 +154,15 @@ export interface JoinPreview {
  */
 export function joinPreviewLines(preview: JoinPreview): string[] {
 	const lines = [
-		`Knap already has a vault called ${preview.vaultName}, and this device will sync with that one.`,
-		`It matched because the vault here is called ${preview.vaultName} too. The name is the only thing Knap matches on.`,
+		`You already have a cloud vault called ${preview.vaultName}, and this device will sync with it.`,
+		`It matched because the local vault here is called ${preview.vaultName} too. The name is the only thing Knap matches on.`,
 	];
 	const made = formatDay(preview.createdAt);
 	if (made) {
 		lines.push(`It was added to Knap on ${made}.`);
 	}
 	lines.push(
-		"If that is not the vault you meant, rename this vault in Obsidian first, and Knap will start a separate one under the new name.",
+		"If that is not the vault you meant, rename this local vault in Obsidian first, and Knap starts a separate cloud vault under the new name.",
 	);
 	return lines;
 }
@@ -167,7 +174,7 @@ export function joinButtonLabel(vaultName: string): string {
 
 /** What the screen says while it is waiting to be told to join. */
 export const JOIN_HELD_NOTE =
-	"Nothing is syncing until you decide which vault this device belongs to.";
+	"Nothing is syncing until you decide which cloud vault this device joins.";
 
 /**
  * A new vault beside the ones already there, said when that is what happens.
@@ -187,8 +194,8 @@ export function newVaultBesideLine(
 	const list =
 		rest > 0 ? `${shown.join(", ")} and ${rest} more` : joinNames(shown);
 	return (
-		`Knap already has ${list} on your account, and this vault is called ${vaultName}. ` +
-		"The names do not match, so this one starts as a vault of its own."
+		`You already have ${list} in the cloud, and this local vault is called ${vaultName}. ` +
+		"The names do not match, so this one starts a cloud vault of its own."
 	);
 }
 

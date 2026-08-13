@@ -133,7 +133,7 @@ describe("the name is the key, and now it says so (#42)", () => {
 		// else. Until this line existed, nothing anywhere said so.
 		const said = VAULT_NAME_IS_THE_KEY.toLowerCase();
 		expect(said).toContain("name");
-		expect(said).toContain("second vault");
+		expect(said).toContain("second cloud vault");
 	});
 
 	test("the rule says what to do about it, not only what happens", () => {
@@ -146,7 +146,7 @@ describe("the name is the key, and now it says so (#42)", () => {
 
 	test("what will be joined is named before it is joined", () => {
 		const said = joinPreviewLines({ vaultName: "Second Brain" }).join(" ");
-		expect(said).toContain("Knap already has a vault called Second Brain");
+		expect(said).toContain("You already have a cloud vault called Second Brain");
 		expect(said).toContain("The name is the only thing Knap matches on");
 	});
 
@@ -186,7 +186,7 @@ describe("the name is the key, and now it says so (#42)", () => {
 		// 2026-08-11 to avoid rejoining a vault that had gone bad. It works
 		// precisely because the name is the key.
 		const said = joinPreviewLines({ vaultName: "V" }).join(" ").toLowerCase();
-		expect(said).toContain("rename this vault");
+		expect(said).toContain("rename this local vault");
 	});
 
 	test("the button carries the name, so nobody presses it blind", () => {
@@ -200,7 +200,7 @@ describe("the name is the key, and now it says so (#42)", () => {
 		// cheapest way to catch it.
 		const line = newVaultBesideLine("Note", ["Notes", "Werk"]);
 		expect(line).toContain("Notes and Werk");
-		expect(line).toContain("this vault is called Note");
+		expect(line).toContain("this local vault is called Note");
 		expect(line).toContain("The names do not match");
 	});
 

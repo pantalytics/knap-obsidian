@@ -22,7 +22,9 @@
  * The words are `syncStatus.ts`'s, which mirrors `status.py` in the admin
  * repository. A notice that invents its own vocabulary for the same fact is
  * how somebody ends up believing they are watching two different things.
- * Four words reach a person here (ADR-0038): vault, folder, sync and MCP.
+ * Six words reach a person here (ADR-0038, ADR-0055): vault (local or
+ * cloud), folder, sync, device and MCP. A notice about this device's own work
+ * has one half in view, so these say plain vault.
  */
 
 import { PAUSED, SIGNED_OUT, SYNCING, syncInstruction } from "./syncStatus";
