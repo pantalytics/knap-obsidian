@@ -11,13 +11,11 @@ name: CD
 # This file only decides whether to release. The building, attesting and
 # publishing all stay in release.yml, called below, so there is one description
 # of what a release is.
-# Both branch names are listed because the default branch is being renamed from
-# knap/fork-base to main. A release trigger that names only one of them silently
-# stops releasing on whichever side of the rename it is not on. Drop
-# knap/fork-base once the rename has landed.
+# This has to name the default branch. A release trigger pointed at any other
+# branch does not fail, it just silently stops releasing.
 on:
   push:
-    branches: [main, knap/fork-base]
+    branches: [main]
     paths: ['manifest.json']
 
 concurrency:
