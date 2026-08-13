@@ -124,6 +124,12 @@ import { ShareManagementModal } from "./ui/ShareManagementModal";
 import { LocalStorage } from "./LocalStorage";
 import { SYNC_DOT_NAMES, vaultReading, type VaultReading } from "./vaultStatus";
 import {
+	planVaultSync,
+	vaultSyncResult,
+	type VaultSyncWork,
+} from "./syncNotices";
+import { SIGNED_OUT, syncInstruction } from "./syncStatus";
+import {
 	enabledCorePluginIds,
 	loadedPluginIds,
 	readVaultHazards,
@@ -1400,28 +1406,52 @@ export default class Live extends Plugin {
 	}
 
 	/**
-	 * Sync all web-published shares
+	 * Sync vault: reconnect what this device holds, and push the
+	 * web-published shares upstream's feature keeps.
+	 *
+	 * The notices are in `syncNotices.ts` and the reason they are is worth
+	 * knowing before changing anything here. This said *Syncing all shares...*
+	 * on the way in and *No shares to sync* on the way out, both at once, over
+	 * a vault that was syncing. The opening notice was unconditional, so it
+	 * announced work nothing had counted yet, and what did the counting was a
+	 * listing fetched from the control plane. `getAllShares` turns a failed
+	 * listing into an empty one, so a refused token or a rate-limited minute
+	 * reads exactly like a vault with nothing in it.
+	 *
+	 * So the folders come from `sharedFolders`, which is what actually syncs
+	 * this vault and what the mark in the corner of the window already reads.
+	 * The listing is only asked about the web half, which it is the only
+	 * source for. Nothing is said until both have been counted.
 	 */
 	private async syncAllShares() {
-		if (!this.shareClientManager) {
-			new Notice("No share client available");
-			return;
-		}
+		// The menu is only built when the plugin is switched on, so no client
+		// here means nobody is signed in to build one with.
+		await this.ensureShareClientManager();
+		const held = this.sharedFolders?.items() ?? [];
+		// A folder switched off on this device is paused, and telling it to
+		// connect does nothing (`SharedFolder.connect`). Counting it as work
+		// is how a paused vault gets told it is syncing.
+		const folders = held.filter((folder) => folder.shouldConnect);
 
 		try {
-			new Notice("Syncing all shares...");
-			const shares = await this.shareClientManager.getAllSharesFlat();
+			const shares = this.shareClientManager
+				? await this.shareClientManager.getAllSharesFlat()
+				: [];
+			const webShares = shares.filter((s) => s.web_published);
+			const work: VaultSyncWork = {
+				connected: !!this.shareClientManager,
+				folders: folders.length,
+				pausedFolders: held.length - folders.length,
+				webShares: webShares.length,
+			};
 
-			// 1. Reconnect CRDT relay for all folder shares
-			let relaySynced = 0;
-			for (const share of shares) {
-				if (share.kind === "folder") {
-					const folder = this.sharedFolders.find(sf => sf.guid === share.id);
-					if (folder) {
-						void folder.connect();
-						relaySynced++;
-					}
-				}
+			const plan = planVaultSync(work);
+			new Notice(plan.notice);
+			if (!plan.start) return;
+
+			// 1. Reconnect the CRDT relay for every folder this device holds
+			for (const folder of folders) {
+				void folder.connect();
 			}
 
 			// 2. Sync web-published shares
@@ -1432,7 +1462,6 @@ export default class Live extends Plugin {
 			// push the way TR-25 fixed for the debounced auto-sync path.
 			const { withOutboundSyncGuard } = await import("./WebSyncManager");
 			let webSynced = 0;
-			const webShares = shares.filter(s => s.web_published);
 			await withOutboundSyncGuard(this.webSyncManager, async () => {
 				for (const share of webShares) {
 					try {
@@ -1479,12 +1508,11 @@ export default class Live extends Plugin {
 				}
 			});
 
-			const parts = [];
-			if (relaySynced > 0) parts.push(`${relaySynced} relay`);
-			if (webSynced > 0) parts.push(`${webSynced} web`);
-			new Notice(parts.length > 0 ? `Synced: ${parts.join(", ")}` : "No shares to sync");
+			new Notice(vaultSyncResult(work, webSynced));
 		} catch (error: unknown) {
-			new Notice(`Sync failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+			new Notice(
+				`Knap could not sync this vault: ${error instanceof Error ? error.message : "Unknown error"}`,
+			);
 		}
 	}
 
@@ -1553,8 +1581,12 @@ export default class Live extends Plugin {
 			return;
 		}
 
+		// The same words the other item in this menu uses for the same state.
+		// "No share client available" named a thing nobody has heard of and
+		// left them nothing to do about it.
+		await this.ensureShareClientManager();
 		if (!this.shareClientManager) {
-			new Notice("No share client available");
+			new Notice(`${SIGNED_OUT}. ${syncInstruction(SIGNED_OUT)}`);
 			return;
 		}
 
