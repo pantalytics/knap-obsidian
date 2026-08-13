@@ -25,7 +25,7 @@ Worth understanding before the steps, because it explains why the order matters:
   and `description` are the fields people search on.
 - Opening a plugin's page pulls `manifest.json` and `README.md` **from the
   default branch** of the repo. Not from the release. Our default branch is
-  `knap/fork-base`, which is unusual but is what the directory will read.
+  `main`, renamed from `knap/fork-base` on 2026-08-13.
 - The manifest on the default branch only decides *which version is latest*. The
   files a user installs come from the **GitHub release tagged exactly that
   version**.
@@ -66,7 +66,7 @@ Verified against the live repo and the live catalog on 2026-08-11, not assumed.
 |---|---|
 | Repository is public | Public. This was the blocker in the previous draft and it is gone. |
 | `README.md`, `LICENSE`, `manifest.json` in the repo root | Present. CI checks they stay present. |
-| Default branch carries the Knap manifest and README | `knap/fork-base` is the default branch and holds both. There is no `main`, so there is nothing to merge first. |
+| Default branch carries the Knap manifest and README | `main` is the default branch and holds both, so there is nothing to merge first. It was renamed from `knap/fork-base` on 2026-08-13; GitHub redirects the old name, and the directory reads whatever is default at the time it looks. |
 | Plugin id unique across published plugins | `synced-vaults` is free: re-checked against all 6582 entries in `community-plugins.json` on 2026-08-12, after the rename off `knap-sync`. The id stayed there when the name went back to Knap (ADR-0045). The name was checked separately on 2026-08-12 against all 6588 entries then published: no plugin is called Knap and none carries the word in its name. |
 | Plugin id does not contain `obsidian` | `synced-vaults`. CI checks it. |
 | Name does not read as a first-party Obsidian product | Knap. It is the product's own name and says nothing about Obsidian. CI checks for "Obsidian". |
