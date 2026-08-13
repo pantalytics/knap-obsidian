@@ -31,9 +31,8 @@ describe("what a share says about itself", () => {
 
 	test("writing the same thing twice is not a write", () => {
 		// It runs on every connect rather than once at creation, because a share
-		// made by an older build carries no key and a renamed vault carries a
-		// stale one. Without this every device would broadcast an update on
-		// every start.
+		// made by an older build carries no key at all. Without this every
+		// device would broadcast an update on every start.
 		const doc = new Y.Doc();
 		stampKnapMeta(doc, { scope: "vault", vault: "Pantalytics" });
 
@@ -45,12 +44,36 @@ describe("what a share says about itself", () => {
 		expect(updates).toBe(0);
 	});
 
-	test("a renamed vault is written through", () => {
+	test("a vault keeps the name it was given, whoever connects next", () => {
+		// A vault is picked from a list now, so one vault on Knap can be open
+		// in local vaults called different things. Writing the local name
+		// through would hand the vault's name on Knap to whoever opened
+		// Obsidian last.
 		const doc = new Y.Doc();
-		stampKnapMeta(doc, { scope: "vault", vault: "Old name" });
+		stampKnapMeta(doc, { scope: "vault", vault: "Pantalytics" });
+
+		expect(stampKnapMeta(doc, { scope: "vault", vault: "Laptop copy" })).toBe(false);
+		expect(readKnapMeta(doc)?.vault).toBe("Pantalytics");
+	});
+
+	test("a share that carries no name yet gets one", () => {
+		// Every vault made before this key existed, and every vault the moment
+		// after it is created. The first device to sync it names it.
+		const doc = new Y.Doc();
+		doc.getMap<string>(KNAP_META_KEY).set("scope", "vault");
 
 		expect(stampKnapMeta(doc, { scope: "vault", vault: "Pantalytics" })).toBe(true);
 		expect(readKnapMeta(doc)?.vault).toBe("Pantalytics");
+	});
+
+	test("the scope is corrected even though the name is not", () => {
+		// The scope is not a name: both sides compute it the same way, and a
+		// share whose shape changed under an older build carries a stale one.
+		const doc = new Y.Doc();
+		stampKnapMeta(doc, { scope: "folder", vault: "Pantalytics" });
+
+		expect(stampKnapMeta(doc, { scope: "vault", vault: "Anything else" })).toBe(true);
+		expect(readKnapMeta(doc)).toEqual({ scope: "vault", vault: "Pantalytics" });
 	});
 
 	test("surrounding whitespace never reaches the panel", () => {

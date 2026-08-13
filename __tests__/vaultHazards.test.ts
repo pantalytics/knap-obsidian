@@ -232,9 +232,10 @@ describe("a vault inside a cloud drive", () => {
 		const said = phone?.lines.join(" ") ?? "";
 		expect(said).not.toContain("quit Obsidian");
 		expect(said).toContain("stored on this device");
-		// A new vault only joins the one already on Knap if the name matches,
-		// so the instruction is wrong without that half (`vaultShare.ts`).
-		expect(said).toContain("the same name");
+		// The new vault has to be pointed at the one already on Knap, and it
+		// is picked off a list rather than matched by name (`vaultShare.ts`).
+		// Without that half the instruction leaves somebody with two vaults.
+		expect(said).toContain("pick this same vault from the list");
 	});
 
 	test("the laptop keeps the instruction a laptop can follow", () => {

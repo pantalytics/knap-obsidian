@@ -1,33 +1,39 @@
 "use strict";
 
 /**
- * What a vault syncs: the whole thing, and nothing else on offer.
+ * Which vault on Knap this device syncs with, and how it gets picked.
  *
- * The words on every line below are the panel's, and since ADR-0055 that
- * includes the pair this file is entirely about: the **local vault** is the one
- * Obsidian has open, the **cloud vault** is the one on Knap, and joining is one
- * meeting the other. Every sentence here has both halves in it, which is
- * exactly when the qualifier is called for. Say plain vault where only one half
- * is in view.
+ * The account is the unit of access: one Knap account reaches zero, one or
+ * many vaults in the cloud, and each of those can be open on any number of
+ * devices, in any number of local vaults. So signing in cannot work out on its
+ * own which one is meant, and it no longer tries. **It lists what the account
+ * reaches and waits to be told**, which is the only answer that is right in
+ * every one of those cases.
  *
- * Signing in is the consent for it (ADR-0032) and there is no second answer to
- * give (ADR-0042). A vault is one share, the way a vault is one thing to the
- * person who keeps it, and every question that used to hang off picking
- * folders -- which mode is this device in, does the server agree, what happens
- * to the shares the old mode owned -- stops being a question.
+ * The words are the panel's, and since ADR-0055 that includes the pair this
+ * file is about: the **local vault** is the one Obsidian has open, the **cloud
+ * vault** is the one on Knap, and picking is one being pointed at the other.
+ * Both halves are in view in most sentences here, which is exactly when the
+ * qualifier is called for. Where only one of them is, it says plain vault.
  *
- * What is left here is small on purpose: work out whether this vault already
- * has its share, adopt one if a sibling device made it, and clear up after a
- * build that let somebody pick folders. The decisions are plain functions over
- * the shares that exist, kept apart from the screen that calls them so they
- * can be tested without Obsidian.
+ * This replaces matching on the vault's name. That rule was cheap and it was
+ * wrong in both directions: two vaults called the same thing on one account
+ * joined each other silently, and a vault renamed in Obsidian, or typed by
+ * hand into a fresh vault on a phone, started a second one nobody asked for.
+ * Picking from a list makes both impossible, and it is also the only way to
+ * reach a vault somebody shared with you, which by definition is not called
+ * what your local vault is called.
  *
- * Measured against the running control plane on 2026-08-11, because the shape
- * of a share is upstream's and not ours: `ShareCreate.path` is a string with
- * `minLength: 1`, so a whole-vault share cannot send an empty path, and `kind`
- * defaults to "doc" and has to be set to "folder". The vault's own name is
- * what goes in the path: it is non-empty, it is what the person calls the
- * thing, and it is what a member list will show them later.
+ * What is left of the old shape is deliberate: a vault is still one share
+ * (ADR-0043), the whole vault still syncs, and nothing here offers a way to
+ * sync part of one. The choice is which vault, never how much of it.
+ *
+ * Measured against the running control plane on 2026-08-11 and read again at
+ * `3524558` on 2026-08-13: `GET /v1/shares` returns the shares the caller owns
+ * **and** the ones they are a member of, so it is already the list this file
+ * wants. `ShareCreate.path` is a string with `minLength: 1`, so a new vault
+ * cannot be made with an empty name, and `kind` defaults to "doc" and has to
+ * be set to "folder".
  */
 
 /** The share fields this file needs. The real one carries a good deal more. */
@@ -35,54 +41,73 @@ export interface ShareLike {
 	id: string;
 	kind: "doc" | "folder";
 	path: string;
-	/** When the vault was made on Knap. The one fact worth previewing (#42). */
+	/** When the vault was made on Knap. The one fact worth previewing. */
 	created_at?: string;
+	/** False when somebody else owns it and this account is a member of it. */
+	is_owner?: boolean;
 }
 
 export type VaultShareDecision =
-	| { action: "create"; path: string }
-	| { action: "adopt"; share: ShareLike }
-	| { action: "already-syncing" }
+	| { action: "choose"; vaults: ShareLike[] }
+	| { action: "already-syncing"; vault?: ShareLike }
 	| { action: "replace-folders"; count: number };
 
 /**
- * What signing in should do about the whole vault.
+ * What signing in should do about the vault.
  *
- * - Already syncing whole: nothing to do, and no second call. This comes first
- *   because it is what is happening.
+ * - Already syncing: nothing to do, and no second call. This comes first
+ *   because it is what is happening. The share it is syncing with comes back
+ *   alongside, so the screen can name it rather than naming the local folder.
  * - Folder shares from an older build: say so and wait to be told. They cannot
  *   coexist with a vault share (`SharedFolder._new` refuses it in both
- *   directions), so the vault share cannot be made until they come off, and
- *   taking a share off is destructive enough to ask about first.
- * - Nothing shared anywhere: create the share.
- * - A share on the server that matches this vault, and nothing locally: this
- *   is a second device, so adopt it rather than making a second copy of the
- *   same vault. Matching is by name and kind, which is all the server keeps,
- *   so two vaults called the same thing would meet here. Reusing the wrong
- *   share is recoverable and duplicating a whole vault is not, and adopting
- *   is what somebody signing in on a laptop and a phone actually wants.
+ *   directions), so nothing can be joined until they come off, and taking a
+ *   share off is destructive enough to ask about first.
+ * - Otherwise: hand back the vaults the account reaches, and wait. An empty
+ *   list is an ordinary answer rather than an error, and it is what a new
+ *   account looks like.
  */
 export function decideVaultShare(
-	vaultName: string,
 	remoteShares: ShareLike[],
 	local: {
-		hasVaultShare: boolean;
+		/** The share id this vault already syncs with, if it syncs with one. */
+		vaultShareId?: string;
 		folderShareCount: number;
 	},
 ): VaultShareDecision {
-	if (local.hasVaultShare) {
-		return { action: "already-syncing" };
+	if (local.vaultShareId) {
+		return {
+			action: "already-syncing",
+			vault: remoteShares.find((share) => share.id === local.vaultShareId),
+		};
 	}
 	if (local.folderShareCount > 0) {
 		return { action: "replace-folders", count: local.folderShareCount };
 	}
-	const existing = remoteShares.find(
-		(share) => share.kind === "folder" && share.path === vaultName,
-	);
-	if (existing) {
-		return { action: "adopt", share: existing };
-	}
-	return { action: "create", path: vaultName };
+	return { action: "choose", vaults: cloudVaults(remoteShares) };
+}
+
+/**
+ * The vaults on the list, in the order they are shown.
+ *
+ * `kind: "doc"` is a single note somebody published and never a vault. What is
+ * left is every whole-vault share plus, on an account old enough to have them,
+ * the folder shares an older build made: the record cannot tell those apart
+ * (ADR-0041) and guessing would put a folder on a list of vaults. They are
+ * shown, because a list that quietly drops a row somebody knows they have is
+ * worse than one with an extra row on it.
+ *
+ * By name, so the same account draws the same list on every device, and by id
+ * where two carry the same name, because sort order is not the place to be
+ * clever about a duplicate somebody meant to make.
+ */
+export function cloudVaults(remoteShares: ShareLike[]): ShareLike[] {
+	return remoteShares
+		.filter((share) => share.kind === "folder")
+		.sort(
+			(a, b) =>
+				a.path.localeCompare(b.path, "en", { sensitivity: "base" }) ||
+				a.id.localeCompare(b.id),
+		);
 }
 
 /** One of this vault's shares, as the clean-up needs to see it. */
@@ -94,13 +119,13 @@ export interface LocalShare {
 }
 
 /**
- * The folder shares to take off, so the vault share can be made.
+ * The folder shares to take off, so a vault can be joined.
  *
- * **It plans from this vault's own shares, never from the account's.** A relay
- * account can hold shares for a second vault and shares somebody else owns,
- * and neither is this vault's business. Every share this vault syncs has a
- * local record carrying its id, so the local records are the list, and a share
- * nobody here knows about is left where it is.
+ * **It plans from this vault's own shares, never from the account's.** A Knap
+ * account can hold vaults this device has nothing to do with and vaults
+ * somebody else owns, and neither is this vault's business. Every share this
+ * vault syncs has a local record carrying its id, so the local records are the
+ * list, and a share nobody here knows about is left where it is.
  *
  * The order is the server first and the local record second, so a refusal
  * stops the run with the two halves still agreeing about what is shared.
@@ -109,146 +134,96 @@ export function planFolderCleanup(local: LocalShare[]): string[] {
 	return local.filter((share) => !share.isVaultScope).map((share) => share.id);
 }
 
+/**
+ * The rule the whole of this file turns on, said out loud.
+ *
+ * It replaces the sentence that said the name was the key, which stopped being
+ * true the moment the list arrived. What it says instead is the thing somebody
+ * needs on the second device: this is a choice, it was made once, and Obsidian
+ * has no opinion about it. Renaming either side changes nothing.
+ */
+export const VAULT_CHOICE_IS_YOURS =
+	"You pick which cloud vault this local vault syncs with. The names do not have to match, and renaming either of them does not change the pairing.";
+
+/** The heading over the list, and the line under it. */
+export const CHOOSE_A_VAULT = "Pick the cloud vault this device syncs with.";
 
 /**
- * The rule the whole of `decideVaultShare` turns on, said out loud (#42).
+ * What to say when the account reaches nothing yet.
  *
- * The name is the key a device joins on, and until this line existed nothing
- * anywhere said so. One character apart and a second vault appears on Knap
- * with nobody told, which is what happens to somebody who tidies a folder name
- * on one device, and it is also what a person setting up on a phone risks
- * every time, because iOS makes them type the name by hand into a fresh vault
- * in Obsidian's own folder.
- *
- * It reads as a fact rather than a warning because it is one, and because it
- * is also the handle: renaming a vault on purpose is the only way to end up
- * somewhere other than where the name points, and somebody moving off a vault
- * that has gone bad needs to know that.
+ * A new account, which is most of them once, and it is not an error: there is
+ * one button under this and it is the one to press.
  */
-export const VAULT_NAME_IS_THE_KEY =
-	"Knap matches your cloud vault by name. Another device joins it by having a local vault with the same name on it. A different name starts a second cloud vault instead.";
+export const NO_VAULTS_YET =
+	"Your Knap account has no cloud vaults yet. Start one from the notes already on this device.";
 
-/** What Knap will tell you about a vault before you join it. */
-export interface JoinPreview {
-	/** The name it matched on, which is this vault's name and the share's path. */
-	vaultName: string;
-	/** When the vault was made on Knap, ISO, from the share record. */
-	createdAt?: string;
+/** What the screen says while it is waiting to be told. */
+export const JOIN_HELD_NOTE =
+	"Nothing syncs until you pick one. Your notes stay on this device either way.";
+
+/** The row for one vault: the name, and the little Knap will say about it. */
+export function vaultRowLines(vault: ShareLike): string[] {
+	const lines: string[] = [];
+	const made = formatDay(vault.created_at);
+	if (made) {
+		lines.push(`Added to Knap on ${made}`);
+	}
+	if (vault.is_owner === false) {
+		// Not "shared with you". Share is the control plane's noun and stays
+		// off a screen (ADR-0038); what a person needs here is whose vault it
+		// is, which is the same fact in the words the rest of Knap uses.
+		lines.push("Someone else's vault");
+	}
+	return lines;
+}
+
+/** The button that starts a new one, with the name it will carry. */
+export function newVaultLabel(vaultName: string): string {
+	return `Start a new vault called ${vaultName}`;
 }
 
 /**
- * What is about to be joined, said before it is joined (#42).
+ * What starting a new one does, said next to the button.
  *
- * **This is everything the control plane will tell us at this moment, and it
- * is less than the issue asked for.** A share record carries an id, a kind, a
- * path, a visibility, an owner and two timestamps. There is no note count in
- * it: the files index is the web publishing artifact list, which is empty on a
- * private vault, so reading a count off it would report 0 notes for a healthy
- * vault of thousands. There is no device count either, anywhere in this
- * plugin's half of the API. So the preview says the name, the rule it matched
- * on and the day the vault was made, and invents neither of the other two.
- *
- * The date is the one that settles it in practice. Somebody adding their
- * second device made the first one this week; somebody who has just typed a
- * name into a phone and hit an eight-month-old vault has hit the wrong one.
+ * The name comes from Obsidian because there is nowhere else to get one and no
+ * screen here worth spending on a text field. It is a name, not a key: nothing
+ * matches on it afterwards, which is why renaming the vault later is harmless
+ * and why this line does not warn about it.
  */
-export function joinPreviewLines(preview: JoinPreview): string[] {
-	const lines = [
-		`You already have a cloud vault called ${preview.vaultName}, and this device will sync with it.`,
-		`It matched because the local vault here is called ${preview.vaultName} too. The name is the only thing Knap matches on.`,
-	];
-	const made = formatDay(preview.createdAt);
-	if (made) {
-		lines.push(`It was added to Knap on ${made}.`);
-	}
-	lines.push(
-		"If that is not the vault you meant, rename this local vault in Obsidian first, and Knap starts a separate cloud vault under the new name.",
+export function newVaultLine(vaultName: string): string {
+	return (
+		`It takes its name from this local vault, so your cloud vault will be called ${vaultName}, ` +
+		"and everything here uploads into it."
 	);
-	return lines;
+}
+
+/**
+ * What joining an existing vault does to the notes already here, said first.
+ *
+ * This is the sharp edge of picking rather than matching. Joining pours a
+ * vault that is already on Knap into this folder on disk, and if there is
+ * anything here it ends up holding both. Obsidian's own answer is to start
+ * from an empty vault, so that is what the sentence says, and it says it with
+ * the two numbers that make it concrete.
+ *
+ * One paragraph, because `confirmDialog` renders the message as one.
+ */
+export function joinConfirmation(vaultName: string, localFiles: number): string {
+	const here =
+		localFiles === 1
+			? "The one file already in this vault stays"
+			: `The ${localFiles} files already in this vault stay`;
+	return (
+		`${vaultName} downloads into this local vault in Obsidian, and everything here uploads into ${vaultName}. ` +
+		`${here} where they are, and end up on Knap too. ` +
+		"If you meant to keep them apart, make an empty vault in Obsidian and join from there instead."
+	);
 }
 
 /** The button that joins it, with the name on it so nobody presses it blind. */
 export function joinButtonLabel(vaultName: string): string {
 	return `Sync with ${vaultName}`;
 }
-
-/** What the screen says while it is waiting to be told to join. */
-export const JOIN_HELD_NOTE =
-	"Nothing is syncing until you decide which cloud vault this device joins.";
-
-/**
- * A new vault beside the ones already there, said when that is what happens.
- *
- * The costly mistake is not creating a vault, it is creating a second one by
- * accident when a first already exists under a name a character away. Naming
- * what the account already has is the cheapest way to catch that, and it costs
- * no extra call: the list was fetched to make the decision.
- */
-export function newVaultBesideLine(
-	vaultName: string,
-	otherNames: readonly string[],
-): string | undefined {
-	if (otherNames.length === 0) return undefined;
-	const shown = otherNames.slice(0, 3);
-	const rest = otherNames.length - shown.length;
-	const list =
-		rest > 0 ? `${shown.join(", ")} and ${rest} more` : joinNames(shown);
-	return (
-		`You already have ${list} in the cloud, and this local vault is called ${vaultName}. ` +
-		"The names do not match, so this one starts a cloud vault of its own."
-	);
-}
-
-/** "A", "A and B", "A, B and C". */
-function joinNames(names: readonly string[]): string {
-	if (names.length <= 1) return names[0] ?? "";
-	return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-}
-
-const MONTHS = [
-	"January",
-	"February",
-	"March",
-	"April",
-	"May",
-	"June",
-	"July",
-	"August",
-	"September",
-	"October",
-	"November",
-	"December",
-] as const;
-
-/**
- * "11 August 2026", from whatever the control plane sent.
- *
- * Written out rather than handed to `toLocaleDateString`, so the same date
- * reads the same on every machine and a test can pin it. Anything unparseable
- * gives nothing back and the line is left out, because a date that says
- * "Invalid Date" is worse than no date at all.
- */
-function formatDay(iso?: string): string | undefined {
-	if (!iso) return undefined;
-	const at = new Date(iso);
-	if (Number.isNaN(at.getTime())) return undefined;
-	return `${at.getUTCDate()} ${MONTHS[at.getUTCMonth()]} ${at.getUTCFullYear()}`;
-}
-
-/**
- * What a vault is, in the one line the screen keeps.
- *
- * This used to be the second of two lines shown while the first sync ran. The
- * first of them said to leave Obsidian open, twice over: the status row was
- * already saying it, word for word, directly above. A bar and a count say it
- * better than either, so both sentences went and this one stayed.
- *
- * It stayed because it is not about the first sync at all. A bare second device
- * reads as a failed sync to anybody expecting their setup to arrive with the
- * notes, and that question outlives the upload that prompts it.
- */
-export const VAULT_SCOPE_NOTE =
-	"Your notes sync. Settings, themes and plugins stay on the device they are installed on.";
 
 /** The button that starts the clean-up, on the one screen that offers it. */
 export const REPLACE_FOLDERS_LABEL = "Sync the whole vault";
@@ -257,8 +232,8 @@ export const REPLACE_FOLDERS_LABEL = "Sync the whole vault";
  * What to say to a vault that still syncs folders.
  *
  * This is the only place folders are still named on a screen, and it is here
- * to be grown out of: an older build let somebody pick them, and the vault
- * cannot start syncing whole until they are gone.
+ * to be grown out of: an older build let somebody pick them, and nothing can
+ * be joined until they are gone.
  */
 export function replaceFoldersLine(count: number): string {
 	const folders = count === 1 ? "one folder" : `${count} folders`;
@@ -295,9 +270,8 @@ export function replaceFoldersConfirmation(removing: number): string {
  * What to say when a share would not come off Knap.
  *
  * The clean-up stops at the first refusal rather than carrying on, so what was
- * already removed stays removed and the vault share is not made on top of a
- * folder that is still there. Pressing the button again picks up from where it
- * stopped.
+ * already removed stays removed and nothing is joined on top of a folder that
+ * is still there. Pressing the button again picks up from where it stopped.
  */
 export function replaceFoldersFailedLine(reason: string): string {
 	return (
@@ -305,3 +279,43 @@ export function replaceFoldersFailedLine(reason: string): string {
 		"Nothing else has changed. Try again in a moment."
 	);
 }
+
+const MONTHS = [
+	"January",
+	"February",
+	"March",
+	"April",
+	"May",
+	"June",
+	"July",
+	"August",
+	"September",
+	"October",
+	"November",
+	"December",
+] as const;
+
+/**
+ * "11 August 2026", from whatever the control plane sent.
+ *
+ * Written out rather than handed to `toLocaleDateString`, so the same date
+ * reads the same on every machine and a test can pin it. Anything unparseable
+ * gives nothing back and the line is left out, because a date that says
+ * "Invalid Date" is worse than no date at all.
+ */
+function formatDay(iso?: string): string | undefined {
+	if (!iso) return undefined;
+	const at = new Date(iso);
+	if (Number.isNaN(at.getTime())) return undefined;
+	return `${at.getUTCDate()} ${MONTHS[at.getUTCMonth()]} ${at.getUTCFullYear()}`;
+}
+
+/**
+ * What a vault is, in the one line the screen keeps.
+ *
+ * A bare second device reads as a failed sync to anybody expecting their setup
+ * to arrive with the notes, and that question outlives the upload that
+ * prompts it.
+ */
+export const VAULT_SCOPE_NOTE =
+	"Your notes sync. Settings, themes and plugins stay on the device they are installed on.";

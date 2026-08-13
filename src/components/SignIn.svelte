@@ -14,14 +14,18 @@
 	import {
 		decideVaultShare,
 		joinButtonLabel,
-		joinPreviewLines,
-		newVaultBesideLine,
+		joinConfirmation,
+		newVaultLabel,
+		newVaultLine,
 		planFolderCleanup,
 		replaceFoldersConfirmation,
 		replaceFoldersFailedLine,
 		replaceFoldersLine,
+		vaultRowLines,
+		CHOOSE_A_VAULT,
 		JOIN_HELD_NOTE,
-		VAULT_NAME_IS_THE_KEY,
+		NO_VAULTS_YET,
+		VAULT_CHOICE_IS_YOURS,
 		VAULT_SCOPE_NOTE,
 		REPLACE_FOLDERS_LABEL,
 		type LocalShare,
@@ -30,7 +34,19 @@
 	import { RelayOnPremShareClientManager } from "../RelayOnPremShareClientManager";
 	import { hasSignInButton, syncInstruction } from "../syncStatus";
 	import type { VaultReading } from "../vaultStatus";
-	import { holdsVaultBack, topHazard, type Hazard } from "../vaultHazards";
+	import { topHazard, type Hazard } from "../vaultHazards";
+	import {
+		anythingWrong,
+		blockedBy,
+		CHECKLIST_ALL_CLEAR,
+		CHECKLIST_BACK_LABEL,
+		CHECKLIST_BLOCKED,
+		CHECKLIST_CARRY_ON,
+		CHECKLIST_NOTE,
+		CHECKLIST_TITLE,
+		CHECK_AGAIN_LABEL,
+		type Check,
+	} from "../vaultChecklist";
 
 	// One button, because there is one server and one account (ADR-0030,
 	// ADR-0033). No address to type, nothing to choose, and no code to paste:
@@ -85,10 +101,9 @@
 	$: counts = reading.counts;
 	$: progress = reading.progress;
 
-	// The name of this vault in Obsidian, which is also its name on Knap and
-	// the only thing a second device matches on (#42). It is on the screen
-	// because nothing anywhere said so, and a person who tidies a folder name
-	// on one device gets a second vault without being told.
+	// The name of this vault in Obsidian. It is the name a new vault on Knap
+	// takes, and after that the two are independent: which vault this device
+	// syncs with is a choice somebody made, not a name that matched.
 	const vaultName = plugin.app.vault.getName();
 
 	// What else is syncing this vault (#41). Read when the screen opens rather
@@ -99,9 +114,25 @@
 	// read, and the one that holds the vault back always wins.
 	$: hazard = topHazard(hazards);
 
-	// The vault on Knap this device would join, once it has been shown what
-	// that is. Set instead of joining, and cleared by the button (#42).
-	let pendingJoin: { share: ShareLike; lines: string[] } | undefined;
+	// The vaults on Knap this account reaches, once signing in has asked. The
+	// list is the screen: nothing syncs until one of them is pressed, and an
+	// empty list is a new account rather than a failure.
+	let choices: ShareLike[] | undefined;
+	// The vault on Knap this device is syncing with, named. Read off the same
+	// list, so the row says what somebody picked rather than what the folder
+	// on disk is called.
+	let syncingWith: ShareLike | undefined;
+	// The one being joined right now, so its row can say so and the rest of
+	// the list cannot be pressed underneath it.
+	let joining: string | undefined;
+	// What was pressed, and what the vault has to answer before it happens.
+	// The three checks run here rather than at sign-in: they are about putting
+	// these notes under a second sync, which is what pressing the button does
+	// and not what signing in does.
+	let preflight:
+		| { intent: { kind: "new" } | { kind: "join"; vault: ShareLike }; checks: Check[] }
+		| undefined;
+	$: blocked = preflight ? blockedBy(preflight.checks) : undefined;
 	// Somebody who has signed in here before is signed OUT, which is a state
 	// with its own words and its own button. Somebody who never has is simply
 	// new, and gets told what the button is for instead: the signed-out
@@ -113,7 +144,7 @@
 	// leaving Obsidian open: that sentence was on screen twice at once, once
 	// here and once as the first line of the first sync.
 	$: statusNote = !(auth.isSignedIn || returning)
-		? "Sign in with your Knap account and this vault starts syncing."
+		? "Sign in with your Knap account, then pick the vault this one syncs with."
 		: counts
 			? ""
 			: syncInstruction(word);
@@ -145,8 +176,11 @@
 		} else {
 			vaultLines = [];
 			// Signing out is not a vault waiting to be told anything. The word
-			// for it is Signed out and it has its own button.
-			pendingJoin = undefined;
+			// for it is Signed out and it has its own button. The list goes
+			// with the account it belonged to.
+			choices = undefined;
+			preflight = undefined;
+			syncingWith = undefined;
 			hold(false);
 		}
 	}
@@ -213,69 +247,54 @@
 	}
 
 	/**
-	 * Sync the whole vault, without asking (ADR-0032, ADR-0042).
+	 * Ask Knap what this account reaches, and wait to be told which one.
 	 *
-	 * Signing in is the moment this happens, because a person who has just
-	 * signed in has not met a share yet, and there is nothing to pick: a vault
-	 * is one share and that is the whole of the model.
+	 * An account reaches zero, one or many vaults, and each of those can be
+	 * open in any number of local vaults. So there is nothing here to work out:
+	 * signing in fetches the list and the person picks. The whole vault still
+	 * syncs and there is still nothing to pick about how much of it.
 	 */
 	async function startSyncingTheVault() {
 		const clients = shareClients();
 		if (!clients) return;
 
 		const folders = plugin.sharedFolders.items();
+		const vaultShare = folders.find((folder) => folder.isVaultScope);
 		const local = {
-			hasVaultShare: folders.some((folder) => folder.isVaultScope),
+			vaultShareId: vaultShare?.guid,
 			folderShareCount: folders.filter((folder) => !folder.isVaultScope).length,
 		};
 
 		// Something else syncing this vault stops it starting, and never stops
-		// one that is already going (#41). The order is deliberate: refusing to
-		// begin costs somebody a toggle, and disconnecting a vault halfway
-		// through a fill costs them the afternoon. The check runs before the
-		// call to Knap, because a vault that is not going to sync has no reason
-		// to ask what is on the server.
+		// one that is already going (#41). It no longer stops the list from
+		// being drawn: seeing which vaults exist costs nothing, and a screen
+		// that refuses before it has said what it is refusing leaves somebody
+		// with a warning and no idea what it is standing in the way of. The
+		// checks run against the button instead, in `askFirst`.
 		hazards = plugin.refreshVaultHazards();
-		if (holdsVaultBack(hazards, local.hasVaultShare)) {
-			pendingJoin = undefined;
-			vaultLines = [];
-			hold(true);
-			return;
-		}
 
 		let remote: ShareLike[] = [];
 		try {
 			remote = (await clients.listShares(KNAP_SERVER_ID)) as ShareLike[];
 		} catch (e: unknown) {
-			// Listing is how a second device finds the share it should adopt.
-			// Without it, creating one would risk a duplicate of the same
-			// vault, so say nothing happened rather than guess.
+			// The list is the screen, so there is nothing to draw without it.
+			// Say Knap could not be reached rather than showing an empty
+			// account, which is a different thing and has a button on it.
 			error = e instanceof Error ? e.message : "Could not reach Knap";
 			return;
 		}
 
-		const decision = decideVaultShare(vaultName, remote, local);
+		const decision = decideVaultShare(remote, local);
 		if (decision.action === "already-syncing") {
 			leftoverFolders = 0;
-			pendingJoin = undefined;
+			choices = undefined;
+			preflight = undefined;
+			// A vault Knap no longer lists leaves the row without a name. That
+			// is somebody's vault deleted or unshared while this device was
+			// away, and the sync layer is what reports it, so nothing is
+			// invented here.
+			syncingWith = decision.vault;
 			hold(false);
-			return;
-		}
-		if (decision.action === "adopt") {
-			// Show what will be joined before joining it (#42). The match is on
-			// the name and nothing else, so a name a character away from the
-			// one somebody meant lands here silently and forks the vault in
-			// two. One button, with the name on it.
-			leftoverFolders = 0;
-			vaultLines = [];
-			pendingJoin = {
-				share: decision.share,
-				lines: joinPreviewLines({
-					vaultName,
-					createdAt: decision.share.created_at,
-				}),
-			};
-			hold(true);
 			return;
 		}
 		if (decision.action === "replace-folders") {
@@ -284,31 +303,116 @@
 			// than doing it on its own: deleting a share takes its documents
 			// with it, and a folder somebody else is a member of takes their
 			// copy too.
+			choices = undefined;
+			preflight = undefined;
 			leftoverFolders = decision.count;
 			vaultLines = [replaceFoldersLine(decision.count)];
 			return;
 		}
 
+		// Nothing joined yet, so the account's vaults go on the screen and the
+		// vault stands still until one of them is pressed.
 		leftoverFolders = 0;
+		vaultLines = [];
+		syncingWith = undefined;
+		choices = decision.vaults;
+		hold(true);
+	}
+
+	/**
+	 * Ask the vault the three questions, before doing what was pressed.
+	 *
+	 * It stands in front of both buttons rather than only the new one. What
+	 * the checks are about is this folder on disk coming under a second sync,
+	 * and that is equally true of joining a vault somebody else made: the
+	 * notes come down into the same folder Dropbox or Obsidian Sync is already
+	 * holding. A checklist on one button and silence on the other would be a
+	 * difference with nothing behind it.
+	 */
+	function askFirst(intent: { kind: "new" } | { kind: "join"; vault: ShareLike }) {
+		if (joining) return;
+		error = "";
+		preflight = { intent, checks: plugin.checkVault() };
+		// The screen already said the vault is waiting; the hazard block under
+		// the status row is about to say the same thing the checklist says.
+		hazards = plugin.refreshVaultHazards();
+	}
+
+	/** Run the three questions again, after somebody has gone and fixed one. */
+	function checkAgain() {
+		if (!preflight) return;
+		preflight = { intent: preflight.intent, checks: plugin.checkVault() };
+		hazards = plugin.refreshVaultHazards();
+	}
+
+	/** Back to the vaults, having started nothing. */
+	function cancelPreflight() {
+		preflight = undefined;
+	}
+
+	/**
+	 * Do the thing the checklist was standing in front of.
+	 *
+	 * Joining a local vault that already holds files asks one more time, and
+	 * that question is a different one: the checks above are about what else
+	 * syncs this folder, and this is about the two sets of notes meeting. The
+	 * vault on Knap downloads into this folder and whatever is here uploads
+	 * into it, so both end up holding both. An empty vault, which is what
+	 * somebody setting up a second device has, goes straight through.
+	 */
+	async function go() {
+		if (!preflight || joining) return;
+		if (blocked) return;
+		const intent = preflight.intent;
+		const clients = shareClients();
+		if (!clients) {
+			error = "Sign in first.";
+			return;
+		}
+
+		if (intent.kind === "join") {
+			const here = plugin.app.vault.getFiles().length;
+			if (here > 0) {
+				const agreed = await confirmDialog(
+					plugin.app,
+					joinConfirmation(intent.vault.path, here),
+				);
+				if (!agreed) return;
+			}
+		}
+
+		error = "";
+		joining = intent.kind === "join" ? intent.vault.id : "new";
 		try {
-			const share = await clients.createShare(KNAP_SERVER_ID, {
-				path: decision.path,
-				kind: "folder",
-				visibility: "private",
-			});
-			attachShare(share.id);
-			// A new vault beside the ones the account already has, named (#42).
-			// This is the fork as it actually happens: somebody meant to join
-			// the vault they made yesterday and the name is one character out.
-			// The list cost nothing, it was fetched to make the decision.
-			const beside = newVaultBesideLine(
-				vaultName,
-				remote.filter((one) => one.kind === "folder").map((one) => one.path),
-			);
-			vaultLines = beside ? [beside] : [];
+			const vault =
+				intent.kind === "join"
+					? intent.vault
+					: await createVault(clients);
+			attachShare(vault.id);
+			syncingWith = vault;
+			choices = undefined;
+			preflight = undefined;
 		} catch (e: unknown) {
 			error = e instanceof Error ? e.message : "Could not start syncing this vault";
+		} finally {
+			joining = undefined;
 		}
+	}
+
+	/**
+	 * Start a new vault on Knap from the notes on this device.
+	 *
+	 * The name comes from Obsidian because there is nowhere else to get one.
+	 * It is a name and not a key: nothing matches on it afterwards, so a vault
+	 * renamed here later stays the vault it was.
+	 */
+	async function createVault(clients: RelayOnPremShareClientManager): Promise<ShareLike> {
+		const share = await clients.createShare(KNAP_SERVER_ID, {
+			path: vaultName,
+			kind: "folder",
+			visibility: "private",
+		});
+		return { id: share.id, kind: "folder", path: share.path };
 	}
 
 	/**
@@ -327,20 +431,6 @@
 		// row says Syncing the moment it reads it, and the vault is no longer
 		// standing still waiting to be told what to do.
 		hold(false);
-	}
-
-	/** Join the vault the screen has just described. */
-	function joinPendingVault() {
-		if (!pendingJoin) return;
-		const share = pendingJoin.share;
-		error = "";
-		try {
-			attachShare(share.id);
-			pendingJoin = undefined;
-			vaultLines = [];
-		} catch (e: unknown) {
-			error = e instanceof Error ? e.message : "Could not start syncing this vault";
-		}
 	}
 
 	/** A share the server says it has never heard of is already gone. */
@@ -530,19 +620,21 @@
 			</div>
 		</div>
 
-		<!-- The name, and what it is for (#42). A device joins the vault whose
-		     name matches its own, and that was true and unsaid everywhere: on
-		     screen, in the plugin and on Knap's page. It sits above Status
-		     because it is the fact the row underneath depends on. -->
-		<div class="setting-item">
-			<div class="setting-item-info">
-				<div class="setting-item-name">Vault</div>
-				<div class="setting-item-description">{VAULT_NAME_IS_THE_KEY}</div>
+		<!-- Which vault on Knap this one syncs with, which is a choice somebody
+		     made and not a name that matched. It sits above Status because it
+		     is the fact the row underneath depends on: the vault named here is
+		     the one the word below is about. -->
+		{#if syncingWith}
+			<div class="setting-item">
+				<div class="setting-item-info">
+					<div class="setting-item-name">Vault</div>
+					<div class="setting-item-description">{VAULT_CHOICE_IS_YOURS}</div>
+				</div>
+				<div class="setting-item-control knap-value">
+					<span class="knap-value-text">{syncingWith.path}</span>
+				</div>
 			</div>
-			<div class="setting-item-control knap-value">
-				<span class="knap-value-text">{vaultName}</span>
-			</div>
-		</div>
+		{/if}
 	{/if}
 
 	<div class="setting-item">
@@ -585,21 +677,105 @@
 		</div>
 	{/if}
 
-	<!-- What this device is about to join, before it joins it (#42). Nothing
-	     here is a guess: the name it matched, the rule it matched on and the
-	     day the vault was made are what Knap will say about a vault from the
-	     outside. The note count and the device count the issue asked for are
-	     not on this side of the API, so they are not on the screen either. -->
-	{#if pendingJoin}
-		<div class="knap-warning">
-			{#each pendingJoin.lines as line}
-				<p>{line}</p>
+	<!-- The vaults this account reaches, and the choice between them. Every
+	     row is what Knap will say about a vault from the outside and nothing
+	     more: the name, the day it was made, and whether somebody else owns
+	     it. There is no note count and no device count anywhere on this side
+	     of the API, so neither is invented here. -->
+	{#if choices && !preflight}
+		<div class="knap-choose">
+			<p class="knap-choose-title">{CHOOSE_A_VAULT}</p>
+			{#if choices.length === 0}
+				<p class="knap-note">{NO_VAULTS_YET}</p>
+			{/if}
+			{#each choices as vault (vault.id)}
+				<button
+					class="knap-vault"
+					disabled={Boolean(joining)}
+					on:click={() => askFirst({ kind: "join", vault })}
+				>
+					<span class="knap-vault-name">{vault.path}</span>
+					<span class="knap-vault-facts">
+						{#each vaultRowLines(vault) as fact}
+							<span>{fact}</span>
+						{/each}
+					</span>
+					<span class="knap-vault-join"
+						>{joining === vault.id
+							? "Joining"
+							: joinButtonLabel(vault.path)}</span
+					>
+				</button>
 			{/each}
+			<button
+				class="knap-btn mod-cta"
+				disabled={Boolean(joining)}
+				on:click={() => askFirst({ kind: "new" })}
+			>
+				{newVaultLabel(vaultName)}
+			</button>
+			<p class="knap-note">{newVaultLine(vaultName)}</p>
+			<p class="knap-note">{JOIN_HELD_NOTE}</p>
 		</div>
-		<button class="knap-btn mod-cta" on:click={joinPendingVault}>
-			{joinButtonLabel(vaultName)}
-		</button>
-		<p class="knap-note">{JOIN_HELD_NOTE}</p>
+	{/if}
+
+	<!-- The three questions, asked out loud, in front of the button that puts
+	     these notes under a second sync. The hazard block above says the same
+	     thing in one warning for a vault that is already going; this is the
+	     same reading with its working shown, which is what somebody about to
+	     press the button wants. -->
+	{#if preflight}
+		<div class="knap-choose">
+			<p class="knap-choose-title">{CHECKLIST_TITLE}</p>
+			<p class="knap-note">{CHECKLIST_NOTE}</p>
+			{#each preflight.checks as check (check.kind)}
+				<div class="knap-check" class:knap-check-bad={!check.ok}>
+					<span class="knap-check-mark" aria-hidden="true"
+						>{check.ok ? "✓" : check.blocking ? "✕" : "!"}</span
+					>
+					<div class="knap-check-body">
+						<span class="knap-check-label">{check.label}</span>
+						{#if !check.ok}
+							{#each check.lines as line}
+								<p class="knap-note">{line}</p>
+							{/each}
+						{/if}
+					</div>
+				</div>
+			{/each}
+
+			<p class="knap-note">
+				{blocked
+					? CHECKLIST_BLOCKED
+					: anythingWrong(preflight.checks)
+						? CHECKLIST_CARRY_ON
+						: CHECKLIST_ALL_CLEAR}
+			</p>
+
+			<div class="knap-actions">
+				<button
+					class="knap-btn mod-cta"
+					disabled={Boolean(blocked) || Boolean(joining)}
+					on:click={go}
+				>
+					{joining
+						? "Working on it"
+						: preflight.intent.kind === "new"
+							? newVaultLabel(vaultName)
+							: joinButtonLabel(preflight.intent.vault.path)}
+				</button>
+				<button class="knap-btn" disabled={Boolean(joining)} on:click={checkAgain}>
+					{CHECK_AGAIN_LABEL}
+				</button>
+				<button
+					class="knap-btn knap-btn-quiet"
+					disabled={Boolean(joining)}
+					on:click={cancelPreflight}
+				>
+					{CHECKLIST_BACK_LABEL}
+				</button>
+			</div>
+		</div>
 	{/if}
 
 	<!-- Anything the vault still needs said, which is now only the folder
@@ -722,6 +898,132 @@
 		color: var(--text-muted);
 		font-size: 12px;
 		max-width: 46em;
+	}
+
+	/* The list of vaults, which is the whole screen while it is up. It is not
+	   a setting row: a row shows a value, and this is a question. */
+	.knap-choose {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		margin-top: 16px;
+		max-width: 46em;
+	}
+
+	.knap-choose-title {
+		margin: 0 0 8px;
+		color: var(--text-normal);
+		font-size: 13px;
+		font-weight: var(--font-semibold, 600);
+	}
+
+	/* One vault, one button, so pressing it anywhere joins it. The facts sit
+	   under the name at caption weight, and the words that say what pressing
+	   does sit on the right where a value would be. */
+	.knap-vault {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		grid-template-areas: "name join" "facts join";
+		gap: 2px 12px;
+		align-items: center;
+		width: 100%;
+		padding: 10px 12px;
+		margin-top: 6px;
+		background: transparent;
+		box-shadow: none;
+		border: 1px solid var(--background-modifier-border);
+		border-radius: var(--radius-s, 4px);
+		text-align: left;
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.knap-vault:hover:not(:disabled) {
+		background: var(--background-modifier-hover);
+		border-color: var(--interactive-accent);
+	}
+
+	.knap-vault:disabled {
+		cursor: default;
+		opacity: 0.6;
+	}
+
+	.knap-vault-name {
+		grid-area: name;
+		color: var(--text-normal);
+		font-size: 14px;
+		overflow-wrap: anywhere;
+	}
+
+	/* Empty on a vault Knap will say nothing else about, and then the row is
+	   one line rather than one line and a gap. */
+	.knap-vault-facts {
+		grid-area: facts;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 10px;
+		color: var(--text-faint);
+		font-size: 12px;
+	}
+
+	.knap-vault-facts:empty {
+		display: none;
+	}
+
+	.knap-vault-join {
+		grid-area: join;
+		color: var(--text-accent);
+		font-size: 12px;
+		white-space: nowrap;
+	}
+
+	/* The new vault sits under the list rather than in it: it is the answer
+	   when none of the rows is the one, and on an empty account it is the only
+	   thing to press. */
+	.knap-choose > .knap-btn {
+		align-self: flex-start;
+		margin-top: 12px;
+	}
+
+	/* One checked thing. The mark is a character rather than a colour, so the
+	   row still says which way it went in a screenshot, in a dark theme and to
+	   somebody who does not see the difference between the greens and reds
+	   around it. */
+	.knap-check {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 8px;
+		align-items: start;
+		margin-top: 10px;
+	}
+
+	.knap-check-mark {
+		color: var(--color-green, #28a745);
+		font-size: 13px;
+		line-height: 1.4;
+	}
+
+	.knap-check-bad .knap-check-mark {
+		color: var(--text-error);
+	}
+
+	.knap-check-body {
+		min-width: 0;
+	}
+
+	.knap-check-label {
+		color: var(--text-normal);
+		font-size: 13px;
+	}
+
+	.knap-check-bad .knap-check-label {
+		font-weight: var(--font-semibold, 600);
+	}
+
+	/* The buttons under a checklist sit in a row of their own, and the row is
+	   already styled for the sign-in actions above. */
+	.knap-choose .knap-actions {
+		margin-top: 16px;
 	}
 
 	/* One block, never two, so it can afford to be the loudest thing on the
