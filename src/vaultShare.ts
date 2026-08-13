@@ -135,31 +135,23 @@ export function planFolderCleanup(local: LocalShare[]): string[] {
 }
 
 /**
- * The rule the whole of this file turns on, said out loud.
+ * The heading over the list, and the whole of what it says.
  *
- * It replaces the sentence that said the name was the key, which stopped being
- * true the moment the list arrived. What it says instead is the thing somebody
- * needs on the second device: this is a choice, it was made once, and Obsidian
- * has no opinion about it. Renaming either side changes nothing.
+ * It is a label rather than an instruction. The rows underneath are vaults and
+ * each one carries a button that says what pressing it does, so a sentence
+ * telling somebody to pick one is a caption on a thing that already explains
+ * itself.
  */
-export const VAULT_CHOICE_IS_YOURS =
-	"You pick which cloud vault this local vault syncs with. The names do not have to match, and renaming either of them does not change the pairing.";
-
-/** The heading over the list, and the line under it. */
-export const CHOOSE_A_VAULT = "Pick the cloud vault this device syncs with.";
+export const CHOOSE_A_VAULT = "Cloud vaults";
 
 /**
  * What to say when the account reaches nothing yet.
  *
- * A new account, which is most of them once, and it is not an error: there is
- * one button under this and it is the one to press.
+ * The one case where a sentence earns its place: an empty list looks like a
+ * screen that failed to load, and the button under it needs a reason to be
+ * pressed.
  */
-export const NO_VAULTS_YET =
-	"Your Knap account has no cloud vaults yet. Start one from the notes already on this device.";
-
-/** What the screen says while it is waiting to be told. */
-export const JOIN_HELD_NOTE =
-	"Nothing syncs until you pick one. Your notes stay on this device either way.";
+export const NO_VAULTS_YET = "No cloud vaults yet.";
 
 /** The row for one vault: the name, and the little Knap will say about it. */
 export function vaultRowLines(vault: ShareLike): string[] {
@@ -177,25 +169,15 @@ export function vaultRowLines(vault: ShareLike): string[] {
 	return lines;
 }
 
-/** The button that starts a new one, with the name it will carry. */
-export function newVaultLabel(vaultName: string): string {
-	return `Start a new vault called ${vaultName}`;
-}
-
 /**
- * What starting a new one does, said next to the button.
+ * The button that starts a new one.
  *
- * The name comes from Obsidian because there is nowhere else to get one and no
- * screen here worth spending on a text field. It is a name, not a key: nothing
- * matches on it afterwards, which is why renaming the vault later is harmless
- * and why this line does not warn about it.
+ * It does not name the vault it is about to make. The name comes from this
+ * local vault, which is the word at the top of the window somebody is looking
+ * at, and putting it in a button label spends a line on a fact already on the
+ * screen.
  */
-export function newVaultLine(vaultName: string): string {
-	return (
-		`It takes its name from this local vault, so your cloud vault will be called ${vaultName}, ` +
-		"and everything here uploads into it."
-	);
-}
+export const NEW_VAULT_LABEL = "Create new";
 
 /**
  * What joining an existing vault does to the notes already here, said first.
@@ -220,10 +202,13 @@ export function joinConfirmation(vaultName: string, localFiles: number): string 
 	);
 }
 
-/** The button that joins it, with the name on it so nobody presses it blind. */
-export function joinButtonLabel(vaultName: string): string {
-	return `Sync with ${vaultName}`;
-}
+/**
+ * The button on a row.
+ *
+ * One word. The row it sits in carries the vault's name a centimetre to the
+ * left, so repeating it in the button is the same string twice on one line.
+ */
+export const JOIN_LABEL = "Sync";
 
 /** The button that starts the clean-up, on the one screen that offers it. */
 export const REPLACE_FOLDERS_LABEL = "Sync the whole vault";

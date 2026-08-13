@@ -75,3 +75,137 @@ export function readKnapMeta(ydoc: Y.Doc): KnapMeta | null {
 	}
 	return { scope, vault: typeof vault === "string" ? vault : "" };
 }
+
+/**
+ * Which local vaults sync this cloud vault, and on what.
+ *
+ * A cloud vault is one thing and the local vaults pointed at it are many:
+ * since the picker (#55) they can be called different things, sit on different
+ * machines, and run different builds of this plugin. Knap's page draws the
+ * cloud vault and had no way to name any of them.
+ *
+ * **It goes in the same document and for the same reasons as the key above.**
+ * The document is the cloud vault, so an entry in it is per cloud vault by
+ * construction, with nothing to join and nothing to attribute. Both sides
+ * already hold it open, so writing costs no request and no relay token, and
+ * reading costs the replica a dict lookup on an event it was getting anyway.
+ * Upstream neither reads nor writes it.
+ *
+ * A map of its own rather than more keys in `knap_v0`, because the two carry
+ * different shapes: that one is two strings about the vault, this one is a
+ * row per device. Versioned in its own name for the same reason as both.
+ *
+ * **One key per device, so nobody overwrites anybody.** The vault's name in
+ * `knap_v0` is a single value and two devices disagreeing about it settle on
+ * whichever wrote last; here each device owns its own key, keyed by the id
+ * Obsidian gives this vault on this machine. Two devices are two rows and
+ * always were two rows.
+ */
+export const KNAP_DEVICES_KEY = "knap_devices_v0";
+
+/** One local vault, as the device syncing it describes itself. */
+export interface KnapDevice {
+	/** What Obsidian calls this vault on this device. */
+	vault: string;
+	/** Desktop or mobile, which is as specific as Obsidian will say. */
+	platform: string;
+	/** The plugin build writing this, so a stale device is recognisable. */
+	version: string;
+	/** When this device last connected, epoch milliseconds. */
+	seen: number;
+}
+
+/**
+ * How often a device rewrites its own row when nothing else about it changed.
+ *
+ * The row exists to answer "which devices sync this vault, and when was each
+ * of them last here". A timestamp that only moves when somebody renames their
+ * vault would answer the first half and lie about the second, and a timestamp
+ * rewritten on every reconnect turns a flaky connection into a stream of
+ * updates every other device receives. An hour is longer than a reconnect
+ * storm and shorter than a working day, which is the resolution the screen
+ * reading this actually shows.
+ */
+export const DEVICE_STAMP_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
+ * Say that this local vault syncs this cloud vault, if that has changed.
+ *
+ * Returns whether anything was written, on the same terms as the stamp above:
+ * called on every connect, quiet when there is nothing new to say.
+ */
+export function stampKnapDevice(
+	ydoc: Y.Doc,
+	installId: string,
+	device: KnapDevice,
+): boolean {
+	const id = installId.trim();
+	if (!id) return false;
+	const devices = ydoc.getMap<string>(KNAP_DEVICES_KEY);
+	const mine = readDevice(devices.get(id));
+	if (
+		mine &&
+		mine.vault === device.vault &&
+		mine.platform === device.platform &&
+		mine.version === device.version &&
+		device.seen - mine.seen < DEVICE_STAMP_INTERVAL_MS
+	) {
+		return false;
+	}
+	ydoc.transact(() => {
+		devices.set(id, JSON.stringify(device));
+	});
+	return true;
+}
+
+/**
+ * Take this local vault's row out, when it stops syncing this cloud vault.
+ *
+ * Leaving is the one moment a device knows it is gone. Everything else that
+ * ends a row -- a laptop that was wiped, a vault deleted in Obsidian -- ends
+ * it silently, which is why the reader ages rows out rather than trusting
+ * this to have run.
+ */
+export function forgetKnapDevice(ydoc: Y.Doc, installId: string): boolean {
+	const devices = ydoc.getMap<string>(KNAP_DEVICES_KEY);
+	if (!devices.has(installId)) return false;
+	ydoc.transact(() => {
+		devices.delete(installId);
+	});
+	return true;
+}
+
+/** Every device that has said it syncs this cloud vault. */
+export function readKnapDevices(ydoc: Y.Doc): Record<string, KnapDevice> {
+	const devices = ydoc.getMap<string>(KNAP_DEVICES_KEY);
+	const out: Record<string, KnapDevice> = {};
+	for (const [id, raw] of devices.entries()) {
+		const one = readDevice(raw);
+		if (one) out[id] = one;
+	}
+	return out;
+}
+
+/**
+ * One row, or nothing.
+ *
+ * Read defensively, the way `readKnapMeta` is and for the same reason: the
+ * writer is a plugin that ships separately and updates on its own schedule, so
+ * a row of the wrong shape is a version skew rather than a bug, and this runs
+ * inside a sync callback that must not throw.
+ */
+function readDevice(raw: unknown): KnapDevice | null {
+	if (typeof raw !== "string" || !raw) return null;
+	try {
+		const parsed = JSON.parse(raw) as Partial<KnapDevice>;
+		if (typeof parsed !== "object" || parsed === null) return null;
+		return {
+			vault: typeof parsed.vault === "string" ? parsed.vault : "",
+			platform: typeof parsed.platform === "string" ? parsed.platform : "",
+			version: typeof parsed.version === "string" ? parsed.version : "",
+			seen: typeof parsed.seen === "number" ? parsed.seen : 0,
+		};
+	} catch {
+		return null;
+	}
+}

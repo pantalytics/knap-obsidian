@@ -1,19 +1,16 @@
 import {
 	cloudVaults,
 	decideVaultShare,
-	joinButtonLabel,
 	joinConfirmation,
-	newVaultLabel,
-	newVaultLine,
 	planFolderCleanup,
 	replaceFoldersConfirmation,
 	replaceFoldersFailedLine,
 	replaceFoldersLine,
 	vaultRowLines,
 	CHOOSE_A_VAULT,
-	JOIN_HELD_NOTE,
+	JOIN_LABEL,
+	NEW_VAULT_LABEL,
 	NO_VAULTS_YET,
-	VAULT_CHOICE_IS_YOURS,
 	VAULT_SCOPE_NOTE,
 	REPLACE_FOLDERS_LABEL,
 	type LocalShare,
@@ -190,13 +187,19 @@ describe("what a row says about a vault", () => {
 });
 
 describe("joining one, and starting one", () => {
-	test("the button carries the vault's name, so nobody presses it blind", () => {
-		expect(joinButtonLabel("Second Brain")).toBe("Sync with Second Brain");
+	test("the buttons are one word each", () => {
+		// The row carries the vault's name a centimetre to the left, and the
+		// local vault's name is the word at the top of the window. Repeating
+		// either in a button label is the same string twice on one line.
+		expect(JOIN_LABEL).toBe("Sync");
+		expect(NEW_VAULT_LABEL).toBe("Create new");
 	});
 
-	test("a new vault takes its name from Obsidian, and the button says which", () => {
-		expect(newVaultLabel("Second Brain")).toBe("Start a new vault called Second Brain");
-		expect(newVaultLine("Second Brain")).toContain("cloud vault will be called Second Brain");
+	test("nothing under the list explains the list", () => {
+		// The heading is a label, not an instruction: rows that are vaults with
+		// a Sync button on them do not need a sentence saying to pick one.
+		expect(CHOOSE_A_VAULT).toBe("Cloud vaults");
+		expect(NO_VAULTS_YET).toBe("No cloud vaults yet.");
 	});
 
 	test("joining says both directions, because it moves notes both ways", () => {
@@ -223,14 +226,6 @@ describe("the copy that goes with it", () => {
 		expect(note).toContain("plugins");
 	});
 
-	test("the rule on screen is the rule the code follows", () => {
-		// decideVaultShare matches on nothing at all: the list is shown and a
-		// person picks. Nothing may promise that a name lines two vaults up.
-		const said = VAULT_CHOICE_IS_YOURS.toLowerCase();
-		expect(said).toContain("you pick");
-		expect(said).toContain("do not have to match");
-	});
-
 	test("nothing on screen claims a name matches anything", () => {
 		for (const line of onScreen()) {
 			expect(line.toLowerCase()).not.toContain("the same name");
@@ -250,15 +245,12 @@ describe("the copy that goes with it", () => {
 	/** Every string this module puts in front of a person. */
 	const onScreen = (): string[] => [
 		VAULT_SCOPE_NOTE,
-		VAULT_CHOICE_IS_YOURS,
 		CHOOSE_A_VAULT,
 		NO_VAULTS_YET,
-		JOIN_HELD_NOTE,
-		joinButtonLabel("Second Brain"),
+		JOIN_LABEL,
+		NEW_VAULT_LABEL,
 		joinConfirmation("Second Brain", 1),
 		joinConfirmation("Second Brain", 2561),
-		newVaultLabel("Second Brain"),
-		newVaultLine("Second Brain"),
 		...vaultRowLines(
 			folderShare("V", "1", { created_at: "2026-08-11T09:14:00Z", is_owner: false }),
 		),

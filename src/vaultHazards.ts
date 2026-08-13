@@ -293,7 +293,7 @@ export function syncPluginHazard(
 			? `${names} ${are} switched on in this vault, and ${they} ${sync} the same notes Knap does. ` +
 				"Two systems writing one note means the last write wins and the other one is lost."
 			: `${names} ${are} switched on in this vault, and so is Knap. ` +
-				"Two sync systems on one folder is how a note comes back as a conflicted copy, or comes back empty.",
+				"Two sync systems on one vault is how a note comes back as a conflicted copy, or comes back empty.",
 	];
 	for (const plugin of others) {
 		if (plugin.note) lines.push(plugin.note);
@@ -345,7 +345,7 @@ export function cloudFolderHazard(
 		blocking: false,
 		notice: `This vault is in ${drive}, and Knap syncs it too.`,
 		lines: [
-			`This vault sits in a ${drive} folder, so ${drive} and Knap are both syncing the same files. ` +
+			`This vault sits inside ${drive}, so ${drive} and Knap are both syncing the same files. ` +
 				"That is how a note turns into a conflicted copy, or reads as empty here while it is still being fetched.",
 			onPhone
 				? `Knap carries on. To keep them apart on a phone, make a new vault in Obsidian stored on this device rather than in ${drive}, ` +
