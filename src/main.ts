@@ -135,7 +135,9 @@ import {
 	readVaultHazards,
 	topHazard,
 	type Hazard,
+	type VaultReader,
 } from "./vaultHazards";
+import { vaultChecklist, type Check } from "./vaultChecklist";
 
 interface DebugSettings {
 	debugging: boolean;
@@ -1296,6 +1298,55 @@ export default class Live extends Plugin {
 	 */
 	public readVaultHazards(): Hazard[] {
 		return this.vaultHazards;
+	}
+
+	/**
+	 * The three questions asked out loud, for the screen that puts a vault in
+	 * the cloud.
+	 *
+	 * Same reading as the hazards, drawn differently: the checklist shows what
+	 * it looked at and found fine, which is what somebody about to press the
+	 * button wants and is noise on a vault that is already syncing.
+	 */
+	public checkVault(): Check[] {
+		const vault = this.readVaultState();
+		if (!vault) {
+			// The reading is what failed, not the vault. An empty list draws no
+			// rows, and the screen treats that as nothing found rather than as
+			// three ticks.
+			return [];
+		}
+		return vaultChecklist(vault);
+	}
+
+	/**
+	 * What this machine can say about the vault, for either reader.
+	 *
+	 * None of it leaves here: the path is compared against a handful of
+	 * strings on this machine and only the name of the service ever reaches a
+	 * screen (ADR-0003).
+	 */
+	private readVaultState(): VaultReader | undefined {
+		const adapter = this.app.vault.adapter as unknown as {
+			getBasePath?: () => string;
+			basePath?: string;
+		};
+		try {
+			const loaded = loadedPluginIds((this.app as unknown as ObsidianApp).plugins);
+			const core = enabledCorePluginIds((this.app as unknown as ObsidianApp).internalPlugins);
+			return {
+				// Desktop has `getBasePath()`, the phone adapter has
+				// `basePath`, and a vault whose path neither will give up is
+				// simply not checked for a cloud folder.
+				basePath: adapter?.getBasePath?.() ?? adapter?.basePath ?? "",
+				loadedPlugins: loaded ?? [],
+				loadedCorePlugins: core ?? [],
+				onPhone: Platform.isMobileApp,
+			};
+		} catch (e: unknown) {
+			this.warn("Could not read what else syncs this vault", e);
+			return undefined;
+		}
 	}
 
 	public refreshVaultHazards(): Hazard[] {

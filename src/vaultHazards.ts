@@ -64,7 +64,7 @@ export interface Hazard {
 }
 
 /** A sync plugin we know by name, and what having it on means. */
-interface KnownPlugin {
+export interface KnownPlugin {
 	id: string;
 	/** What the person sees it called in Obsidian's settings. */
 	name: string;
