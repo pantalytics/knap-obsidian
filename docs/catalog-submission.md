@@ -6,12 +6,13 @@ what is genuinely left. Everything here was read off
 the [developer policies](https://docs.obsidian.md/Developer+policies), the
 [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines)
 and [*The future of Obsidian plugins*](https://obsidian.md/blog/future-of-plugins/),
-or measured against this repo and the live catalog, on 2026-08-11.
+or measured against this repo and the live catalog, on 2026-08-11 and
+re-measured on 2026-08-13.
 
-Two things changed under this document since the 2026-08-10 draft, and both
-change the work: most of the mechanical checklist is now done, and the review
-that stood between us and the catalog turned out to be a machine rather than a
-person.
+**As of 1.12.1 every check this document lists is green and one step is left:
+the submission itself, which is a form somebody has to sign into with an
+Obsidian account.** Nothing in the repo is holding it up. Jump to
+[What is left](#what-is-left).
 
 ## How the catalog actually works
 
@@ -60,20 +61,21 @@ the lockfile rather than from our own code.
 
 ## What this repo already satisfies
 
-Verified against the live repo and the live catalog on 2026-08-11, not assumed.
+Verified against the live repo and the live catalog on 2026-08-13, not assumed.
 
 | Requirement | State |
 |---|---|
 | Repository is public | Public. This was the blocker in the previous draft and it is gone. |
 | `README.md`, `LICENSE`, `manifest.json` in the repo root | Present. CI checks they stay present. |
 | Default branch carries the Knap manifest and README | `knap/fork-base` is the default branch and holds both. There is no `main`, so there is nothing to merge first. |
-| Plugin id unique across published plugins | `synced-vaults` is free: re-checked against all 6582 entries in `community-plugins.json` on 2026-08-12, after the rename off `knap-sync`. The id stayed there when the name went back to Knap (ADR-0045). The name was checked separately on 2026-08-12 against all 6588 entries then published: no plugin is called Knap and none carries the word in its name. |
+| Plugin id unique across published plugins | `synced-vaults` is free: re-checked against all 6620 entries in `community-plugins.json` on 2026-08-13. The id stayed `synced-vaults` when the name went back to Knap (ADR-0045). The name was checked in the same pass: no published plugin is called Knap and none carries the word in its id or name. |
 | Plugin id does not contain `obsidian` | `synced-vaults`. CI checks it. |
 | Name does not read as a first-party Obsidian product | Knap. It is the product's own name and says nothing about Obsidian. CI checks for "Obsidian". |
 | `manifest.json` carries id, name, version, minAppVersion, description, author, `isDesktopOnly` | All set. `isDesktopOnly: false`, so the phone is a supported target and the scan will hold it to that. |
 | Semantic version, matching across manifest, package.json, versions.json, manifest-beta.json | CI fails the build when any two disagree. |
-| Release tagged bare semver, equal to `manifest.version` | 1.1.41 and 1.1.42 are published. `release.yml` refuses a `v` prefix and refuses a tag that differs from the manifest. 1.1.43 still needs tagging, see below. |
-| Release carries `main.js`, `manifest.json`, `styles.css` | All three are attached to 1.1.42, with build provenance attestation. |
+| Release tagged bare semver, equal to `manifest.version` | The newest is **1.12.1**, tagged `1.12.1`, equal to `manifest.version` on the default branch. `release.yml` refuses a `v` prefix and refuses a tag that differs from the manifest. |
+| Release carries `main.js`, `manifest.json`, `styles.css` | All three are attached to 1.12.1 as binary assets, uploaded by the release workflow with build provenance attestation. |
+| Default branch and newest release agree | Both are commit `8072238`. The shop window and the warehouse say 1.12.1, `synced-vaults`, Knap. |
 | Licence and attribution for forked code | `LICENSE` carries all three copyright lines, `NOTICE` records the fork point and every vendored dependency. |
 | Required disclosures in the README | Network use was already there. 1.1.43 adds that an account is required, that a relay can charge and where its billing screen lives, and that signing in through Google, GitHub, Microsoft or Discord loads that provider's page. |
 | No client-side telemetry | None. The policy prohibits it outright, and nothing in `src/` reaches an analytics service. |
@@ -101,12 +103,13 @@ warnings to **0 errors and 5 warnings**:
 | `obsidianmd/settings-tab/prefer-setting-definitions`, 1 | Left. The rule assumes a tab built from `new Setting()` rows; ours mounts a Svelte app, so there is nothing to enumerate without rebuilding the settings UI. |
 | `no-undef` on `require`, 1 | Left. `customFetch.ts` lazily requires the eventsource polyfill on desktop only, and esbuild resolves it at build time. |
 
-The four left are warnings with a reason, not oversights. Preview the scan the
-way the directory runs it, ignoring our own tuning:
-
-```bash
-npx eslint src/ --config <(printf 'import o from "eslint-plugin-obsidianmd";\nexport default [...(o.default??o).configs.recommended];\n')
-```
+The four left are warnings with a reason, not oversights. The command that
+previews the scan the directory's way is under
+[What is left](#verified-on-2026-08-13-against-1121), along with the numbers it
+gives today. Two things about it changed since this section was written: the
+config needs `parserOptions.projectService` or the typed rules refuse to load,
+and a `<(printf ...)` process substitution does not survive ESLint's ESM loader,
+so the config has to be a real file.
 
 One thing this does not settle: the directory runs its own configuration, so our
 `brands` and `ignoreRegex` entries may not reach it. If the scorecard comes back
@@ -115,57 +118,75 @@ rather than the lint's.
 
 ## What is left
 
-### 1. Click through a vault
+One step, and it is not a repository change.
 
-`npm audit --omit=dev` reports nothing at all as of 1.2.0. uuid went to
-`^11.1.1` in 1.1.43 and svelte to 5 in 1.2.0, which closed the last one.
+### Submit at community.obsidian.md
 
-What that migration cost is a testing debt, and it is the honest reason this
-step exists. Svelte 5 removed the client component API: `new Component()`
-throws at runtime while still type-checking, so the fifteen call sites that
-moved to `mount()` cannot be validated by `tsc`, `eslint` or the 441 unit
-tests. All four are green and none of them opens a modal.
+1. Sign in at [community.obsidian.md](https://community.obsidian.md) with an
+   **Obsidian account**. This is the account from obsidian.md, not a GitHub
+   login and not a Knap account.
+2. Link the GitHub account that can prove ownership of
+   `pantalytics/knap-obsidian`, so the directory can verify the repo is ours.
+3. Add the plugin, pick `pantalytics/knap-obsidian`, and complete the form.
+4. Run the dashboard's preview scan before submitting. It is the same ruleset
+   previewed below, run the directory's way, and it is the only place the
+   directory's own configuration shows itself.
 
-What to exercise, in a real vault, before tagging:
+Only the first version goes in by hand. After that Obsidian picks up new
+GitHub releases on its own and scans each one.
 
-- The settings tab, including a deep link into a share, which is the `$set`
-  that became a store.
-- Each modal: debug, self-host, user select, share folder, add to vault,
-  feature flags, IndexedDB analysis, endpoint config. The endpoint config
-  modal's Apply button in particular, since its two events became callback
-  props.
-- The folder pill in the file explorer while a sync runs, so the progress
-  updates land, and the upload tag on a file.
-- The connection dot in a note's view actions, and the same in a canvas.
+**This step cannot be automated from a session in this repo, and that is not a
+tooling gap to route around.** It is an authenticated form behind a personal
+Obsidian account, and the account linking exists precisely to prove a human who
+owns the repo is the one submitting. Somebody with the account does it.
 
-### 2. Cut the release
+### Verified on 2026-08-13, against 1.12.1
 
-The published releases are 1.1.41 and 1.1.42, both of which predate the scan
-fixes. Submitting against either would put the version with the findings in
-front of the scanner, so tag first:
+Everything the form and the scan will look at, re-run rather than remembered:
+
+| Check | Result |
+|---|---|
+| Repo public, MIT `LICENSE`, `README.md`, `manifest.json` in root | Present. |
+| Default branch `knap/fork-base` manifest | `synced-vaults`, Knap, 1.12.1, `minAppVersion` 1.8.7, `isDesktopOnly: false`. |
+| Newest release | `1.12.1`, bare semver, matching the manifest, `main.js` + `manifest.json` + `styles.css` attached. |
+| Default branch == release commit | Both `8072238`. |
+| `id` and name free in the live catalog | Checked against all 6620 entries. |
+| `npm audit --omit=dev` | 0 vulnerabilities. |
+| Untuned `eslint-plugin-obsidianmd` `recommended` over `src/` | **0 errors, 12 warnings.** |
+
+The 12 warnings are the four this document already argues are warnings-with-a-
+reason, plus the six `30 Days` title-case false positives, plus two more
+`no-deprecated` hits on lib0's `Observable` in `src/client/provider.ts`. None is
+an error, and none is new.
+
+Reproduce the scan the way the directory runs it, ignoring our own tuning. The
+config needs type information, so a bare `--config` with only the recommended
+spread will not run:
 
 ```bash
-git tag 1.2.0         # bare semver, exactly the value in manifest.json
-git push origin 1.2.0
+cat > eslint.config.scan.tmp.mjs <<'EOF'
+import o from "eslint-plugin-obsidianmd";
+export default [
+	...(o.default ?? o).configs.recommended,
+	{
+		languageOptions: {
+			parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+		},
+	},
+];
+EOF
+npx eslint src/ --config eslint.config.scan.tmp.mjs; rm -f eslint.config.scan.tmp.mjs
 ```
 
-The release workflow builds, attests provenance and attaches the three assets.
-`workflow_dispatch` rebuilds a tag if a run needs repeating.
+### What was not verified from here
 
-1.1.43 was merged but never tagged, so it is available as a checkpoint release
-if you want the lint and bug fixes out separately from the framework
-migration. Tag it on the commit that merged it. Note that a session running in
-this environment cannot do either: the git credential is scoped to branch refs
-and a push to `refs/tags/*` comes back 403.
-
-### 3. Submit at community.obsidian.md
-
-Sign in with an Obsidian account, link the GitHub account that owns
-`pantalytics/knap-obsidian`, pick the repo, complete the form. The dashboard
-also offers a preview scan, which is worth running even after all of the above.
-
-Only the first version is submitted by hand. After that Obsidian picks up new
-releases from GitHub on its own, and scans each one.
+- **A click through a real vault.** The Svelte 5 migration in 1.2.0 traded a
+  compile-time guarantee for a runtime one — `mount()` call sites that `tsc`,
+  eslint and the unit tests all pass without exercising — and ten minor
+  versions of UI work have landed on top of it since. That is a reason to open
+  a vault before submitting, not a reason to wait. Modals, the settings tab,
+  the folder pill during a sync, and the connection dot in a note and a canvas
+  are the places where a broken mount would show.
 
 ## What review is likely to ask about
 
