@@ -180,35 +180,30 @@ export function vaultRowLines(vault: ShareLike): string[] {
 export const NEW_VAULT_LABEL = "Create new";
 
 /**
- * What joining an existing vault does to the notes already here, said first.
+ * What joining an existing vault does to the notes already here.
  *
- * This is the sharp edge of picking rather than matching. Joining pours a
- * vault that is already on Knap into this folder on disk, and if there is
- * anything here it ends up holding both. Obsidian's own answer is to start
- * from an empty vault, so that is what the sentence says, and it says it with
- * the number that makes it concrete.
+ * Three short sentences, and none of them names a vault or counts a file.
+ * Earlier drafts did both: they spelled out the two directions, put the cloud
+ * vault's name in twice, and printed the number of files on this device. All of
+ * that is detail about a merge nobody is being asked to plan. The question is
+ * only whether to sync these two at all, and the one thing somebody wants to
+ * know before answering it is whether anything can go missing.
  *
- * The outcome comes first, in four words, because that is the decision being
- * made: everything, in both vaults. The two directions under it are what it
- * means, not a second telling of it. An earlier draft said the upload twice,
- * once as *everything here uploads* and again as *stays where it is, and ends
- * up on Knap too*, and spent the vault's name twice on a dialog where the name
- * can be forty characters of date and initials.
+ * So the last sentence is the one that matters, and it is short enough to be
+ * read: nothing is lost. The middle one says what "combination" means for the
+ * case where both sides hold notes, which is the only case this dialog is shown
+ * for. The way out that used to end it - make an empty vault in Obsidian and
+ * start from there - is gone with the rest of the detail; combining is what
+ * somebody pressing Sync on a vault wants, and it costs nothing to undo by
+ * hand.
  *
- * One paragraph, because `confirmDialog` renders the message as one.
+ * A constant rather than a function, because it says the same thing about every
+ * vault. One paragraph, because `confirmDialog` renders the message as one.
  */
-export function joinConfirmation(vaultName: string, localFiles: number): string {
-	// Grouped, the way syncStatus writes its counts: a vault holds thousands of
-	// files, and 2933 is a number somebody has to read twice.
-	const here =
-		localFiles === 1
-			? "the one file already here uploads"
-			: `the ${localFiles.toLocaleString("en-US")} files already here upload`;
-	return (
-		`Both end up with everything: ${vaultName} downloads into this local vault, and ${here} into it. ` +
-		"To keep them apart, sync from an empty vault in Obsidian instead."
-	);
-}
+export const JOIN_CONFIRMATION =
+	"This will sync your local and cloud vault. " +
+	"If both vaults contain notes, the result is the combination. " +
+	"No data is lost.";
 
 /**
  * The button on a row.

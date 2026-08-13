@@ -13,13 +13,13 @@
 	import { customFetch } from "../customFetch";
 	import {
 		decideVaultShare,
-		joinConfirmation,
 		planFolderCleanup,
 		replaceFoldersConfirmation,
 		replaceFoldersFailedLine,
 		replaceFoldersLine,
 		vaultRowLines,
 		CHOOSE_A_VAULT,
+		JOIN_CONFIRMATION,
 		JOIN_LABEL,
 		NEW_VAULT_LABEL,
 		NO_VAULTS_YET,
@@ -299,8 +299,9 @@
 	 * Joining a local vault that already holds files asks once, and that
 	 * question is the only one worth asking here: the vault on Knap downloads
 	 * into this folder and whatever is here uploads into it, so both end up
-	 * holding both. An empty vault, which is what somebody setting up a second
-	 * device has, goes straight through.
+	 * holding both. The dialog says that as a combination that loses nothing,
+	 * which is the fact somebody needs before answering. An empty vault, which
+	 * is what somebody setting up a second device has, goes straight through.
 	 *
 	 * There is no pre-flight. Detecting what else syncs this folder was a
 	 * screen of its own for a while, and it cost three questions and a page to
@@ -317,10 +318,7 @@
 		if (vault) {
 			const here = plugin.app.vault.getFiles().length;
 			if (here > 0) {
-				const agreed = await confirmDialog(
-					plugin.app,
-					joinConfirmation(vault.path, here),
-				);
+				const agreed = await confirmDialog(plugin.app, JOIN_CONFIRMATION);
 				if (!agreed) return;
 			}
 		}
