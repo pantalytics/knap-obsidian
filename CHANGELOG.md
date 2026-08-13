@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.11.0
 - The two halves of a vault have names now: the one Obsidian has open on this device is your **local vault**, and the one on Knap is your **cloud vault**. Everything about joining used to be said without a word for either, so the screen fell back to *Knap already has a vault called X* and left somebody to work out which of the two it meant. The entries below say which half they mean, everywhere both are in the same sentence.
 - Starting a vault on Knap, or joining one, shows a checklist first: Obsidian Sync off, no other sync plugin running, and the vault folder not inside iCloud, OneDrive, Dropbox or Google Drive. The plugin already knew all three and only ever said the most serious one, as a warning; a person about to put their notes in the cloud gets the list with ticks against it instead, including the ones that came back fine. A second copy of Knap is the only thing that stops the button, because that one is two writers on one note. The rest say what it costs and let you carry on, since turning off a sync you pay for is a migration you schedule. *Check again* re-runs all three, so you can go and switch something off and come back.
 - The list of vaults is drawn even when something else is syncing this vault. Up to now a blocking warning replaced the whole screen, so you were told no before you had seen what you were being told no about.
