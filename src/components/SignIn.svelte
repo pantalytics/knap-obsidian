@@ -793,7 +793,14 @@
 
 	/* One vault, one button, so pressing it anywhere joins it. The facts sit
 	   under the name at caption weight, and the words that say what pressing
-	   does sit on the right where a value would be. */
+	   does sit on the right where a value would be.
+
+	   `height: auto` and `white-space: normal` are not decoration. Obsidian
+	   gives every button `height: var(--input-height)` and `white-space:
+	   nowrap`, which fits a button with one word in it and not a row of two
+	   lines: the box stayed one line tall, the date and the word Sync fell
+	   out below the border, and the Create new button underneath was drawn
+	   over them. */
 	.knap-vault {
 		display: grid;
 		grid-template-columns: 1fr auto;
@@ -801,6 +808,8 @@
 		gap: 2px 12px;
 		align-items: center;
 		width: 100%;
+		height: auto;
+		white-space: normal;
 		padding: 10px 12px;
 		margin-top: 6px;
 		background: transparent;
@@ -919,12 +928,17 @@
 	}
 
 	/* A setting row that happens to be a button, so it reads as a place to go
-	   and still lines up with the rows above it. */
+	   and still lines up with the rows above it. Same height reset as the
+	   vault row: a setting row is taller than the button height Obsidian
+	   hands out, so without it the hover background is a band across the
+	   middle of the text. */
 	.knap-row-link {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		width: 100%;
+		height: auto;
+		white-space: normal;
 		box-shadow: none;
 		background: transparent;
 		text-align: left;

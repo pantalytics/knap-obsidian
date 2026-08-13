@@ -1,7 +1,10 @@
 # Changelog
 
-## 1.12.1
+## 1.12.2
 - The question in front of syncing a vault that already holds notes is three short sentences: *This will sync your local and cloud vault. If both vaults contain notes, the result is the combination. No data is lost.* It used to spell out both directions, say the upload twice, print the cloud vault's name twice in a dialog where that name can be forty characters of date and initials, and count the files on this device. None of that is a decision anybody is being asked to make. The one thing somebody wants to know before pressing Confirm is whether anything can go missing, so that is the sentence it ends on.
+
+## 1.12.1
+- A vault in the list is drawn inside its own box again. The row is a button, and Obsidian gives every button one line of height and forbids it to wrap, which fitted the row until it grew a second line: the day the vault was added and the word Sync fell out under the border, and the Create new button underneath was drawn over the top of them. The row is as tall as what is in it now. The Dashboard row is a button of the same kind and had the same thing wrong with it, one line high with a setting row's worth of content in it.
 
 ## 1.12.0
 - Every device that syncs a cloud vault now says so, so Knap's page can list the local vaults behind one cloud vault instead of the sign-ins on your account. Each device writes one row into the vault's own document: what the vault is called here, whether this is a laptop or a phone, which plugin build is running, and when it last connected. It is keyed by the id Obsidian already gives this vault on this machine, so two devices are two rows and neither can overwrite the other, and the row goes when the vault stops syncing here. It costs no request and nothing from the rate limit: the document is one both sides already hold open.
