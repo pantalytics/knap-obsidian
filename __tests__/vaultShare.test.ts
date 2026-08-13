@@ -1,7 +1,7 @@
 import {
 	cloudVaults,
 	decideVaultShare,
-	joinConfirmation,
+	JOIN_CONFIRMATION,
 	planFolderCleanup,
 	replaceFoldersConfirmation,
 	replaceFoldersFailedLine,
@@ -202,19 +202,27 @@ describe("joining one, and starting one", () => {
 		expect(NO_VAULTS_YET).toBe("No cloud vaults yet.");
 	});
 
-	test("joining says both directions, because it moves notes both ways", () => {
-		const said = joinConfirmation("Clients", 42);
-		expect(said).toContain("Clients downloads into this local vault");
-		expect(said).toContain("uploads into Clients");
+	test("joining says the two halves sync, and what that leaves behind", () => {
+		expect(JOIN_CONFIRMATION).toBe(
+			"This will sync your local and cloud vault. " +
+				"If both vaults contain notes, the result is the combination. " +
+				"No data is lost.",
+		);
 	});
 
-	test("it counts what is already here, in words a person would use", () => {
-		expect(joinConfirmation("V", 1)).toContain("The one file already in this vault stays");
-		expect(joinConfirmation("V", 9)).toContain("The 9 files already in this vault stay");
+	test("it ends on the thing somebody is actually afraid of", () => {
+		// Three sentences, and the last one answers the question being asked. It
+		// stays last and it stays short enough to be read.
+		const sentences = JOIN_CONFIRMATION.split(". ");
+		expect(sentences).toHaveLength(3);
+		expect(sentences[2]).toBe("No data is lost.");
 	});
 
-	test("it names the way out, which is Obsidian's own answer", () => {
-		expect(joinConfirmation("V", 3).toLowerCase()).toContain("empty vault");
+	test("it names no vault and counts no file", () => {
+		// The same three sentences about every vault, so it is a constant rather
+		// than a sentence assembled around a name that can be forty characters of
+		// date and initials, or a file count nobody is being asked to check.
+		expect(JOIN_CONFIRMATION).not.toMatch(/\d/);
 	});
 });
 
@@ -249,8 +257,7 @@ describe("the copy that goes with it", () => {
 		NO_VAULTS_YET,
 		JOIN_LABEL,
 		NEW_VAULT_LABEL,
-		joinConfirmation("Second Brain", 1),
-		joinConfirmation("Second Brain", 2561),
+		JOIN_CONFIRMATION,
 		...vaultRowLines(
 			folderShare("V", "1", { created_at: "2026-08-11T09:14:00Z", is_owner: false }),
 		),
