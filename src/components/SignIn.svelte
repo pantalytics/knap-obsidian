@@ -234,6 +234,12 @@
 		const clients = shareClients();
 		if (!clients) return;
 
+		// Before the folders are read, never after: if the share record did
+		// not survive the last update, the vault somebody picked goes back on
+		// before this screen counts what is syncing (#64). Idempotent, and it
+		// does nothing at all in the ordinary case.
+		plugin.restoreRememberedVault();
+
 		const folders = plugin.sharedFolders.items();
 		const vaultShare = folders.find((folder) => folder.isVaultScope);
 		const local = {
@@ -327,7 +333,7 @@
 		joining = vault ? vault.id : "new";
 		try {
 			const joined = vault ?? (await createVault(clients));
-			attachShare(joined.id);
+			attachShare(joined.id, joined.path);
 			syncingWith = joined;
 			choices = undefined;
 		} catch (e: unknown) {
@@ -359,11 +365,15 @@
 	 * The empty path is the vault root, and "vault" is the scope that makes
 	 * every path in the share resolve without a prefix.
 	 */
-	function attachShare(shareId: string) {
+	function attachShare(shareId: string, name?: string) {
 		const folder = plugin.sharedFolders.new("", shareId, "relay-onprem", false, "vault");
 		if (folder?.settings) {
 			folder.settings.onpremServerId = KNAP_SERVER_ID;
 		}
+		// Written down beside the share, which is the whole of #64: this is
+		// the one moment a person answers which cloud vault this one syncs,
+		// and they are not asked it twice.
+		plugin.rememberVault({ id: shareId, name, serverId: KNAP_SERVER_ID });
 		plugin.folderNavDecorations?.quickRefresh();
 		// The folder is brand new and has caught up with nothing yet, so the
 		// row says Syncing the moment it reads it, and the vault is no longer
