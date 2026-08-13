@@ -1,0 +1,123 @@
+# A pull request that goes green merges itself.
+#
+# Nothing here decides what green means. GitHub's own auto-merge does the
+# waiting, and the branch ruleset on `knap/fork-base` names the check it waits
+# for. One list, in one place: a job added to ci.yml is not waited for until
+# somebody adds it to the ruleset on purpose.
+#
+# `knap/fork-base`, not `main`. It is the default branch, for the reason ci.yml
+# already gives at its own push trigger.
+#
+# ── A merge can publish a release, and only one kind can ────────────────────
+# cd.yml watches this branch for a change to manifest.json and cuts the release
+# itself. So a merged pull request that bumps the version publishes it, with
+# nobody in the loop, and every other merge publishes nothing. That was already
+# true of a merge somebody tapped; what changes is that the tap moves earlier,
+# to Ready for review. bump.yml is untouched and is still the way to cut a
+# release without a pull request at all.
+#
+# Three things are never merged:
+#
+#   - A draft. An agent opens its pull request as a draft, so draft is the hold
+#     and Ready for review is the act that means ship it. Converting one back to
+#     draft switches auto-merge off again.
+#   - A pull request from a fork. Its checks run code the fork wrote, so a green
+#     run says nothing about whether it should land.
+#   - Anything at all, while AUTOMERGE_TOKEN is missing.
+#
+# AUTOMERGE_TOKEN is a fine-grained personal access token scoped to this
+# repository alone, with Contents: read and write and Pull requests: read and
+# write. Nothing else. The runner's own GITHUB_TOKEN is deliberately not used,
+# and this repository is where we learned why: a push made with it starts no
+# workflow run, which is the trap bump.yml and cd.yml both carry a comment
+# about. A merge made with GITHUB_TOKEN would land a version bump that cd.yml
+# never sees, and the release would silently not happen.
+#
+# ── What has to be switched on before this does anything ────────────────────
+# 1. Settings -> General -> Pull Requests -> Allow auto-merge.
+# 2. A ruleset on `knap/fork-base` with the CI gate required. Without one, a
+#    pull request is mergeable the moment it is opened, there is nothing to wait
+#    for, and `gh pr merge --auto` refuses with "Pull request is in clean
+#    status". Settings -> Rules -> New branch ruleset, or:
+#
+#      gh api --method POST repos/pantalytics/knap-obsidian/rulesets \
+#        -f name='knap/fork-base' -f target='branch' -f enforcement='active' \
+#        -F 'conditions[ref_name][include][]=refs/heads/knap/fork-base' \
+#        -f 'rules[][type]=required_status_checks' \
+#        -F 'rules[][parameters][strict_required_status_checks_policy]=false' \
+#        -f 'rules[][parameters][required_status_checks][][context]=CI gate'
+#
+#    One check, not five, and that is ci.yml's own design rather than a
+#    shortcut: every other job there carries continue-on-error so that one red
+#    job does not hide the others, and ci-gate is the single check that fails
+#    the run. Requiring the others would be requiring jobs that report green by
+#    construction. It does mean the CI_MODE=REPORT escape hatch now also lets a
+#    pull request merge, so it stays what its own comment says it is, a bad day
+#    rather than the normal state.
+#
+#    A ruleset with no bypass actor also stops a direct push to the branch; add
+#    Repository admin as a bypass in the UI if that is not wanted. bump.yml
+#    pushes the version commit straight to this branch, so it needs that bypass
+#    or it stops working.
+name: Auto-merge
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize, converted_to_draft]
+
+# Nothing here reads the repository. The work is two API calls, made with a
+# token that is not the runner's, so the runner's needs no reach at all.
+permissions: {}
+
+concurrency:
+  group: automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  auto-merge:
+    # A fork's pull request is handed no secrets, so without this it would fail
+    # on the token check below and paint every fork contribution red.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: The token has to be ours
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::AUTOMERGE_TOKEN is not set. Add a fine-grained PAT with Contents and Pull requests write, scoped to this repository. Merging with the runner's GITHUB_TOKEN would land a version bump that cd.yml never sees."
+            exit 1
+          fi
+
+      - name: Switch auto-merge on, or off for a draft
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+        run: |
+          set -euo pipefail
+
+          on=$(gh pr view "$PR" --repo "$REPO" \
+                 --json autoMergeRequest --jq '.autoMergeRequest != null')
+
+          if [ "$DRAFT" = "true" ]; then
+            if [ "$on" = "true" ]; then
+              gh pr merge "$PR" --repo "$REPO" --disable-auto
+              echo "Draft. Auto-merge switched off."
+            else
+              echo "Draft. Nothing to do until it is marked ready for review."
+            fi
+            exit 0
+          fi
+
+          if [ "$on" = "true" ]; then
+            echo "Auto-merge is already on, and a push does not turn it off."
+            exit 0
+          fi
+
+          # Squash: every commit on the default branch is one pull request, and
+          # the history says so. A failure here is usually one of the two
+          # settings in the header, and the message gh prints names which.
+          gh pr merge "$PR" --repo "$REPO" --auto --squash
+          echo "Auto-merge on. This merges itself once the required checks pass."
