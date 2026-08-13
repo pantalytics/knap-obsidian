@@ -11,14 +11,11 @@ name: CI
 
 on:
   pull_request:
-  # Naming the wrong branch here once meant no CI ever ran on a merge: the PR run
-  # was the last word, and anything that only breaks once two PRs are combined
-  # landed unnoticed. Both names are listed because the default branch is being
-  # renamed from knap/fork-base to main, and a trigger naming only one of them
-  # goes dark on whichever side of the rename it is not on. Drop knap/fork-base
-  # once the rename has landed.
+  # This has to name the default branch. Naming anything else once meant no CI
+  # ever ran on a merge: the PR run was the last word, and anything that only
+  # breaks once two PRs are combined landed unnoticed.
   push:
-    branches: [main, knap/fork-base]
+    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
