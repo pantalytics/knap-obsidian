@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.12.1
+- A vault in the list is drawn inside its own box again. The row is a button, and Obsidian gives every button one line of height and forbids it to wrap, which fitted the row until it grew a second line: the day the vault was added and the word Sync fell out under the border, and the Create new button underneath was drawn over the top of them. The row is as tall as what is in it now. The Dashboard row is a button of the same kind and had the same thing wrong with it, one line high with a setting row's worth of content in it.
+
 ## 1.12.0
 - Every device that syncs a cloud vault now says so, so Knap's page can list the local vaults behind one cloud vault instead of the sign-ins on your account. Each device writes one row into the vault's own document: what the vault is called here, whether this is a laptop or a phone, which plugin build is running, and when it last connected. It is keyed by the id Obsidian already gives this vault on this machine, so two devices are two rows and neither can overwrite the other, and the row goes when the vault stops syncing here. It costs no request and nothing from the rate limit: the document is one both sides already hold open.
 - The vault list says less. The heading is *Cloud vaults* rather than a sentence telling you to pick one, the button on a row is *Sync* rather than *Sync with Pantalytics*, and the one under the list is *Create new*. The three lines of explanation under them are gone: the rows are vaults and each carries the word for what pressing it does.
