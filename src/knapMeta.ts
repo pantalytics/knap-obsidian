@@ -35,18 +35,26 @@ export interface KnapMeta {
  * Write the share's identity into its folder document, if it has changed.
  *
  * Idempotent on purpose, and called on every connect rather than once at
- * creation: a share made by an older build carries no key at all, and a vault
- * renamed in Obsidian carries a stale one. Comparing before writing is what
- * keeps that from being an update every device broadcasts on every start.
+ * creation: a share made by an older build carries no key at all. Comparing
+ * before writing is what keeps that from being an update every device
+ * broadcasts on every start.
  *
- * A CRDT map takes the last write, so two devices disagreeing about the vault
- * name settle on whichever wrote last rather than fighting. They only disagree
- * when the same vault is called two things on two machines, which is a thing
- * the person did and not a conflict to resolve.
+ * **The name is written once and never overwritten.** A vault on Knap is now
+ * picked from a list rather than matched by name, so one vault can be open in
+ * local vaults called different things, on purpose and on the same account.
+ * Whichever connected last would otherwise rename it for everybody, and the
+ * name on Knap's page would follow whoever opened Obsidian most recently. The
+ * first device to sync a vault gives it its name, which is the device that
+ * made it, and it keeps that name until somebody has a screen to change it on.
+ *
+ * The scope is not a name and does get corrected: it says which of the two
+ * shapes a share is, both sides compute it the same way, and a share whose
+ * shape changed under an older build has a stale one worth fixing.
  */
 export function stampKnapMeta(ydoc: Y.Doc, meta: KnapMeta): boolean {
 	const map = ydoc.getMap<string>(KNAP_META_KEY);
-	const vault = meta.vault.trim();
+	const named = map.get("vault");
+	const vault = typeof named === "string" && named.trim() ? named : meta.vault.trim();
 	if (map.get("scope") === meta.scope && map.get("vault") === vault) {
 		return false;
 	}

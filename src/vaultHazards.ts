@@ -331,9 +331,9 @@ export function syncPluginHazard(
  * laptop can do; a phone has no file manager that reaches Obsidian's own
  * storage, and on iOS the vault a person makes in Obsidian is offered in
  * iCloud Drive by default, so this warning is one most phone vaults earn. What
- * a phone can do is make a second vault stored on the device and let Knap fill
- * it, which is only useful if the name matches, because the name is what a
- * device joins on (`vaultShare.ts`, `VAULT_NAME_IS_THE_KEY`).
+ * a phone can do is make a second vault stored on the device, sign in there and
+ * pick the same vault on Knap off the list, which is one press and needs no
+ * name typed correctly (`vaultShare.ts`).
  */
 export function cloudFolderHazard(
 	drive: string | undefined,
@@ -349,7 +349,7 @@ export function cloudFolderHazard(
 				"That is how a note turns into a conflicted copy, or reads as empty here while it is still being fetched.",
 			onPhone
 				? `Knap carries on. To keep them apart on a phone, make a new vault in Obsidian stored on this device rather than in ${drive}, ` +
-					"give it the same name as this one, and let Knap fill it. Knap joins a vault by its name."
+					"sign in there, and pick this same vault from the list. Knap fills it from the copy it already has."
 				: `Knap carries on. To keep them apart, quit Obsidian, move the vault somewhere ${drive} does not reach, and open it from there.`,
 		],
 	};
