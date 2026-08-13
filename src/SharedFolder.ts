@@ -2,6 +2,7 @@
 import {
 	App,
 	FileManager,
+	Platform,
 	TAbstractFile,
 	TFile,
 	TFolder,
@@ -64,7 +65,11 @@ import {
 	type ShareScope,
 } from "./vaultScope";
 import { claimVpathIfUnclaimed, awaitVpathClaimSettled, wonVpathClaim } from "./uploadClaim";
-import { stampKnapMeta } from "./knapMeta";
+import { forgetKnapDevice, stampKnapDevice, stampKnapMeta } from "./knapMeta";
+
+// Injected at build time (esbuild `define`), the same way every other module
+// that reports which build it is reads it.
+declare const GIT_TAG: string;
 
 export interface SharedFolderSettings {
 	guid: string;
@@ -353,6 +358,22 @@ export class SharedFolder extends HasProvider {
 				});
 			} catch (e) {
 				this.warn("could not stamp share identity", e);
+			}
+			// And which local vault this is, so Knap's page can list the
+			// devices syncing one cloud vault rather than the account's
+			// sign-ins. Keyed by `appId`, which is Obsidian's own id for this
+			// vault on this machine: stable across a rename, already trusted
+			// by the hash store and the token keys, and nothing this plugin
+			// has to mint or keep.
+			try {
+				stampKnapDevice(this.ydoc, this.appId, {
+					vault: this.vault.getName(),
+					platform: Platform.isMobileApp ? "mobile" : "desktop",
+					version: GIT_TAG,
+					seen: Date.now(),
+				});
+			} catch (e) {
+				this.warn("could not stamp this device", e);
 			}
 			try {
 				void this._persistence.set("path", this.path);
@@ -2600,6 +2621,16 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 	}
 
 	public delete(item: SharedFolder): boolean {
+		// Say so before the document goes. This is the one moment a device
+		// knows it has stopped syncing a cloud vault; everything else that
+		// ends a row -- a wiped laptop, a vault deleted from Knap's page --
+		// ends it silently, which is why the reader ages rows out as well.
+		try {
+			if (item?.ydoc) forgetKnapDevice(item.ydoc, item.appId);
+		} catch {
+			// A document already torn down, or one that never synced. The row
+			// ages out either way, and a deletion is not worth failing over.
+		}
 		item?.destroy();
 		const deleted = super.delete(item);
 		void this.settings.update((current) => {

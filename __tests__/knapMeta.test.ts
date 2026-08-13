@@ -1,5 +1,14 @@
 import * as Y from "yjs";
-import { KNAP_META_KEY, readKnapMeta, stampKnapMeta } from "../src/knapMeta";
+import {
+	DEVICE_STAMP_INTERVAL_MS,
+	KNAP_DEVICES_KEY,
+	KNAP_META_KEY,
+	forgetKnapDevice,
+	readKnapDevices,
+	readKnapMeta,
+	stampKnapDevice,
+	stampKnapMeta,
+} from "../src/knapMeta";
 
 describe("what a share says about itself", () => {
 	test("a vault share says so, and says what the vault is called", () => {
@@ -85,5 +94,126 @@ describe("what a share says about itself", () => {
 
 	test("a document nobody stamped answers nothing rather than guessing", () => {
 		expect(readKnapMeta(new Y.Doc())).toBeNull();
+	});
+});
+
+
+describe("which local vaults sync this cloud vault", () => {
+	const laptop = {
+		vault: "Pantalytics",
+		platform: "desktop",
+		version: "1.11.0",
+		seen: 1_000_000,
+	};
+
+	test("a device says what it is, in a map of its own", () => {
+		const doc = new Y.Doc();
+
+		expect(stampKnapDevice(doc, "app-1", laptop)).toBe(true);
+		expect(readKnapDevices(doc)).toEqual({ "app-1": laptop });
+		// Beside the vault's own key rather than inside it: one carries two
+		// strings about the vault, the other a row per device.
+		expect(doc.getMap(KNAP_META_KEY).size).toBe(0);
+	});
+
+	test("two devices are two rows, and neither overwrites the other", () => {
+		// The whole reason this is keyed by device. The vault's name is a
+		// single value and two devices disagreeing about it settle on
+		// whichever wrote last; these may not.
+		const doc = new Y.Doc();
+		const phone = { ...laptop, vault: "Notes on iPhone", platform: "mobile" };
+
+		stampKnapDevice(doc, "app-1", laptop);
+		stampKnapDevice(doc, "app-2", phone);
+
+		expect(readKnapDevices(doc)).toEqual({ "app-1": laptop, "app-2": phone });
+	});
+
+	test("a local vault called something else is the point, not a conflict", () => {
+		// Since the picker, one cloud vault can be open in local vaults called
+		// different things. That is what makes the row worth drawing.
+		const doc = new Y.Doc();
+		stampKnapDevice(doc, "app-1", laptop);
+		stampKnapDevice(doc, "app-2", { ...laptop, vault: "Werk" });
+
+		expect(Object.values(readKnapDevices(doc)).map((d) => d.vault).sort()).toEqual([
+			"Pantalytics",
+			"Werk",
+		]);
+	});
+
+	test("reconnecting every minute is not an update every minute", () => {
+		// It runs on every connect, and a flaky connection would otherwise be
+		// a stream of updates every other device receives.
+		const doc = new Y.Doc();
+		stampKnapDevice(doc, "app-1", laptop);
+
+		let updates = 0;
+		doc.on("update", () => {
+			updates += 1;
+		});
+		expect(stampKnapDevice(doc, "app-1", { ...laptop, seen: laptop.seen + 60_000 })).toBe(
+			false,
+		);
+		expect(updates).toBe(0);
+	});
+
+	test("an hour later the row moves, so last seen means something", () => {
+		const doc = new Y.Doc();
+		stampKnapDevice(doc, "app-1", laptop);
+		const later = { ...laptop, seen: laptop.seen + DEVICE_STAMP_INTERVAL_MS + 1 };
+
+		expect(stampKnapDevice(doc, "app-1", later)).toBe(true);
+		expect(readKnapDevices(doc)["app-1"].seen).toBe(later.seen);
+	});
+
+	test("a rename or an upgrade is written through at once", () => {
+		// Neither waits for the hour: they are what the row says about itself,
+		// and a stale one is what somebody would notice.
+		const doc = new Y.Doc();
+		stampKnapDevice(doc, "app-1", laptop);
+
+		expect(stampKnapDevice(doc, "app-1", { ...laptop, vault: "Renamed" })).toBe(true);
+		expect(stampKnapDevice(doc, "app-1", { ...laptop, vault: "Renamed", version: "1.12.0" })).toBe(
+			true,
+		);
+	});
+
+	test("leaving takes the row out", () => {
+		const doc = new Y.Doc();
+		stampKnapDevice(doc, "app-1", laptop);
+
+		expect(forgetKnapDevice(doc, "app-1")).toBe(true);
+		expect(readKnapDevices(doc)).toEqual({});
+		expect(forgetKnapDevice(doc, "app-1")).toBe(false);
+	});
+
+	test("a device with no id writes nothing rather than a row nobody owns", () => {
+		const doc = new Y.Doc();
+
+		expect(stampKnapDevice(doc, "  ", laptop)).toBe(false);
+		expect(readKnapDevices(doc)).toEqual({});
+	});
+
+	test("a row of the wrong shape is skipped rather than thrown over", () => {
+		// The writer ships separately and updates on its own schedule, and
+		// this runs inside a sync callback that must not throw.
+		const doc = new Y.Doc();
+		doc.getMap<string>(KNAP_DEVICES_KEY).set("app-1", "not json");
+		doc.getMap<string>(KNAP_DEVICES_KEY).set("app-2", JSON.stringify(laptop));
+
+		expect(readKnapDevices(doc)).toEqual({ "app-2": laptop });
+	});
+
+	test("a row missing half its fields answers with the half it has", () => {
+		const doc = new Y.Doc();
+		doc.getMap<string>(KNAP_DEVICES_KEY).set("app-1", JSON.stringify({ vault: "V" }));
+
+		expect(readKnapDevices(doc)["app-1"]).toEqual({
+			vault: "V",
+			platform: "",
+			version: "",
+			seen: 0,
+		});
 	});
 });
