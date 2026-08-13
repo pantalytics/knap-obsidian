@@ -38,7 +38,7 @@ A vault you do not mind breaking is the right vault for this.
 
 ## Pull Requests
 
-1. Create a branch from `knap/fork-base`, the default branch
+1. Create a branch from `main`, the default branch
 2. Make your changes
 3. Ensure `npm run build` succeeds with no errors
 4. Ensure `npm run lint` and `npm test` pass
