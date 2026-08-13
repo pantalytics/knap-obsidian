@@ -136,6 +136,11 @@ import {
 	topHazard,
 	type Hazard,
 } from "./vaultHazards";
+import {
+	recallVault,
+	rememberedVaultId,
+	type RememberedVault,
+} from "./vaultMemory";
 
 interface DebugSettings {
 	debugging: boolean;
@@ -149,12 +154,21 @@ interface RelaySettings extends FeatureFlags, DebugSettings {
 	sharedFolders: SharedFolderSettings[];
 	endpoints: EndpointSettings;
 	relayOnPrem: RelayOnPremSettings;
+	/**
+	 * Which cloud vault somebody pointed this one at (#64).
+	 *
+	 * Kept beside `sharedFolders` rather than read back out of it, because the
+	 * share record is machinery several code paths rewrite and this is one
+	 * fact a person supplied. `vaultMemory.ts` has the whole reasoning.
+	 */
+	vault: RememberedVault;
 }
 
 const DEFAULT_SETTINGS: RelaySettings = {
 	sharedFolders: [],
 	endpoints: {},
 	relayOnPrem: DEFAULT_RELAY_ONPREM_SETTINGS,
+	vault: {},
 	...FeatureFlagDefaults,
 	...DEFAULT_DEBUG_SETTINGS,
 };
@@ -193,6 +207,14 @@ export default class Live extends Plugin {
 	private featureSettings!: NamespacedSettings<FeatureFlags>;
 	private debugSettings!: NamespacedSettings<DebugSettings>;
 	private folderSettings!: NamespacedSettings<SharedFolderSettings[]>;
+	/**
+	 * The cloud vault this device was told to sync (#64).
+	 *
+	 * One short record of its own, so a plugin update that loses the share
+	 * cannot lose the answer with it. Read and written only through
+	 * `rememberVault`, `forgetVault` and `restoreRememberedVault`.
+	 */
+	private vaultMemory!: NamespacedSettings<RememberedVault>;
 	public loginSettings!: NamespacedSettings<LoginSettings>;
 	public endpointSettings!: NamespacedSettings<EndpointSettings>;
 	public relayOnPremSettings!: NamespacedSettings<RelayOnPremSettings>;
@@ -426,6 +448,7 @@ export default class Live extends Plugin {
 			settingsBase,
 			"sharedFolders",
 		);
+		this.vaultMemory = new NamespacedSettings(settingsBase, "vault");
 		this.loginSettings = new NamespacedSettings(settingsBase, "login");
 		this.endpointSettings = new NamespacedSettings(settingsBase, "endpoints");
 		this.relayOnPremSettings = new NamespacedSettings(settingsBase, "relayOnPrem");
@@ -546,6 +569,9 @@ export default class Live extends Plugin {
 			this.vault,
 			this._createSharedFolder.bind(this),
 			this.folderSettings,
+			() => {
+				this.forgetVault();
+			},
 		);
 
 		// Initialize relay-onprem token provider and share client if enabled
@@ -697,6 +723,11 @@ export default class Live extends Plugin {
 
 		this.app.workspace.onLayoutReady(() => {
 			this.sharedFolders.load();
+			// And the vault somebody picked, if the load did not bring it back
+			// (#64). Immediately after the load and before anything reads the
+			// folders, so nothing downstream ever sees a vault that syncs as a
+			// vault that has not been set up.
+			this.restoreRememberedVault();
 
 			// What else is syncing this vault, said once, in the corner (#41).
 			// After the folders load, because whether this vault already syncs
@@ -1021,7 +1052,20 @@ export default class Live extends Plugin {
 						) : undefined;
 						const existing = byGuid || byPath;
 
-						if (existing && (existing.guid !== share.id || !existing.relayId)) {
+						// A vault share is mounted at the vault root with scope
+						// "vault", and the migration below rebuilds a share from
+						// the control plane's own path and the default scope --
+						// which for a vault share is a folder share at a path
+						// that does not exist on this device, after deleting the
+						// record that said otherwise. That is one of the ways the
+						// vault selection went missing across an update (#64), so
+						// a share already covering the whole vault is left alone.
+						if (existing?.isVaultScope) {
+							if (!existing.connected) {
+								log(`Connecting the vault share ${share.id}`);
+								void existing.connect();
+							}
+						} else if (existing && (existing.guid !== share.id || !existing.relayId)) {
 							// Migrate: guid mismatch or missing relayId — recreate
 							log(`Migrating SharedFolder ${share.path} (guid: ${existing.guid} → ${share.id})`);
 							this.sharedFolders.delete(existing);
@@ -1110,7 +1154,20 @@ export default class Live extends Plugin {
 						) : undefined;
 						const existing = byGuid || byPath;
 
-						if (existing && (existing.guid !== share.id || !existing.relayId)) {
+						// A vault share is mounted at the vault root with scope
+						// "vault", and the migration below rebuilds a share from
+						// the control plane's own path and the default scope --
+						// which for a vault share is a folder share at a path
+						// that does not exist on this device, after deleting the
+						// record that said otherwise. That is one of the ways the
+						// vault selection went missing across an update (#64), so
+						// a share already covering the whole vault is left alone.
+						if (existing?.isVaultScope) {
+							if (!existing.connected) {
+								log(`Connecting the vault share ${share.id}`);
+								void existing.connect();
+							}
+						} else if (existing && (existing.guid !== share.id || !existing.relayId)) {
 							// Migrate: guid mismatch or missing relayId — recreate
 							log(`Migrating SharedFolder ${share.path} (guid: ${existing.guid} → ${share.id})`);
 							this.sharedFolders.delete(existing);
@@ -1251,6 +1308,92 @@ export default class Live extends Plugin {
 
 			menu.showAtMouseEvent(event);
 		});
+	}
+
+	/**
+	 * Write down the cloud vault somebody just picked (#64).
+	 *
+	 * Called the moment a vault is joined or made, beside the share record
+	 * rather than instead of it. A person answers this question once.
+	 */
+	public rememberVault(vault: RememberedVault): void {
+		void this.vaultMemory.update((current) => ({
+			...current,
+			...vault,
+			// Which local vault this is, alongside which cloud vault it syncs.
+			// The pair is the record; see `vaultMemory.ts`.
+			localId: this.appId,
+		}));
+	}
+
+	/**
+	 * Forget it, because this device has stopped syncing that vault.
+	 *
+	 * The one thing that must clear the memory, and the only thing that may:
+	 * without it, a share deliberately taken off would be put back by the next
+	 * load, which is the opposite of the fault this memory exists for. Wired
+	 * to `SharedFolders.delete`, so it covers every way a vault share comes
+	 * off rather than the buttons somebody remembered to hook it up to.
+	 */
+	public forgetVault(): void {
+		if (!this.vaultMemory) return;
+		void this.vaultMemory.delete();
+	}
+
+	/**
+	 * Put the remembered vault back, if the share record did not survive (#64).
+	 *
+	 * Runs after every `sharedFolders.load()` and again when the settings
+	 * screen opens, and does nothing at all in the ordinary case where the
+	 * share came back the way it was left. It costs no request: mounting a
+	 * share is local, and what it mounts is exactly what joining a vault
+	 * mounts -- the vault root, at vault scope, against the remembered id.
+	 *
+	 * It also fills the memory in from what is mounted, which is what makes
+	 * this work on an install that picked its vault before there was anywhere
+	 * to write the answer down. `vaultMemory.ts` has both rules.
+	 */
+	public restoreRememberedVault(): void {
+		if (!this.sharedFolders || !this.vaultMemory) return;
+
+		const recall = recallVault(
+			this.vaultMemory.get(),
+			this.sharedFolders.items().map((folder) => ({
+				guid: folder.guid,
+				isVaultScope: folder.isVaultScope,
+			})),
+		);
+
+		if (recall.action === "remember") {
+			this.log("Remembering the cloud vault this device syncs", recall.id);
+			this.rememberVault({ id: recall.id });
+			return;
+		}
+		if (recall.action !== "mount") return;
+
+		const id = recall.vault.id;
+		if (!id) return;
+		try {
+			this.log("Putting the remembered cloud vault back", id);
+			const folder = this.sharedFolders.new("", id, "relay-onprem", false, "vault");
+			if (folder?.settings) {
+				folder.settings.onpremServerId = recall.vault.serverId ?? KNAP_SERVER_ID;
+			}
+			this.folderNavDecorations?.quickRefresh();
+		} catch (e: unknown) {
+			// Something already covers this vault, or refused to sit beside
+			// what does. Say so and leave the screen to ask, which is the
+			// behaviour this whole file is trying to avoid but is still better
+			// than a half-mounted share.
+			this.warn(
+				`Could not put the remembered cloud vault back: ${e instanceof Error ? e.message : String(e)}`,
+			);
+		}
+	}
+
+	/** The cloud vault this device is meant to be syncing, if it knows. */
+	public rememberedVault(): string | undefined {
+		return rememberedVaultId(this.vaultMemory?.get());
 	}
 
 	/**
@@ -1664,6 +1807,7 @@ export default class Live extends Plugin {
 
 	private _onLogin() {
 		this.sharedFolders.load();
+		this.restoreRememberedVault();
 
 		// Load relay-onprem shares after login
 		if (this.shareClient || this.shareClientManager) {
@@ -2177,6 +2321,8 @@ export default class Live extends Plugin {
 
 		this.featureSettings.destroy();
 		this.featureSettings = null as unknown as NamespacedSettings<FeatureFlags, Record<string, unknown>>;
+		this.vaultMemory.destroy();
+		this.vaultMemory = null as unknown as NamespacedSettings<RememberedVault, Record<string, unknown>>;
 		this.loginSettings.destroy();
 		this.loginSettings = null as unknown as NamespacedSettings<LoginSettings, Record<string, unknown>>;
 		this.endpointSettings.destroy();

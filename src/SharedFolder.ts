@@ -2597,6 +2597,15 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 			scope?: ShareScope,
 		) => SharedFolder,
 		private settings: NamespacedSettings<SharedFolderSettings[]>,
+		/**
+		 * Told when a vault share comes off, so the memory of which cloud
+		 * vault this device syncs comes off with it (#64).
+		 *
+		 * Here rather than at the buttons, because `delete` is the one way a
+		 * share is removed and a memory that outlives the share it remembers
+		 * would put back the vault somebody just stopped syncing.
+		 */
+		private onVaultForgotten?: () => void,
 	) {
 		super();
 		this.folderBuilder = folderBuilder;
@@ -2621,6 +2630,12 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 	}
 
 	public delete(item: SharedFolder): boolean {
+		// This device is not syncing that cloud vault any more, so it stops
+		// remembering it. Before the teardown, because `destroy` takes the
+		// scope with it.
+		if (item?.isVaultScope) {
+			this.onVaultForgotten?.();
+		}
 		// Say so before the document goes. This is the one moment a device
 		// knows it has stopped syncing a cloud vault; everything else that
 		// ends a row -- a wiped laptop, a vault deleted from Knap's page --
