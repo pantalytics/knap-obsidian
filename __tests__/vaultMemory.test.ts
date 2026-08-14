@@ -1,6 +1,8 @@
 import {
+	linkBelongsHere,
 	recallVault,
 	rememberedVaultId,
+	storedLink,
 	type MountedShare,
 	type RememberedVault,
 } from "../src/vaultMemory";
@@ -83,5 +85,144 @@ describe("reconciling the memory with what is mounted", () => {
 		expect(recallVault({ id: "cloud-1" }, [folderShare("f1")])).toEqual({
 			action: "nothing",
 		});
+	});
+});
+
+describe("whether a link belongs to this local vault", () => {
+	test("it does when the ids match", () => {
+		expect(linkBelongsHere({ id: "cloud-1", localId: "local-1" }, "local-1")).toBe(
+			true,
+		);
+	});
+
+	test("it does not when they do not", () => {
+		// #71: one account, two local vaults, and the settings of one naming the
+		// cloud vault of the other.
+		expect(linkBelongsHere({ id: "cloud-1", localId: "local-1" }, "local-2")).toBe(
+			false,
+		);
+	});
+
+	test("a record that cannot say where it came from is treated as this vault's", () => {
+		// NamespacedSettings hands back partial records. Refusing on a missing
+		// field would ask the one question this file exists to stop asking.
+		expect(linkBelongsHere({ id: "cloud-1" }, "local-1")).toBe(true);
+		expect(linkBelongsHere({ id: "cloud-1", localId: "" }, "local-1")).toBe(true);
+		expect(linkBelongsHere(undefined, "local-1")).toBe(true);
+	});
+
+	test("and so is one read where the app cannot say either", () => {
+		expect(linkBelongsHere({ id: "cloud-1", localId: "local-1" }, undefined)).toBe(
+			true,
+		);
+		expect(linkBelongsHere({ id: "cloud-1", localId: "local-1" }, "")).toBe(true);
+	});
+});
+
+describe("a link belonging to another local vault", () => {
+	const elsewhere: RememberedVault = {
+		id: "cloud-1",
+		name: "Somebody else's vault",
+		serverId: "knap",
+		localId: "local-1",
+	};
+
+	test("is dropped rather than mounted", () => {
+		// The whole of #71. Mounting this is how one local vault ends up syncing
+		// another's cloud vault.
+		expect(recallVault(elsewhere, [], "local-2")).toEqual({ action: "forget" });
+	});
+
+	test("is still dropped when folder shares are mounted", () => {
+		expect(recallVault(elsewhere, [folderShare("f1")], "local-2")).toEqual({
+			action: "forget",
+		});
+	});
+
+	test("loses to a mounted vault share, which rewrites it", () => {
+		// What is mounted wins stays true: nothing here tears down a share that
+		// is syncing, it corrects the record instead.
+		expect(recallVault(elsewhere, [vaultShare("cloud-9")], "local-2")).toEqual({
+			action: "remember",
+			id: "cloud-9",
+		});
+	});
+
+	test("is mounted as before when it does belong here", () => {
+		expect(recallVault(elsewhere, [], "local-1")).toEqual({
+			action: "mount",
+			vault: {
+				id: "cloud-1",
+				name: "Somebody else's vault",
+				serverId: "knap",
+				localId: "local-1",
+			},
+		});
+	});
+
+	test("and the mounted-and-remembered pair is only agreement when it belongs here", () => {
+		expect(recallVault(elsewhere, [vaultShare("cloud-1")], "local-1")).toEqual({
+			action: "nothing",
+		});
+		// Same ids, wrong local vault: the record is rewritten to say so.
+		expect(recallVault(elsewhere, [vaultShare("cloud-1")], "local-2")).toEqual({
+			action: "remember",
+			id: "cloud-1",
+		});
+	});
+});
+
+describe("reading the link off the stored rows", () => {
+	test("one row at the vault root is the link", () => {
+		expect(storedLink([{ guid: "cloud-1", path: "", scope: "vault" }])).toEqual({
+			link: "one",
+			guid: "cloud-1",
+		});
+	});
+
+	test("a row written before the scope field is read off its path", () => {
+		// Nothing wrote `scope` up to 1.12.3, so every install has these.
+		expect(storedLink([{ guid: "cloud-1", path: "" }])).toEqual({
+			link: "one",
+			guid: "cloud-1",
+		});
+	});
+
+	test("folder shares are not a link", () => {
+		expect(
+			storedLink([
+				{ guid: "f1", path: "Projects" },
+				{ guid: "f2", path: "Archive", scope: "folder" },
+			]),
+		).toEqual({ link: "none" });
+	});
+
+	test("nothing stored is no link", () => {
+		expect(storedLink([])).toEqual({ link: "none" });
+	});
+
+	test("more than one row at the root is a conflict, not a choice", () => {
+		// #71 on disk: three rows at `path: ""`, and which one won was decided
+		// by array order. Every one of them reads as vault scope.
+		expect(
+			storedLink([
+				{ guid: "cloud-gone", path: "", scope: "vault" },
+				{ guid: "cloud-mine", path: "" },
+				{ guid: "cloud-theirs", path: "" },
+			]),
+		).toEqual({
+			link: "conflict",
+			guids: ["cloud-gone", "cloud-mine", "cloud-theirs"],
+		});
+	});
+
+	test("a folder share beside a conflict does not join it", () => {
+		expect(
+			storedLink([
+				{ guid: "cloud-1", path: "" },
+				{ guid: "f1", path: "Projects" },
+				{ guid: "cloud-2", path: "" },
+			]),
+		).toEqual({ link: "conflict", guids: ["cloud-1", "cloud-2"] });
 	});
 });

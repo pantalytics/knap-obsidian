@@ -210,8 +210,53 @@ export const JOIN_CONFIRMATION =
  *
  * One word. The row it sits in carries the vault's name a centimetre to the
  * left, so repeating it in the button is the same string twice on one line.
+ *
+ * It says Link rather than Sync since ADR-0066. Pressing it does not start
+ * syncing so much as answer which cloud vault this local vault belongs to, and
+ * syncing is what follows from the answer. The word matters here more than it
+ * usually would: #71 was a local vault pointed at the wrong cloud vault for
+ * days, and nothing on any screen named the thing that was wrong.
  */
-export const JOIN_LABEL = "Sync";
+export const JOIN_LABEL = "Link";
+
+/** Which cloud vault this local vault is linked to, as the row's label. */
+export const LINKED_TO_LABEL = "Linked to";
+
+/**
+ * The button that ends the link.
+ *
+ * It is the act that was missing. Up to now the only way to stop syncing a
+ * vault was to delete it, which takes its documents with it, so somebody who
+ * had linked the wrong vault had no proportionate way to say so.
+ */
+export const UNLINK_LABEL = "Unlink";
+
+/**
+ * What Unlink does, said where it is pressed.
+ *
+ * Every sentence here is about what survives, because the risk with this
+ * button is that it reads as Delete vault wearing a softer word. It is the
+ * opposite: nothing is removed anywhere, and the vault can be linked again
+ * afterwards.
+ */
+export const UNLINK_EXPLANATION =
+	"This device stops syncing with the cloud vault. " +
+	"Your notes stay on this device, the cloud vault keeps everything in it, " +
+	"and you can link again whenever you like.";
+
+/**
+ * The line that says which cloud vault this one is linked to, on a screen that
+ * is offering to change it.
+ *
+ * Changing a link is a different act from answering for the first time, and the
+ * list on its own cannot tell somebody which of those they are doing. Nothing
+ * in #71 would have survived a screen that said this sentence out loud.
+ */
+export function linkedToLine(name: string | undefined): string {
+	return name
+		? `This vault is linked to ${name}. Linking it to another cloud vault stops syncing with that one.`
+		: "This vault is not linked to a cloud vault yet.";
+}
 
 /** The button that starts the clean-up, on the one screen that offers it. */
 export const REPLACE_FOLDERS_LABEL = "Sync the whole vault";
