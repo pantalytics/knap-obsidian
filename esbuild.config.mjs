@@ -60,7 +60,12 @@ console.log("control plane:", controlPlaneUrl);
 // Knap's own page, which the Dashboard button opens. Build configuration for
 // the same reason the control plane is: there is one of it, and a person never
 // types an address here.
-const panelUrl = process.env.KNAP_PANEL_URL || "https://knap.pantalytics.com/sync";
+//
+// It is app.knap.pantalytics.com, not knap.pantalytics.com. The app moved there
+// on 13 August 2026 and the bare domain is the marketing site on another box, so
+// a build carrying the old address sends the Dashboard button to a page that
+// knows nothing about anybody's vault.
+const panelUrl = process.env.KNAP_PANEL_URL || "https://app.knap.pantalytics.com/sync";
 console.log("panel:", panelUrl);
 console.log("git tag:", gitTag);
 
