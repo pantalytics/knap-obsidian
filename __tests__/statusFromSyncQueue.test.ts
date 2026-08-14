@@ -60,6 +60,10 @@ function makeVault(paths: string[], wrote: (path: string) => boolean): Vault {
 		// was true within a minute of connecting.
 		synced: true,
 		filling: false,
+		// Every note this folder lists is on this disk. That is the uploading
+		// device, which is the one this file is about; the fetching device is
+		// pinned in vaultStatus.test.ts.
+		inbound: { listed: paths.length, missing: 0 },
 	} as unknown as SharedFolder;
 
 	const noop = () => undefined;
@@ -107,6 +111,11 @@ function makeVault(paths: string[], wrote: (path: string) => boolean): Vault {
 		read: () => {
 			// Exactly what main.ts hands vaultReading for each folder.
 			const work = sync.getFolderWork(folder);
+			const inbound = (
+				folder as unknown as {
+					inbound: { listed: number; missing: number };
+				}
+			).inbound;
 			return vaultReading(true, [
 				{
 					shouldConnect: folder.shouldConnect,
@@ -114,6 +123,8 @@ function makeVault(paths: string[], wrote: (path: string) => boolean): Vault {
 					filling: (folder as unknown as { filling: boolean }).filling,
 					total: work.total,
 					completed: work.completed,
+					listed: inbound.listed,
+					missing: inbound.missing,
 				},
 			]);
 		},

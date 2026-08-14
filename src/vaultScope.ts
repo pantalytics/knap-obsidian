@@ -33,6 +33,31 @@ export function sharePrefix(
 }
 
 /**
+ * Which of the two shapes a stored share record is.
+ *
+ * The field is the answer whenever it is there. When it is not, the path is:
+ * a folder share is a folder inside the vault and always has a name, and the
+ * only share rooted at the vault itself is the vault share. So an empty path
+ * with no scope beside it is a vault share, and reading it as a folder share
+ * is what took the vault down on a restart.
+ *
+ * Records with no `scope` are not only old ones. Up to 1.12.3 nothing ever
+ * wrote the field, so every install has records that predate it, including
+ * ones written a minute ago. The inference is what those need, and it is
+ * cheap enough to keep afterwards.
+ */
+export function shareScopeOf(record: {
+	path?: string;
+	scope?: ShareScope;
+}): ShareScope {
+	if (record.scope === "vault" || record.scope === "folder") {
+		return record.scope;
+	}
+	const path = (record.path ?? "").trim();
+	return path === "" || path === "/" ? "vault" : "folder";
+}
+
+/**
  * Segments a share never syncs, in either scope.
  *
  * This exists because a vault-scoped share has no folder prefix doing the job

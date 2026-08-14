@@ -31,7 +31,14 @@
 	import { RelayOnPremShareClientManager } from "../RelayOnPremShareClientManager";
 	import { hasSignInButton, syncInstruction } from "../syncStatus";
 	import type { VaultReading } from "../vaultStatus";
-	import { topHazard, type Hazard } from "../vaultHazards";
+	import { CHECKLIST, CHECKLIST_TITLE } from "../setupChecklist";
+	import {
+		ANOTHER_DEVICE_NOTE,
+		ANOTHER_DEVICE_STEPS,
+		ANOTHER_DEVICE_TITLE,
+		KNAP_PLUGIN_REPO,
+		PASTE_LABEL,
+	} from "../anotherDevice";
 
 	// One button, because there is one server and one account (ADR-0030,
 	// ADR-0033). No address to type, nothing to choose, and no code to paste:
@@ -91,13 +98,6 @@
 	// syncs with is a choice somebody made, not a name that matched.
 	const vaultName = plugin.app.vault.getName();
 
-	// What else is syncing this vault (#41). Read when the screen opens rather
-	// than held from load, so turning the other plugin off and coming back
-	// here clears it.
-	let hazards: Hazard[] = plugin.readVaultHazards();
-	// One at a time. Two warnings competing on one screen is how neither gets
-	// read, and the one that holds the vault back always wins.
-	$: hazard = topHazard(hazards);
 
 	// The vaults on Knap this account reaches, once signing in has asked. The
 	// list is the screen: nothing syncs until one of them is pressed, and an
@@ -177,11 +177,6 @@
 		// somebody watches during a first sync and one standing still reads as
 		// stuck.
 		refreshReading();
-		// Once, not on the ticker: what it answers only changes when somebody
-		// turns a plugin on or moves the vault, and neither happens while this
-		// screen is open. Asked again on open, which is how turning the other
-		// plugin off and coming back here clears the warning.
-		hazards = plugin.refreshVaultHazards();
 		const ticker = window.setInterval(refreshReading, 1000);
 		return () => window.clearInterval(ticker);
 	});
@@ -246,14 +241,6 @@
 			vaultShareId: vaultShare?.guid,
 			folderShareCount: folders.filter((folder) => !folder.isVaultScope).length,
 		};
-
-		// Something else syncing this vault stops it starting, and never stops
-		// one that is already going (#41). It no longer stops the list from
-		// being drawn: seeing which vaults exist costs nothing, and a screen
-		// that refuses before it has said what it is refusing leaves somebody
-		// with a warning and no idea what it is standing in the way of. The
-		// checks run against the button instead, in `askFirst`.
-		hazards = plugin.refreshVaultHazards();
 
 		let remote: ShareLike[] = [];
 		try {
@@ -541,6 +528,31 @@
 		window.open(KNAP_PANEL_URL);
 	}
 
+	/**
+	 * Put the repository on the clipboard, because it is going to be typed on
+	 * a phone otherwise.
+	 *
+	 * The label goes back after a couple of seconds rather than staying on
+	 * Copied, so a second device later gets the same button it had the first
+	 * time.
+	 */
+	let copied = false;
+	function copyRepo() {
+		void navigator.clipboard
+			?.writeText(KNAP_PLUGIN_REPO)
+			.then(() => {
+				copied = true;
+				window.setTimeout(() => {
+					copied = false;
+				}, 2000);
+			})
+			.catch(() => {
+				// No clipboard, which a phone webview is allowed not to have.
+				// The address is on the screen either way.
+				new Notice("Copy it from the line above.");
+			});
+	}
+
 	async function signOut() {
 		error = "";
 		try {
@@ -612,14 +624,21 @@
 		</div>
 	{/if}
 
-	<!-- One warning, never two (#41). A person with a second sync plugin on and
-	     a vault in Dropbox has one thing to fix first, and stacking both here
-	     is how neither gets read. `topHazard` picks it: anything holding the
-	     vault back comes first, the rest wait their turn. -->
-	{#if hazard}
-		<div class="knap-warning" class:knap-warning-holding={hazard.blocking}>
-			{#each hazard.lines as line}
-				<p>{line}</p>
+	<!-- The two things worth sorting out before a vault starts, said once and
+	     read by the person rather than guessed at by the plugin (#41). It goes
+	     while the vault is syncing: a list of things to check before you begin
+	     is noise on a screen somebody opened to see how far along they are. -->
+	{#if !syncingWith}
+		<div class="knap-checklist">
+			<p class="knap-checklist-title">{CHECKLIST_TITLE}</p>
+			{#each CHECKLIST as item}
+				<div class="knap-check">
+					<span class="knap-check-mark" aria-hidden="true"></span>
+					<span class="knap-check-body">
+						<span class="knap-check-title">{item.title}</span>
+						<span class="knap-check-detail">{item.detail}</span>
+					</span>
+				</div>
 			{/each}
 		</div>
 	{/if}
@@ -690,6 +709,29 @@
 				</svg>
 			</div>
 		</button>
+	{/if}
+
+	<!-- The end of the flow, and the only place it makes sense: a vault that is
+	     syncing is when somebody wants their phone on it as well. The address
+	     is a row of its own because BRAT asks for a repository and people
+	     paste a URL into it. -->
+	{#if syncingWith}
+		<div class="knap-another">
+			<p class="knap-another-title">{ANOTHER_DEVICE_TITLE}</p>
+			<ol class="knap-another-steps">
+				{#each ANOTHER_DEVICE_STEPS as step}
+					<li>{step}</li>
+				{/each}
+			</ol>
+			<div class="knap-paste">
+				<span class="knap-paste-label">{PASTE_LABEL}</span>
+				<code class="knap-paste-value">{KNAP_PLUGIN_REPO}</code>
+				<button class="knap-btn knap-btn-quiet" on:click={copyRepo}>
+					{copied ? "Copied" : "Copy"}
+				</button>
+			</div>
+			<p class="knap-note">{ANOTHER_DEVICE_NOTE}</p>
+		</div>
 	{/if}
 
 	<div class="knap-actions">
@@ -883,24 +925,107 @@
 	   screen. A rule down the side rather than a filled panel: this is a
 	   settings tab, and a coloured box in the middle of it reads as an error
 	   the plugin has hit rather than something to go and do. */
-	.knap-warning {
+	/* The list before the vault starts. Not a warning: nothing here has gone
+	   wrong, and painting it in the colour of an error would make the one that
+	   is an error unreadable. */
+	.knap-checklist {
 		margin-top: 16px;
-		padding: 2px 0 2px 12px;
-		border-left: 3px solid var(--text-accent, var(--interactive-accent));
 		max-width: 46em;
 	}
 
-	/* Deeper when the vault is standing still because of it. The status row
-	   says Paused at the same time, so the colour is the second thing that
-	   says so rather than the only one. */
-	.knap-warning-holding {
-		border-left-color: var(--text-error);
-	}
-
-	.knap-warning p {
-		margin: 6px 0;
+	.knap-checklist-title {
+		margin: 0 0 8px;
 		color: var(--text-normal);
 		font-size: 13px;
+		font-weight: var(--font-semibold, 600);
+	}
+
+	.knap-check {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		margin: 8px 0;
+	}
+
+	/* An empty box rather than a tick: these are things for somebody to check,
+	   and a tick already drawn says the plugin checked them, which is the
+	   thing it stopped doing. */
+	.knap-check-mark {
+		flex: none;
+		width: 12px;
+		height: 12px;
+		margin-top: 3px;
+		border: 1px solid var(--background-modifier-border);
+		border-radius: 3px;
+	}
+
+	.knap-check-body {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+	}
+
+	.knap-check-title {
+		color: var(--text-normal);
+		font-size: 13px;
+	}
+
+	.knap-check-detail {
+		color: var(--text-muted);
+		font-size: 12px;
+	}
+
+	/* The next device, at the end. */
+	.knap-another {
+		margin-top: 20px;
+		padding-top: 16px;
+		border-top: 1px solid var(--background-modifier-border);
+		max-width: 46em;
+	}
+
+	.knap-another-title {
+		margin: 0 0 8px;
+		color: var(--text-normal);
+		font-size: 13px;
+		font-weight: var(--font-semibold, 600);
+	}
+
+	.knap-another-steps {
+		margin: 0;
+		padding-left: 20px;
+		color: var(--text-muted);
+		font-size: 12px;
+	}
+
+	.knap-another-steps li {
+		margin: 4px 0;
+	}
+
+	/* The string itself, on its own line with a button beside it. It wraps
+	   rather than scrolling: an address cut off at the edge of a settings pane
+	   on a phone is an address somebody types wrong. */
+	.knap-paste {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		margin-top: 10px;
+	}
+
+	.knap-paste-label {
+		color: var(--text-faint);
+		font-size: 12px;
+	}
+
+	.knap-paste-value {
+		padding: 2px 6px;
+		background: var(--background-modifier-form-field, var(--background-secondary));
+		border-radius: var(--radius-s, 4px);
+		color: var(--text-normal);
+		font-family: var(--font-monospace);
+		font-size: 12px;
+		overflow-wrap: anywhere;
 	}
 
 	/* The one permanent line, at caption weight: it is worth saying and it is

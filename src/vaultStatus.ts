@@ -49,6 +49,10 @@ export interface FolderStatus {
 	total: number;
 	/** How many of them came back with a body actually written. */
 	completed: number;
+	/** Notes the cloud vault lists for this folder. */
+	listed: number;
+	/** How many of those have no file on this device yet. */
+	missing: number;
 }
 
 /**
@@ -71,9 +75,21 @@ export interface FolderStatus {
  *   that came back without writing the body counts as failed rather than done
  *   (#38), so `completed` short of `total` means a note's body is not where it
  *   should be, whether it is still queued or came back empty.
+ * - `missing` is the notes the cloud vault lists that have no file here. The
+ *   three above are all about work this device took on, and a device that has
+ *   just joined an existing cloud vault has taken none on: nothing local to
+ *   walk, a metadata document that catches up in seconds, an empty queue. All
+ *   three agreed, and the corner of the window said Up to date over a vault
+ *   with 2,567 notes still to come. This one is a fact about the two file
+ *   lists rather than about a queue, so it is true from the first second.
  */
 export function folderCaughtUp(folder: FolderStatus): boolean {
-	return folder.synced && !folder.filling && folder.completed >= folder.total;
+	return (
+		folder.synced &&
+		!folder.filling &&
+		folder.completed >= folder.total &&
+		folder.missing <= 0
+	);
 }
 
 /**
@@ -117,15 +133,32 @@ export interface VaultCounts {
  * A folder this device has switched off contributes nothing: its notes are
  * not moving and counting them would put a number next to a vault that is
  * standing still.
+ *
+ * Two ways of counting one vault, and the queue is the first of them because
+ * it is the one that knows what this device is doing. When there is nothing
+ * in it and notes are still to come, the file lists answer instead: that is a
+ * device downloading a vault it has just joined, where the queue is empty for
+ * the same reason the vault is.
+ *
+ * They are never added together. A note being fetched is in the queue and
+ * absent from the disk at the same time, so a sum counts it twice, and on the
+ * device that uploaded the vault every note is listed and present, which
+ * would push a first upload's bar to nearly full while it was barely started.
  */
 export function vaultCounts(folders: readonly FolderStatus[]): VaultCounts {
 	let done = 0;
 	let total = 0;
+	let present = 0;
+	let listed = 0;
 	for (const folder of folders) {
 		if (!folder.shouldConnect) continue;
 		done += folder.completed;
 		total += folder.total;
+		listed += folder.listed;
+		present += Math.max(0, folder.listed - folder.missing);
 	}
+	if (total > 0) return { done, total };
+	if (listed > 0 && present < listed) return { done: present, total: listed };
 	return { done, total };
 }
 
