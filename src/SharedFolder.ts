@@ -67,6 +67,12 @@ import {
 } from "./vaultScope";
 import { claimVpathIfUnclaimed, awaitVpathClaimSettled, wonVpathClaim } from "./uploadClaim";
 import { forgetKnapDevice, stampKnapDevice, stampKnapMeta } from "./knapMeta";
+import {
+	publishPresence,
+	withdrawPresence,
+	type DevicePresence,
+	type DeviceState,
+} from "./knapPresence";
 
 // Injected at build time (esbuild `define`), the same way every other module
 // that reports which build it is reads it.
@@ -165,6 +171,11 @@ export class SharedFolder extends HasProvider {
 	path: string;
 	/** Whether this share covers the whole vault or one folder in it. */
 	scope: ShareScope;
+	//: The last thing this device told the vault about itself, and when. Both
+	//: exist only so an unchanged report is not restated on every tick; see
+	//: `shouldRepublish`.
+	private _lastReported = "";
+	private _lastReportedAt = 0;
 	files: Map<string, IFile>; // Maps guids to SharedDocs
 	fset: Files;
 	relayId?: string;
@@ -376,6 +387,12 @@ export class SharedFolder extends HasProvider {
 			} catch (e) {
 				this.warn("could not stamp this device", e);
 			}
+			// And what this device is doing with the vault right now, which the
+			// row above cannot carry: it is written hourly and the counts move
+			// every few seconds. `BackgroundSync` keeps this current; this call
+			// is so a device that has just connected is on the page before its
+			// first tick.
+			this.reportToKnap();
 			try {
 				void this._persistence.set("path", this.path);
 				void this._persistence.set("relay", this.relayId || "");
@@ -2602,8 +2619,83 @@ export class SharedFolder extends HasProvider {
 		}
 	}
 
+	/**
+	 * Say what this device is doing with this cloud vault right now.
+	 *
+	 * The live half of `knapMeta.ts`'s device row (`knapPresence.ts`). Called
+	 * on connect and every few seconds from `BackgroundSync`, which is the only
+	 * object that knows what is still queued in each direction.
+	 *
+	 * Nothing here may throw. It runs beside the queues that actually move
+	 * somebody's notes, and a readout on a web page is not worth risking one.
+	 */
+	reportToKnap(
+		owing: { state: DeviceState; up: number; down: number } = {
+			state: "up_to_date",
+			up: 0,
+			down: 0,
+		},
+	): void {
+		if (this.destroyed) return;
+		try {
+			// Only while there is a socket to say it on. Awareness with no
+			// provider is a claim nobody hears.
+			const awareness = this._provider?.awareness;
+			if (!awareness) return;
+			const presence: DevicePresence = {
+				state: owing.state,
+				up: owing.up,
+				down: owing.down,
+				vault: this.vault.getName(),
+				platform: Platform.isMobileApp ? "mobile" : "desktop",
+			};
+			if (this.shouldRepublish(presence)) {
+				publishPresence(awareness, this.appId, presence);
+			}
+		} catch (e) {
+			this.warn("could not publish this device's state", e);
+		}
+	}
+
+	/**
+	 * Whether this report is worth putting on the wire.
+	 *
+	 * A change always is: the counts are what somebody is watching, and a
+	 * number that arrives ten seconds late looks stuck.
+	 *
+	 * An unchanged one still goes out on a slow beat. An awareness entry is
+	 * kept alive by being restated, so a device that went quiet because it had
+	 * nothing new to say would eventually be pruned and read as offline with
+	 * Obsidian open in front of somebody. Ten seconds is well inside the thirty
+	 * the protocol's own timeout uses, and half what restating on every tick
+	 * would cost.
+	 */
+	private shouldRepublish(
+		presence: DevicePresence,
+		now: number = Date.now(),
+	): boolean {
+		const said = JSON.stringify(presence);
+		if (said === this._lastReported && now - this._lastReportedAt < 10_000) {
+			return false;
+		}
+		this._lastReported = said;
+		this._lastReportedAt = now;
+		return true;
+	}
+
+
 	destroy() {
 		this.destroyed = true;
+		// Stop claiming to be here before the socket goes. Politeness rather
+		// than correctness, since the server withdraws this on a close anyway;
+		// the durable row stays, because a device that still syncs this vault
+		// is still one of its devices.
+		try {
+			const awareness = this._provider?.awareness;
+			if (awareness) withdrawPresence(awareness);
+		} catch {
+			// A folder coming down is not the place to report this.
+		}
 		this.unsubscribes.forEach((unsub) => {
 			unsub();
 		});

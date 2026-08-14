@@ -19,6 +19,7 @@ import { SyncFile, isSyncFile } from "./SyncFile";
 import { reconcileWithConflictCopy } from "./y-diffMatchPatch";
 import { waitForBufferFlush } from "./websocketFlush";
 import { claimInitIfUnclaimed, wonInitClaim, markInitDone, awaitClaimSettled } from "./initContentClaim";
+import { owed, stateFor } from "./knapPresence";
 
 export interface QueueItem {
 	guid: string;
@@ -111,6 +112,40 @@ export class BackgroundSync extends HasLogging {
 			void this.processSyncQueue();
 			void this.processDownloadQueue();
 		}, 1000);
+		// Tell each cloud vault what this device is doing with it. Here rather
+		// than in SharedFolder because this is the only object that knows what
+		// is still queued, in each direction, which is the half Knap's page
+		// cannot work out and the half somebody can act on.
+		//
+		// Five seconds matches what that page polls at, so a number on screen
+		// is never more than one tick behind the queue it came from. It is
+		// cheap: awareness never enters the document, and an unchanged report
+		// goes out at most every ten seconds (`SharedFolder.shouldRepublish`).
+		this.timeProvider.setInterval(() => {
+			this.reportToKnap();
+		}, 5000);
+	}
+
+	/**
+	 * Publish this device's state into every vault it syncs.
+	 *
+	 * Never throws: it sits on a timer beside the queues that move somebody's
+	 * notes, and a readout on a web page is not worth risking either of them.
+	 */
+	reportToKnap(): void {
+		const signedIn = !!this.loginManager.loggedIn;
+		this.sharedFolders.items().forEach((folder) => {
+			try {
+				const { up, down } = owed(this.syncGroups.get(folder));
+				folder.reportToKnap({
+					state: stateFor({ signedIn, paused: this.isPaused, up, down }),
+					up,
+					down,
+				});
+			} catch (e) {
+				this.warn("could not report this device's state", e);
+			}
+		});
 	}
 
 	/**
