@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.12.5
 - Dashboard opens Knap's page again. The app moved to `app.knap.pantalytics.com` on 13 August and this button was still pointing at the bare domain, which since that same day is the marketing site on a different machine. So the one row on this screen that leads somewhere else led to a page that has never heard of your vault. The address is build configuration and there is nothing to set: an update carries the new one.
 
 ## 1.12.4
