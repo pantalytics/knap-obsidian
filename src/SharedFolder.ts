@@ -59,6 +59,7 @@ import { flags } from "./flagManager";
 import { findNestingConflictPath } from "./sharedFolderNesting";
 import {
 	checkPath as scopedCheckPath,
+	shareScopeOf,
 	sharePrefix,
 	toVaultPath,
 	toVirtualPath,
@@ -412,6 +413,64 @@ export class SharedFolder extends HasProvider {
 		} finally {
 			this._filling = false;
 		}
+	}
+
+	/**
+	 * How often the count below is worked out again.
+	 *
+	 * It walks every entry in the folder's file list and asks Obsidian about
+	 * each one, and two screens read it, one of them every second. On a vault
+	 * of a few thousand notes that is a few thousand map lookups a second for
+	 * an answer that changes as fast as notes land, which is not that fast. A
+	 * second and a half is under what either screen redraws at.
+	 */
+	private static readonly INBOUND_TTL_MS = 1500;
+
+	private _inbound: { at: number; listed: number; missing: number } = {
+		at: 0,
+		listed: 0,
+		missing: 0,
+	};
+
+	/**
+	 * What the cloud vault holds, and how much of it is not here yet.
+	 *
+	 * The fourth fact behind the word in the corner of the window, and the
+	 * one a second device needs. The other three are all about work this
+	 * device took on: the walk over the local files, the folder's own
+	 * metadata document, and the sync queue. A phone that has just joined a
+	 * cloud vault has no local files to walk, its metadata document catches
+	 * up in seconds, and nothing is queued until the file list has been read,
+	 * so all three agree inside a minute and the corner said Up to date over
+	 * an empty vault. That is #40 again, from the other side.
+	 *
+	 * This one is not about work at all. It is the file list the cloud vault
+	 * carries against what is on this disk, so it is true before anything has
+	 * been queued and it stays true while a download runs. Folders are left
+	 * out: an empty directory is not a note somebody is waiting for.
+	 */
+	public get inbound(): { listed: number; missing: number } {
+		const now = Date.now();
+		if (now - this._inbound.at < SharedFolder.INBOUND_TTL_MS) {
+			return { listed: this._inbound.listed, missing: this._inbound.missing };
+		}
+		let listed = 0;
+		let missing = 0;
+		try {
+			this.syncStore.forEach((meta, vpath) => {
+				if (meta.type === SyncType.Folder) return;
+				listed++;
+				if (!this.existsSync(vpath)) missing++;
+			});
+		} catch (e: unknown) {
+			// A document torn down under us, or a path the store holds that
+			// this share refuses to convert. The count is a status line, so it
+			// keeps the last answer rather than taking the screen down.
+			this.warn("could not count what is still to come", e);
+			return { listed: this._inbound.listed, missing: this._inbound.missing };
+		}
+		this._inbound = { at: now, listed, missing };
+		return { listed, missing };
 	}
 
 	/**
@@ -2720,7 +2779,7 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 			}
 		}
 		byPath.forEach((folder) => {
-			const scope = folder.scope ?? "folder";
+			const scope = shareScopeOf(folder);
 			// A vault share carries path "", and there is no promise about
 			// what a path lookup makes of that. SharedFolder.rootTFolder
 			// resolves the root with getRoot() for the same reason; this is

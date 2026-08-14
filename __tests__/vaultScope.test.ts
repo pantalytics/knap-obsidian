@@ -1,6 +1,7 @@
 import {
 	checkPath,
 	isExcludedPath,
+	shareScopeOf,
 	sharePrefix,
 	toVaultPath,
 	toVirtualPath,
@@ -118,5 +119,31 @@ describe("virtual path round trip", () => {
 		// The off-by-one this module exists to kill: slicing path.length + 1
 		// against an empty prefix would have returned "md".
 		expect(toVirtualPath("vault", "", "a.md")).toBe("a.md");
+	});
+});
+
+describe("what shape a stored share record is", () => {
+	it("believes the field when it is there", () => {
+		expect(shareScopeOf({ path: "", scope: "vault" })).toBe("vault");
+		expect(shareScopeOf({ path: "Notes", scope: "folder" })).toBe("folder");
+	});
+
+	it("reads a record with no scope off its path", () => {
+		// Nothing wrote the field up to 1.12.3, so every install has records
+		// without it. A share rooted at the vault itself is the vault share,
+		// and reading it as a folder share is what dropped the vault on the
+		// restart that reloaded it: the path "" is no folder in the vault, so
+		// the record was skipped as invalid.
+		expect(shareScopeOf({ path: "" })).toBe("vault");
+		expect(shareScopeOf({ path: "Notes" })).toBe("folder");
+	});
+
+	it("takes the root, however it is spelled, as the vault", () => {
+		expect(shareScopeOf({ path: "/" })).toBe("vault");
+		expect(shareScopeOf({})).toBe("vault");
+	});
+
+	it("does not take a folder called slash-something for the vault", () => {
+		expect(shareScopeOf({ path: "/Notes" })).toBe("folder");
 	});
 });

@@ -130,13 +130,6 @@ import {
 } from "./syncNotices";
 import { SIGNED_OUT, syncInstruction } from "./syncStatus";
 import {
-	enabledCorePluginIds,
-	loadedPluginIds,
-	readVaultHazards,
-	topHazard,
-	type Hazard,
-} from "./vaultHazards";
-import {
 	recallVault,
 	rememberedVaultId,
 	type RememberedVault,
@@ -223,16 +216,13 @@ export default class Live extends Plugin {
 	public webSyncManager?: import("./WebSyncManager").WebSyncManager;
 	public inboundFileDownloader?: import("./InboundFileDownloader").InboundFileDownloader;
 	public inboundSyncPoller?: import("./InboundSyncPoller").InboundSyncPoller;
-	/** What else is syncing this vault (#41). Read at load, and on each visit. */
-	private vaultHazards: Hazard[] = [];
 	/**
 	 * Whether this vault is not syncing and is waiting for a person.
 	 *
 	 * Set by the settings screen, read by the corner of the window, so the two
-	 * cannot describe one vault two ways: a vault held back because something
-	 * else syncs it (#41), or because it has not been told which vault on Knap
-	 * it belongs to (#42), reads Paused on both rather than Up to date on
-	 * either.
+	 * cannot describe one vault two ways: a vault waiting to be told which
+	 * vault on Knap it belongs to (#42) reads Paused on both rather than Up to
+	 * date on either.
 	 */
 	public vaultHeld = false;
 	debug!: (...args: unknown[]) => void;
@@ -729,10 +719,6 @@ export default class Live extends Plugin {
 			// vault that has not been set up.
 			this.restoreRememberedVault();
 
-			// What else is syncing this vault, said once, in the corner (#41).
-			// After the folders load, because whether this vault already syncs
-			// is what decides between holding it back and telling somebody.
-			this.noticeVaultHazards();
 
 			this._liveViews = new LiveViewManager(
 				this.app,
@@ -992,15 +978,20 @@ export default class Live extends Plugin {
 			this.settings as unknown as Settings<unknown>,
 			`sharedFolders/[guid=${guid}]`,
 		);
-		const settings: SharedFolderSettings = { guid: guid, path: path, scope };
-		if (relayId) {
-			settings["relay"] = relayId;
-		}
+		// The scope goes on disk with the rest of it, and until 1.12.4 it did
+		// not: this function built a settings object carrying it and then
+		// wrote a different one. Nothing else ever writes the field, so every
+		// record on disk said folder, and `SharedFolders._load` rebuilt the
+		// vault share as a folder share at the path "" on the next start. The
+		// memory of which cloud vault this is (#64) then put the real one back
+		// on the way past, which is why this survived: the vault came back
+		// because a fallback caught it, not because the record was right.
 		void folderSettings.update((current) => {
 			return {
 				...current,
 				path,
 				guid,
+				scope,
 				...(relayId ? { relay: relayId } : {}),
 				...{
 					sync: current.sync ? current.sync : SyncSettingsManager.defaultFlags,
@@ -1417,89 +1408,19 @@ export default class Live extends Plugin {
 					total: 0,
 					completed: 0,
 				};
+				const inbound = folder.inbound;
 				return {
 					shouldConnect: folder.shouldConnect,
 					synced: folder.synced,
 					filling: folder.filling,
 					total: work.total,
 					completed: work.completed,
+					listed: inbound.listed,
+					missing: inbound.missing,
 				};
 			}),
 			this.vaultHeld,
 		);
-	}
-
-	/**
-	 * What this vault has to be told before it can sync, most serious first.
-	 *
-	 * Read at load and again whenever the settings screen opens, so turning
-	 * the other plugin off and coming back clears it. Both readers get the
-	 * same list, and only the first of them reaches a screen: see
-	 * `topHazard`.
-	 */
-	public readVaultHazards(): Hazard[] {
-		return this.vaultHazards;
-	}
-
-	public refreshVaultHazards(): Hazard[] {
-		const adapter = this.app.vault.adapter as unknown as {
-			getBasePath?: () => string;
-			basePath?: string;
-		};
-		try {
-			// Obsidian's own account of what is running here, not the file it
-			// wrote the last time somebody changed something. `enabledPlugins`
-			// and `manifests` are undocumented, so they are read through a cast
-			// and checked before they are believed.
-			const loaded = loadedPluginIds((this.app as unknown as ObsidianApp).plugins);
-			if (loaded === undefined) {
-				this.warn("Obsidian did not say which plugins are loaded in this vault");
-			}
-			// Obsidian Sync ships with the app, so it is in neither of the two
-			// fields above: core plugins are a separate record in a separate
-			// place. Asked separately, and a failure to answer one is not a
-			// failure to answer the other.
-			const core = enabledCorePluginIds((this.app as unknown as ObsidianApp).internalPlugins);
-			if (core === undefined) {
-				this.warn("Obsidian did not say which core plugins are on in this vault");
-			}
-			this.vaultHazards = readVaultHazards(
-				{
-					// Desktop has `getBasePath()`, the phone adapter has
-					// `basePath`, and a vault whose path neither will give up
-					// is simply not checked for a cloud folder. It never
-					// leaves this call.
-					basePath: adapter?.getBasePath?.() ?? adapter?.basePath ?? "",
-					loadedPlugins: loaded ?? [],
-					loadedCorePlugins: core ?? [],
-					// The way out of a cloud folder is a different one on a
-					// phone, and on iOS the vault Obsidian makes for itself is
-					// in iCloud Drive to begin with.
-					onPhone: Platform.isMobileApp,
-				},
-				// Whether this vault is already syncing, which decides whether
-				// a second sync plugin holds it back or is only told about.
-				(this.sharedFolders?.items() ?? []).some((folder) => folder.isVaultScope),
-			);
-		} catch (e: unknown) {
-			this.warn("Could not read what else syncs this vault", e);
-			this.vaultHazards = [];
-		}
-		return this.vaultHazards;
-	}
-
-	/**
-	 * Say the one thing, once, at load.
-	 *
-	 * One notice, not one per hazard. A person who has both a second sync
-	 * plugin and a vault in Dropbox has one thing to fix first, and two
-	 * notices stacked in the corner is how neither gets read.
-	 */
-	private noticeVaultHazards(): void {
-		const hazard = topHazard(this.refreshVaultHazards());
-		if (hazard) {
-			new Notice(hazard.notice, 15000);
-		}
 	}
 
 	/**

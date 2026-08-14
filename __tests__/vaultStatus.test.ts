@@ -31,6 +31,8 @@ const synced: FolderStatus = {
 	filling: false,
 	total: 0,
 	completed: 0,
+	listed: 0,
+	missing: 0,
 };
 /** Its own document has not caught up yet. */
 const behind: FolderStatus = { ...synced, synced: false };
@@ -41,6 +43,19 @@ const registeredButEmpty: FolderStatus = {
 	...synced,
 	total: 2567,
 	completed: 0,
+};
+/**
+ * A phone that joined an existing cloud vault a moment ago.
+ *
+ * Nothing local to walk, so the fill was over before it started; the folder's
+ * own document caught up in seconds; nothing is queued yet. Every count this
+ * device keeps about its own work says done, and the vault is empty. The file
+ * lists are the only thing that knows, which is what `missing` is.
+ */
+const justJoined: FolderStatus = {
+	...synced,
+	listed: 2567,
+	missing: 2567,
 };
 
 describe("what the status bar says", () => {
@@ -123,6 +138,32 @@ describe("what must never read Up to date", () => {
 		);
 	});
 
+	test("a device that has just joined and holds none of the notes yet", () => {
+		// The phone half of #40. Every count this device keeps about its own
+		// work says done, because it has not been given any work yet, and the
+		// vault is empty. Reading green here is the same lie from the other
+		// direction.
+		expect(justJoined.synced).toBe(true);
+		expect(justJoined.filling).toBe(false);
+		expect(justJoined.total).toBe(0);
+
+		expect(folderCaughtUp(justJoined)).toBe(false);
+		expect(vaultSyncWord(true, [justJoined])).toBe(SYNCING);
+	});
+
+	test("a download most of the way through is still not up to date", () => {
+		const nearly = { ...justJoined, missing: 1 };
+
+		expect(vaultSyncWord(true, [nearly])).toBe(SYNCING);
+	});
+
+	test("the last note arriving is what turns it green", () => {
+		const arrived = { ...justJoined, missing: 0 };
+
+		expect(folderCaughtUp(arrived)).toBe(true);
+		expect(vaultSyncWord(true, [arrived])).toBe(UP_TO_DATE);
+	});
+
 	test("every note is up and the folder document is not", () => {
 		expect(
 			vaultSyncWord(true, [{ ...synced, synced: false, total: 5, completed: 5 }]),
@@ -158,6 +199,32 @@ describe("the count, which is the plugin's own and not the server's", () => {
 			]),
 		).toEqual({ done: 40, total: 100 });
 	});
+
+	test("with an empty queue, the file lists are what there is to count", () => {
+		expect(vaultCounts([{ ...justJoined, missing: 2300 }])).toEqual({
+			done: 267,
+			total: 2567,
+		});
+	});
+
+	test("the queue wins while there is one, so nothing is counted twice", () => {
+		// A note being fetched is queued and absent at the same moment. Adding
+		// the two counts it twice, and on the device that uploaded the vault
+		// every note is listed and present, which would read as nearly done
+		// during a first upload that had barely started.
+		expect(
+			vaultCounts([
+				{ ...synced, total: 2567, completed: 290, listed: 2567, missing: 0 },
+			]),
+		).toEqual({ done: 290, total: 2567 });
+	});
+
+	test("a vault whose notes are all here counts nothing", () => {
+		expect(vaultCounts([{ ...synced, listed: 2567, missing: 0 }])).toEqual({
+			done: 0,
+			total: 0,
+		});
+	});
 });
 
 describe("the reading both screens draw from", () => {
@@ -188,6 +255,14 @@ describe("the reading both screens draw from", () => {
 		expect(reading.word).toBe(SYNCING);
 		expect(reading.counts).toBe("");
 		expect(reading.progress).toBeUndefined();
+	});
+
+	test("a device downloading a vault it just joined says how far in it is", () => {
+		const reading = vaultReading(true, [{ ...justJoined, missing: 2300 }]);
+
+		expect(reading.word).toBe(SYNCING);
+		expect(reading.counts).toBe("267 of 2,567");
+		expect(reading.progress).toBeCloseTo(267 / 2567);
 	});
 
 	test("a signed-out vault gets no count either", () => {

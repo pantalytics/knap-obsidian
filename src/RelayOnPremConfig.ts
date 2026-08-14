@@ -35,6 +35,24 @@ export const KNAP_CONTROL_PLANE_URL = CONTROL_PLANE_URL;
 export const KNAP_PANEL_URL = PANEL_URL;
 
 /**
+ * What BRAT asks for, when somebody sets Knap up on their next device.
+ *
+ * Not a URL on purpose. BRAT's own field says "Repository (example:
+ * GitHub-Username/Repository-Name)", and the two forms are not
+ * interchangeable there: it takes the owner and repository, and somebody who
+ * pastes the full address is guessing which half of it to delete. So this is
+ * the string to paste, and the address beside it is for reading rather than
+ * for pasting.
+ *
+ * Not build-time configuration either, unlike the two above: the plugin is
+ * installed from a public repository whatever server it points at.
+ */
+export const KNAP_PLUGIN_REPO = "pantalytics/knap-obsidian";
+
+/** The same repository, for a browser. */
+export const KNAP_PLUGIN_REPO_URL = "https://github.com/pantalytics/knap-obsidian";
+
+/**
  * A configured server. Only one is ever built, by knapServer() below.
  */
 export interface RelayOnPremServer {
