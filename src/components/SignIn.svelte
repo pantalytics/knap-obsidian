@@ -717,7 +717,7 @@
 			     list rather than after it. Changing a link is a different act
 			     from answering for the first time, and the rows on their own
 			     cannot tell somebody which of the two they are about to do
-			     (#71, ADR-0063). -->
+			     (#71, ADR-0066). -->
 			<p class="knap-note">{linkedToLine(syncingWith?.path)}</p>
 			{#if choices.length === 0}
 				<p class="knap-note">{NO_VAULTS_YET}</p>

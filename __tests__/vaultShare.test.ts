@@ -196,7 +196,7 @@ describe("joining one, and starting one", () => {
 		// local vault's name is the word at the top of the window. Repeating
 		// either in a button label is the same string twice on one line.
 		//
-		// Link rather than Sync since ADR-0063: pressing it answers which cloud
+		// Link rather than Sync since ADR-0066: pressing it answers which cloud
 		// vault this local vault belongs to, and the syncing follows from the
 		// answer.
 		expect(JOIN_LABEL).toBe("Link");

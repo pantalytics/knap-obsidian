@@ -211,7 +211,7 @@ export const JOIN_CONFIRMATION =
  * One word. The row it sits in carries the vault's name a centimetre to the
  * left, so repeating it in the button is the same string twice on one line.
  *
- * It says Link rather than Sync since ADR-0063. Pressing it does not start
+ * It says Link rather than Sync since ADR-0066. Pressing it does not start
  * syncing so much as answer which cloud vault this local vault belongs to, and
  * syncing is what follows from the answer. The word matters here more than it
  * usually would: #71 was a local vault pointed at the wrong cloud vault for
