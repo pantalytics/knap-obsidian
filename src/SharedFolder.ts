@@ -65,6 +65,7 @@ import {
 	toVirtualPath,
 	type ShareScope,
 } from "./vaultScope";
+import { storedLink } from "./vaultMemory";
 import { claimVpathIfUnclaimed, awaitVpathClaimSettled, wonVpathClaim } from "./uploadClaim";
 import { forgetKnapDevice, stampKnapDevice, stampKnapMeta } from "./knapMeta";
 import {
@@ -2862,6 +2863,23 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 
 	private _load(folders: SharedFolderSettings[]) {
 		let updated = false;
+
+		// More than one row covering the vault is a fault, not a list to pick
+		// from (#71). The dedupe below keeps the first row per path, which for
+		// several rows at the vault root decided which cloud vault this local
+		// vault is linked to by array order in a settings file. It stayed
+		// invisible for as long as it did because nothing ever said a choice
+		// was being made. None of them is mounted now: a vault that is not
+		// syncing says so in the corner of the window within seconds, and puts
+		// the question in front of somebody who can answer it.
+		const link = storedLink(folders);
+		const skipVaultShares = link.link === "conflict";
+		if (skipVaultShares) {
+			this.warn(
+				`This local vault has ${link.guids.length} cloud vaults linked to it and cannot tell which one is meant, so none of them is syncing. Link it again on the Knap settings screen. (${link.guids.join(", ")})`,
+			);
+		}
+
 		// Deduplicate by path: prefer entries with relay set
 		const byPath = new Map<string, SharedFolderSettings>();
 		for (const folder of folders) {
@@ -2872,6 +2890,7 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 		}
 		byPath.forEach((folder) => {
 			const scope = shareScopeOf(folder);
+			if (skipVaultShares && scope === "vault") return;
 			// A vault share carries path "", and there is no promise about
 			// what a path lookup makes of that. SharedFolder.rootTFolder
 			// resolves the root with getRoot() for the same reason; this is

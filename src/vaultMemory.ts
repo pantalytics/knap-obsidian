@@ -31,6 +31,8 @@
  * directly. `vaultShare.ts` and `vaultScope.ts` are the pattern.
  */
 
+import { shareScopeOf, type ShareScope } from "./vaultScope";
+
 /**
  * The remembered choice, as it sits in settings.
  *
@@ -83,11 +85,14 @@ export interface MountedShare {
  * - `remember`: a vault share is mounted and nothing was written down. Write
  *   it down. This is every install that picked its vault before this release,
  *   and it is why the memory does not start empty for them.
+ * - `forget`: the link on disk belongs to a different local vault. Drop it and
+ *   let the screen ask, rather than syncing somebody else's answer (#71).
  * - `nothing`: the two agree, or there is nothing to agree about.
  */
 export type VaultRecall =
 	| { action: "mount"; vault: RememberedVault }
 	| { action: "remember"; id: string }
+	| { action: "forget" }
 	| { action: "nothing" };
 
 /** The remembered id, or nothing if this vault has never been pointed at one. */
@@ -99,36 +104,72 @@ export function rememberedVaultId(
 }
 
 /**
- * Reconcile the memory against what is actually mounted.
+ * Whether a remembered link was written by the local vault reading it.
  *
- * Two rules, and the second one is the one worth stating out loud.
+ * `localId` is Obsidian's `appId`, which is per vault per machine, so this is
+ * the whole of what tells one local vault's link from another's. It was
+ * written down from the first release that had a memory at all and nothing
+ * read it, which is how #71 happened: a settings file naming one cloud vault's
+ * id under another's name was restored without anything objecting.
+ *
+ * A record with no `localId` predates nothing -- every release that wrote the
+ * memory wrote the field -- but `NamespacedSettings` hands back partial
+ * records, and a link that cannot say where it came from is treated as this
+ * vault's rather than thrown away. Refusing it would ask somebody the one
+ * question this file exists to stop asking, on the strength of a missing
+ * field.
+ */
+export function linkBelongsHere(
+	remembered: RememberedVault | undefined,
+	appId: string | undefined,
+): boolean {
+	const localId = remembered?.localId;
+	if (typeof localId !== "string" || localId === "") return true;
+	if (typeof appId !== "string" || appId === "") return true;
+	return localId === appId;
+}
+
+/**
+ * Reconcile the link against what is actually mounted.
+ *
+ * Three rules now, and the third is what #71 cost.
  *
  * **What is mounted wins.** A share that is mounted is a share that is
  * syncing: it holds a document open, it has notes going up and down it, and
  * whatever put it there knew something this file does not. So a mounted vault
- * share that disagrees with the memory rewrites the memory rather than being
- * torn down to match it. There is no case where this file stops a vault from
+ * share that disagrees with the link rewrites the link rather than being torn
+ * down to match it. There is no case where this file stops a vault from
  * syncing.
  *
  * **Folder shares are left alone.** An install still syncing folders from an
  * older build cannot hold a vault share beside them -- `SharedFolder._new`
  * refuses it in both directions -- so mounting one here would throw, and the
  * screen that offers to take the folders off is where that case is handled.
- * The memory keeps whatever it holds and waits.
+ * The link keeps whatever it holds and waits.
+ *
+ * **A link belonging to a different local vault is dropped, never mounted.**
+ * This is the one that was missing. Mounting it is how one local vault ends up
+ * syncing another's cloud vault, and the person is asked instead, which is the
+ * honest answer to a question whose recorded answer is somebody else's.
  */
 export function recallVault(
 	remembered: RememberedVault | undefined,
 	mounted: MountedShare[],
+	appId?: string,
 ): VaultRecall {
 	const mountedVault = mounted.find((share) => share.isVaultScope);
 	const rememberedId = rememberedVaultId(remembered);
+	const belongsHere = linkBelongsHere(remembered, appId);
 
 	if (mountedVault) {
-		if (mountedVault.guid === rememberedId) return { action: "nothing" };
+		if (mountedVault.guid === rememberedId && belongsHere) {
+			return { action: "nothing" };
+		}
 		return { action: "remember", id: mountedVault.guid };
 	}
 
 	if (!rememberedId) return { action: "nothing" };
+	if (!belongsHere) return { action: "forget" };
 	if (mounted.length > 0) return { action: "nothing" };
 
 	return {
@@ -140,4 +181,45 @@ export function recallVault(
 			localId: remembered?.localId,
 		},
 	};
+}
+
+/** A stored share record, as reading the link out of settings needs to see it. */
+export interface StoredShare {
+	guid: string;
+	path?: string;
+	scope?: ShareScope;
+}
+
+/**
+ * What the stored rows say the link is.
+ *
+ * - `one`: exactly one row covers the vault. The ordinary case.
+ * - `none`: nothing covers the vault. Either folder shares, or a fresh install.
+ * - `conflict`: more than one row covers the vault, which is #71 on disk.
+ */
+export type StoredLink =
+	| { link: "one"; guid: string }
+	| { link: "none" }
+	| { link: "conflict"; guids: string[] };
+
+/**
+ * Read the link off the stored rows, and refuse to guess.
+ *
+ * `SharedFolders._load` used to deduplicate these by path and keep the first,
+ * which decided which cloud vault a local vault syncs by array order in a
+ * settings file. Every row at the vault root is a vault share --
+ * `shareScopeOf` infers that from the path for records written before 1.12.4 --
+ * so an install that answered the sign-in screen more than once has several,
+ * and picking one silently is how it stayed invisible for as long as it did.
+ *
+ * More than one is a fault to report, not a list to choose from. Mounting none
+ * of them leaves the vault not syncing, which is visible in the corner of the
+ * window within seconds and puts the question in front of somebody who can
+ * answer it.
+ */
+export function storedLink(rows: StoredShare[]): StoredLink {
+	const vaultRows = rows.filter((row) => shareScopeOf(row) === "vault");
+	if (vaultRows.length === 0) return { link: "none" };
+	if (vaultRows.length === 1) return { link: "one", guid: vaultRows[0].guid };
+	return { link: "conflict", guids: vaultRows.map((row) => row.guid) };
 }

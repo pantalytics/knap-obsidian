@@ -9,8 +9,12 @@ import {
 	vaultRowLines,
 	CHOOSE_A_VAULT,
 	JOIN_LABEL,
+	LINKED_TO_LABEL,
+	linkedToLine,
 	NEW_VAULT_LABEL,
 	NO_VAULTS_YET,
+	UNLINK_EXPLANATION,
+	UNLINK_LABEL,
 	VAULT_SCOPE_NOTE,
 	REPLACE_FOLDERS_LABEL,
 	type LocalShare,
@@ -191,7 +195,11 @@ describe("joining one, and starting one", () => {
 		// The row carries the vault's name a centimetre to the left, and the
 		// local vault's name is the word at the top of the window. Repeating
 		// either in a button label is the same string twice on one line.
-		expect(JOIN_LABEL).toBe("Sync");
+		//
+		// Link rather than Sync since ADR-0063: pressing it answers which cloud
+		// vault this local vault belongs to, and the syncing follows from the
+		// answer.
+		expect(JOIN_LABEL).toBe("Link");
 		expect(NEW_VAULT_LABEL).toBe("Create new");
 	});
 
@@ -315,5 +323,55 @@ describe("the copy that goes with it", () => {
 		const line = replaceFoldersFailedLine("503").toLowerCase();
 		expect(line).toContain("nothing else has changed");
 		expect(line).toContain("503");
+	});
+});
+
+describe("ending the link", () => {
+	test("the button is one word, and it is not Delete", () => {
+		expect(UNLINK_LABEL).toBe("Unlink");
+		expect(LINKED_TO_LABEL).toBe("Linked to");
+	});
+
+	test("what it says is what survives, because the risk is reading as a delete", () => {
+		// Delete vault takes the documents with it (ADR-0047). This takes
+		// nothing, and somebody about to press it has no way to know that
+		// unless the sentence beside it says so.
+		const said = UNLINK_EXPLANATION.toLowerCase();
+		expect(said).toContain("stay on this device");
+		expect(said).toContain("keeps everything in it");
+		expect(said).toContain("link again");
+	});
+
+	test("and it never says delete, remove or lose", () => {
+		expect(UNLINK_EXPLANATION).not.toMatch(/delete|remove|lost|lose/i);
+	});
+
+	test("no machine word reaches it", () => {
+		// ADR-0038: share, relay and control plane stay off a screen.
+		for (const copy of [UNLINK_EXPLANATION, UNLINK_LABEL, LINKED_TO_LABEL]) {
+			expect(copy).not.toMatch(/\bshare\b|\brelay\b|control plane|workspace/i);
+		}
+	});
+});
+
+describe("the line in front of the list", () => {
+	test("names the cloud vault this one already answers to", () => {
+		const said = linkedToLine("Second Brain");
+		expect(said).toContain("Second Brain");
+		// Changing a link is a different act from answering the first time, and
+		// this sentence is the only thing on the screen that says so (#71).
+		expect(said).toMatch(/stops syncing with that one/);
+	});
+
+	test("says so plainly when there is no link yet", () => {
+		for (const nothing of [undefined, ""]) {
+			const said = linkedToLine(nothing);
+			expect(said).toBe("This vault is not linked to a cloud vault yet.");
+		}
+	});
+
+	test("it warns about the swap rather than asking a question", () => {
+		// The rows underneath are the question. This is the consequence.
+		expect(linkedToLine("V")).not.toMatch(/\?/);
 	});
 });

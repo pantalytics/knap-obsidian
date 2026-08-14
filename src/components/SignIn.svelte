@@ -21,8 +21,12 @@
 		CHOOSE_A_VAULT,
 		JOIN_CONFIRMATION,
 		JOIN_LABEL,
+		LINKED_TO_LABEL,
+		linkedToLine,
 		NEW_VAULT_LABEL,
 		NO_VAULTS_YET,
+		UNLINK_EXPLANATION,
+		UNLINK_LABEL,
 		VAULT_SCOPE_NOTE,
 		REPLACE_FOLDERS_LABEL,
 		type LocalShare,
@@ -110,6 +114,9 @@
 	// The one being joined right now, so its row can say so and the rest of
 	// the list cannot be pressed underneath it.
 	let joining: string | undefined;
+	// Whether the link is being taken off, so the button says so and cannot be
+	// pressed twice.
+	let unlinking = false;
 	// Somebody who has signed in here before is signed OUT, which is a state
 	// with its own words and its own button. Somebody who never has is simply
 	// new, and gets told what the button is for instead: the signed-out
@@ -287,6 +294,40 @@
 	}
 
 	/**
+	 * End the link between this local vault and the cloud vault it syncs.
+	 *
+	 * **Local only, and that is the whole design of it.** Nothing is deleted on
+	 * either side: the share stays on Knap with every note in it, this device
+	 * keeps every note on disk, and linking again picks the two back up. That
+	 * is what separates it from Delete vault (ADR-0047), which takes the
+	 * documents with it and is a different question asked on a different page.
+	 *
+	 * `SharedFolders.delete` is what forgets the link as well, wired there
+	 * rather than here so that every way a vault share comes off clears the
+	 * memory with it.
+	 */
+	async function unlink() {
+		if (unlinking) return;
+		unlinking = true;
+		error = "";
+		try {
+			for (const mounted of plugin.sharedFolders.items()) {
+				if (!mounted.isVaultScope) continue;
+				plugin.sharedFolders.delete(mounted);
+			}
+			syncingWith = undefined;
+			plugin.folderNavDecorations?.quickRefresh();
+			// Back to the list, so the screen somebody lands on after unlinking
+			// is the one that offers the next answer rather than an empty panel.
+			await startSyncingTheVault();
+		} catch (e: unknown) {
+			error = e instanceof Error ? e.message : "Could not unlink this vault";
+		} finally {
+			unlinking = false;
+		}
+	}
+
+	/**
 	 * Join the vault somebody pressed, or start a new one.
 	 *
 	 * Joining a local vault that already holds files asks once, and that
@@ -347,12 +388,25 @@
 	}
 
 	/**
-	 * Start syncing against a share, wherever it came from.
+	 * Link this local vault to a cloud vault, wherever the choice came from.
 	 *
 	 * The empty path is the vault root, and "vault" is the scope that makes
 	 * every path in the share resolve without a prefix.
+	 *
+	 * **Linking replaces, it does not append.** A local vault is linked to at
+	 * most one cloud vault, so anything already covering the vault comes off
+	 * first. `SharedFolder._new` does refuse a second share at the same path,
+	 * but only against what is mounted, and the case that produced #71 is
+	 * exactly the one where nothing is: an update where the share did not come
+	 * back, the screen offering the list again, and the answer landing beside
+	 * the old row instead of on top of it.
 	 */
 	function attachShare(shareId: string, name?: string) {
+		for (const mounted of plugin.sharedFolders.items()) {
+			if (!mounted.isVaultScope) continue;
+			if (mounted.guid === shareId) continue;
+			plugin.sharedFolders.delete(mounted);
+		}
 		const folder = plugin.sharedFolders.new("", shareId, "relay-onprem", false, "vault");
 		if (folder?.settings) {
 			folder.settings.onpremServerId = KNAP_SERVER_ID;
@@ -587,10 +641,18 @@
 		{#if syncingWith}
 			<div class="setting-item">
 				<div class="setting-item-info">
-					<div class="setting-item-name">Vault</div>
+					<div class="setting-item-name">{LINKED_TO_LABEL}</div>
+					<div class="setting-item-description">{UNLINK_EXPLANATION}</div>
 				</div>
 				<div class="setting-item-control knap-value">
 					<span class="knap-value-text">{syncingWith.path}</span>
+					<button
+						class="knap-btn"
+						disabled={unlinking}
+						on:click={unlink}
+					>
+						{unlinking ? "Unlinking" : UNLINK_LABEL}
+					</button>
 				</div>
 			</div>
 		{/if}
@@ -651,6 +713,12 @@
 	{#if choices}
 		<div class="knap-choose">
 			<p class="knap-choose-title">{CHOOSE_A_VAULT}</p>
+			<!-- Which cloud vault this one already answers to, said before the
+			     list rather than after it. Changing a link is a different act
+			     from answering for the first time, and the rows on their own
+			     cannot tell somebody which of the two they are about to do
+			     (#71, ADR-0063). -->
+			<p class="knap-note">{linkedToLine(syncingWith?.path)}</p>
 			{#if choices.length === 0}
 				<p class="knap-note">{NO_VAULTS_YET}</p>
 			{/if}

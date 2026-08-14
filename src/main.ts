@@ -1070,6 +1070,19 @@ export default class Live extends Plugin {
 								sharedFolder.settings.onpremServerId = share.serverId;
 							}
 						} else if (!existing) {
+							// A share on the account this device has no record of.
+							// The only thing that ever qualified it was a local
+							// folder whose name matched, which is a name collision
+							// standing in for a decision -- the same class of fault
+							// as #71, where one local vault ended up holding another
+							// cloud vault's tree. A vault that is linked syncs whole
+							// (ADR-0043) and has nothing to gain from a folder share
+							// appearing beside it, so nothing is auto-created here
+							// once a link exists.
+							if (this.sharedFolders.items().some((f) => f.isVaultScope)) {
+								log(`Ignoring "${share.path}": this vault is already linked to a cloud vault`);
+								continue;
+							}
 							// Only auto-create if the folder exists locally in vault
 							const vaultFolder = this.app.vault.getAbstractFileByPath(share.path);
 							if (vaultFolder && vaultFolder instanceof TFolder) {
@@ -1172,6 +1185,19 @@ export default class Live extends Plugin {
 								sharedFolder.settings.onpremServerId = defaultServerId;
 							}
 						} else if (!existing) {
+							// A share on the account this device has no record of.
+							// The only thing that ever qualified it was a local
+							// folder whose name matched, which is a name collision
+							// standing in for a decision -- the same class of fault
+							// as #71, where one local vault ended up holding another
+							// cloud vault's tree. A vault that is linked syncs whole
+							// (ADR-0043) and has nothing to gain from a folder share
+							// appearing beside it, so nothing is auto-created here
+							// once a link exists.
+							if (this.sharedFolders.items().some((f) => f.isVaultScope)) {
+								log(`Ignoring "${share.path}": this vault is already linked to a cloud vault`);
+								continue;
+							}
 							// Only auto-create if the folder exists locally in vault
 							const vaultFolder = this.app.vault.getAbstractFileByPath(share.path);
 							if (vaultFolder && vaultFolder instanceof TFolder) {
@@ -1308,13 +1334,19 @@ export default class Live extends Plugin {
 	 * rather than instead of it. A person answers this question once.
 	 */
 	public rememberVault(vault: RememberedVault): void {
-		void this.vaultMemory.update((current) => ({
-			...current,
-			...vault,
+		// Replaced whole, never merged into. Merging is how the record came to
+		// hold one cloud vault's id under another cloud vault's name (#71): the
+		// caller that only knows the id passed the id alone, and the name of
+		// whatever was linked before stayed sitting beside it. A field the
+		// caller cannot supply is better absent than wrong.
+		void this.vaultMemory.set({
+			id: vault.id,
+			name: vault.name,
+			serverId: vault.serverId,
 			// Which local vault this is, alongside which cloud vault it syncs.
 			// The pair is the record; see `vaultMemory.ts`.
 			localId: this.appId,
-		}));
+		});
 	}
 
 	/**
@@ -1347,17 +1379,39 @@ export default class Live extends Plugin {
 	public restoreRememberedVault(): void {
 		if (!this.sharedFolders || !this.vaultMemory) return;
 
+		const remembered = this.vaultMemory.get();
 		const recall = recallVault(
-			this.vaultMemory.get(),
+			remembered,
 			this.sharedFolders.items().map((folder) => ({
 				guid: folder.guid,
 				isVaultScope: folder.isVaultScope,
 			})),
+			this.appId,
 		);
+
+		if (recall.action === "forget") {
+			// The link on disk was written by a different local vault (#71).
+			// Dropping it leaves this vault not syncing and the screen asking,
+			// which is the honest answer to a question whose recorded answer
+			// belongs to somebody else.
+			this.warn(
+				"The linked cloud vault on disk belongs to a different local vault, so it is being dropped",
+			);
+			this.forgetVault();
+			return;
+		}
 
 		if (recall.action === "remember") {
 			this.log("Remembering the cloud vault this device syncs", recall.id);
-			this.rememberVault({ id: recall.id });
+			// The name travels only while the id it was written for does. A
+			// mounted share knows its own id and not what Knap calls it, so
+			// changing the id drops the name rather than carrying the old one
+			// across (#71).
+			this.rememberVault({
+				id: recall.id,
+				name: remembered?.id === recall.id ? remembered?.name : undefined,
+				serverId: remembered?.id === recall.id ? remembered?.serverId : undefined,
+			});
 			return;
 		}
 		if (recall.action !== "mount") return;
