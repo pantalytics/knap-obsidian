@@ -6,7 +6,7 @@ import type { Awareness } from "y-protocols/awareness";
  * What this device is doing with a cloud vault *right now*.
  *
  * The other half of `knapMeta.ts`'s device row, and the two do different jobs
- * (ADR-0063 in the admin repository). The row in `knap_devices_v0` is durable:
+ * (ADR-0064 in the admin repository). The row in `knap_devices_v0` is durable:
  * it survives a shut laptop, which is what keeps a device on Knap's page at
  * all, and it is rewritten at most hourly because every write is an update
  * every peer on the vault receives. It therefore cannot carry what a device
