@@ -51,6 +51,15 @@ export interface TokenInfo<Token> {
 	token: Token | null;
 	expiryTime: number;
 	attempts: number;
+	/**
+	 * How long this token lived when it was issued, in milliseconds. Used to
+	 * scale the refresh margin: with the server's five-minute tokens a fixed
+	 * five-minute margin meant every token counted as expiring from the moment
+	 * it arrived, so the refresh loop ran flat out and spent request slots the
+	 * first sync needed. Absent on entries persisted by older builds, which
+	 * then keep the fixed margin until their first refresh.
+	 */
+	lifetimeMs?: number;
 }
 
 export class TokenStore<TokenType extends HasToken> {
@@ -209,17 +218,17 @@ export class TokenStore<TokenType extends HasToken> {
 	private onTokenRefreshed(documentId: string, token: TokenType) {
 		const expiryTime = this.getJwtExpiry(token);
 		if (this.tokenMap.has(documentId)) {
-			 
+
 			const existing = this.tokenMap.get(documentId)!;
-			 
-			const callback = this.callbacks.get(documentId)!;
+			const callback = this.callbacks.get(documentId);
 			this.log(`new expiry time is ${expiryTime}`);
 			this.tokenMap.set(documentId, {
 				...existing,
 				token,
 				expiryTime,
+				lifetimeMs: Math.max(0, expiryTime - this.timeProvider.getTime()),
 			});
-			callback(token);
+			callback?.(token);
 			this.log(`Token refreshed for ${existing.friendlyName} (${documentId})`);
 		}
 	}
@@ -245,7 +254,13 @@ export class TokenStore<TokenType extends HasToken> {
 
 	shouldRefresh(token: TokenInfo<TokenType>): boolean {
 		const currentTime = this.timeProvider.getTime();
-		return currentTime + this.expiryMargin > token.expiryTime;
+		// Never spend more than half a token's life refreshing it early. The
+		// fixed margin alone is longer than the relay's whole token lifetime,
+		// which made every fresh token due for refresh immediately.
+		const margin = token.lifetimeMs
+			? Math.min(this.expiryMargin, token.lifetimeMs / 2)
+			: this.expiryMargin;
+		return currentTime + margin > token.expiryTime;
 	}
 
 	getTokenSync(documentId: string) {
@@ -297,6 +312,10 @@ export class TokenStore<TokenType extends HasToken> {
 		friendlyName: string,
 		callback: (token: TokenType) => void,
 	) {
+		// Register the callback before joining an in-flight request. A second
+		// caller used to ride the shared promise with its callback dropped on
+		// the floor, so later refreshes never reached its provider.
+		this.callbacks.set(documentId, callback);
 		const activePromise = this._activePromises.get(documentId);
 		if (activePromise) {
 			return activePromise;
@@ -308,7 +327,6 @@ export class TokenStore<TokenType extends HasToken> {
 			expiryTime: 0,
 			attempts: existing?.attempts ?? 0,
 		});
-		this.callbacks.set(documentId, callback);
 		const sharedPromise = this._onRefreshWithRetry(documentId)
 			.then((newToken: TokenType) => {
 				this.onTokenRefreshed(documentId, newToken);
@@ -322,6 +340,44 @@ export class TokenStore<TokenType extends HasToken> {
 			});
 		this._activePromises.set(documentId, sharedPromise);
 		return sharedPromise;
+	}
+
+	/**
+	 * Fetch a token into the cache without holding a callback open, so the
+	 * caller that later asks for it properly gets a cache hit.
+	 *
+	 * This is what lets a batch token request actually carry a batch: the sync
+	 * queue admits a few documents at a time, so the callers waiting on a
+	 * token at any moment never numbered more than that, and a route built to
+	 * answer for a hundred documents answered for three. Warming the tokens
+	 * for the work just ahead of the queue puts a hundred waiters on one
+	 * request.
+	 *
+	 * A warm failure is swallowed: the real caller retries with backoff, and a
+	 * prefetch that cannot be served is not worth an error of its own.
+	 */
+	async warm(documentId: string, friendlyName: string): Promise<void> {
+		if (!this.tokenMap) {
+			return;
+		}
+		const info = this.tokenMap.get(documentId);
+		if (info?.token && this.isTokenValid(info) && !this.shouldRefresh(info)) {
+			return;
+		}
+		if (this._activePromises.has(documentId)) {
+			return;
+		}
+		const noop = () => {};
+		try {
+			await this.getTokenFromNetwork(documentId, friendlyName, noop);
+		} catch {
+			// Swallowed on purpose, see above.
+		} finally {
+			// Only drop the callback if no real caller replaced it meanwhile.
+			if (this.callbacks.get(documentId) === noop) {
+				this.callbacks.delete(documentId);
+			}
+		}
 	}
 
 	async getToken(
