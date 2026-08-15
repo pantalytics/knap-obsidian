@@ -79,4 +79,40 @@ describe("NetworkStatus (TR-26: offline detection dead when url is empty)", () =
 		expect(status.online).toBe(true);
 		expect(onOnline).toHaveBeenCalledTimes(1);
 	});
+
+	test("stop() actually stops the polling, and start() can resume it", async () => {
+		mockRequestUrl.mockResolvedValue({ status: 200, json: { status: "ok" } });
+		const status = new NetworkStatus(timeProvider, "https://cp.example.com/v1/health", 1000);
+		status.start();
+
+		timeProvider.setTime(timeProvider.getTime() + 1000);
+		await Promise.resolve();
+		expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+
+		// stop() used window.clearInterval on a TimeProvider handle, which
+		// cleared nothing: the poll kept running after stop.
+		status.stop();
+		timeProvider.setTime(timeProvider.getTime() + 5000);
+		await Promise.resolve();
+		expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+
+		status.start();
+		timeProvider.setTime(timeProvider.getTime() + 1000);
+		await Promise.resolve();
+		expect(mockRequestUrl).toHaveBeenCalledTimes(2);
+	});
+
+	test("destroy() stops the timer, so a torn-down instance cannot keep firing", async () => {
+		mockRequestUrl.mockResolvedValue({ status: 200, json: { status: "ok" } });
+		const status = new NetworkStatus(timeProvider, "https://cp.example.com/v1/health", 1000);
+		status.start();
+		status.destroy();
+
+		// After a plugin update the old bundle's instance is exactly this
+		// object: destroyed, with its callback arrays nulled. A surviving
+		// interval would fire into those nulls beside the new bundle.
+		timeProvider.setTime(timeProvider.getTime() + 5000);
+		await Promise.resolve();
+		expect(mockRequestUrl).not.toHaveBeenCalled();
+	});
 });

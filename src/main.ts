@@ -128,7 +128,14 @@ import {
 	vaultSyncResult,
 	type VaultSyncWork,
 } from "./syncNotices";
-import { SIGNED_OUT, syncInstruction } from "./syncStatus";
+import {
+	PAUSED,
+	SIGNED_OUT,
+	SYNCING,
+	UP_TO_DATE,
+	syncInstruction,
+	type SyncWord,
+} from "./syncStatus";
 import {
 	recallVault,
 	rememberedVaultId,
@@ -155,6 +162,14 @@ interface RelaySettings extends FeatureFlags, DebugSettings {
 	 * fact a person supplied. `vaultMemory.ts` has the whole reasoning.
 	 */
 	vault: RememberedVault;
+	/**
+	 * The plugin version that last finished starting here. Read at the end of
+	 * the next start: a difference means an update landed, and that is the
+	 * moment somebody wants to hear whether everything still works, because
+	 * an update that quietly broke sync and one that quietly worked used to
+	 * look identical.
+	 */
+	lastRunVersion?: string;
 }
 
 const DEFAULT_SETTINGS: RelaySettings = {
@@ -611,8 +626,20 @@ export default class Live extends Plugin {
 			);
 		}
 
-		// Wait for auth restoration before using auth state
-		await this.loginManager.waitForRestore();
+		// Wait for auth restoration before using auth state, but not forever.
+		// Restoring an expired session goes over the network with retries and
+		// no bound of its own, and everything a person can see, the settings
+		// tab, the status bar, the editor bindings, sits after this line. On a
+		// machine that has just come back online, the plugin looked
+		// uninstalled for as long as the control plane kept it waiting.
+		// Auth restore keeps running behind this; the login listener picks the
+		// session up whenever it lands.
+		await Promise.race([
+			this.loginManager.waitForRestore(),
+			new Promise<void>((resolve) => {
+				this.timeProvider.setTimeout(resolve, 10_000);
+			}),
+		]);
 
 		// Initialize multi-server share client manager
 		if (relayOnPremSettings.enabled && relayOnPremSettings.servers.length > 0) {
@@ -955,11 +982,64 @@ export default class Live extends Plugin {
 					}
 				}),
 			);
-			this.setup();
+			const lastRunVersion = this.settings.get().lastRunVersion;
+			try {
+				this.setup();
+			} catch (e) {
+				// A start that died halfway used to look exactly like a start
+				// that worked: the ribbon icon is there either way, and the
+				// parts that did not come up are the parts that would have
+				// said so.
+				this.error("setup failed", e);
+				new Notice(
+					"Knap could not finish starting, so sync may not be running. Restart Obsidian to try again. The log in the plugin folder has the details.",
+					15000,
+				);
+				return;
+			}
 			void this._liveViews.refresh("init");
 			this.loadTime = moment.now() - start;
+			this.announceUpdate(lastRunVersion);
 
 		});
+	}
+
+	/**
+	 * Say that an update landed, and what the vault is doing under the new
+	 * build. The one moment somebody actively wonders whether everything
+	 * still works is right after an update, and up to now the plugin said
+	 * nothing at exactly that moment: an update that quietly broke sync and
+	 * one that quietly worked looked identical.
+	 *
+	 * Silent for a fresh install and for an ordinary restart of the same
+	 * version. The delay gives the folders a moment to mount and connect, so
+	 * the notice reports what the vault is doing rather than what it has not
+	 * started yet.
+	 */
+	private announceUpdate(lastRunVersion: string | undefined) {
+		const current = this.manifest.version;
+		if (lastRunVersion === current) {
+			return;
+		}
+		void this.settings.update((settings) => ({
+			...settings,
+			lastRunVersion: current,
+		}));
+		if (!lastRunVersion) {
+			// A fresh install, or the first run of the build that starts
+			// keeping this record. Nothing changed under anybody.
+			return;
+		}
+		this.timeProvider.setTimeout(() => {
+			const reading = this.readVaultStatus();
+			const lines: Record<SyncWord, string> = {
+				[SYNCING]: "Your vault is syncing.",
+				[UP_TO_DATE]: "Your vault is up to date.",
+				[PAUSED]: "Sync is paused on this device.",
+				[SIGNED_OUT]: "Sign in to resume sync.",
+			};
+			new Notice(`Knap updated to ${current}. ${lines[reading.word]}`);
+		}, 3000);
 	}
 
 	async reload() {
@@ -2213,9 +2293,25 @@ export default class Live extends Plugin {
 	}
 
 	onunload() {
-		// Save settings before cleanup to persist any changes
-		// Must await to ensure settings are persisted before destroying namespaced settings
-		void this.settings?.save();
+		// Save settings before cleanup to persist any changes. onunload cannot
+		// await, so the promise is kept: the fields the write needs (app,
+		// manifest, vault) are nulled only after it settles, further down.
+		// Before that, an update's unload raced its own save: the old bundle's
+		// write could land after the new bundle had already loaded and
+		// migrated, putting old settings on top of new ones.
+		const settingsFlushed: Promise<unknown> =
+			this.settings?.save() ?? Promise.resolve();
+
+		// One failed teardown must not stop the rest: whatever survives here
+		// keeps running beside the next bundle after an update, which is the
+		// two-plugins-on-one-vault shape. Each step falls alone.
+		const safely = (label: string, fn: () => void) => {
+			try {
+				fn();
+			} catch (e) {
+				console.warn(`[Knap] teardown of ${label} failed`, e);
+			}
+		};
 
 		// Cleanup all monkeypatches and destroy the singleton
 		Patcher.destroy();
@@ -2276,34 +2372,39 @@ export default class Live extends Plugin {
 			this.webSyncManager = undefined;
 		}
 
-		this.hashStore.destroy();
+		safely("hashStore", () => this.hashStore?.destroy());
 		this.hashStore = null as unknown as ContentAddressedFileStore;
 
 		this.app?.workspace.updateOptions();
 		(this.app as unknown as ObsidianApp).reloadRelay = undefined;
-		this.app = null as unknown as App;
 		this.fileManager = null as unknown as FileManager;
-		this.manifest = null as unknown as PluginManifest;
-		this.vault = null as unknown as Vault;
 
-		this.debugSettings.destroy();
+		safely("debugSettings", () => this.debugSettings?.destroy());
 		this.debugSettings = null as unknown as NamespacedSettings<DebugSettings, Record<string, unknown>>;
-		this.folderSettings.destroy();
+		safely("folderSettings", () => this.folderSettings?.destroy());
 		this.folderSettings = null as unknown as NamespacedSettings<SharedFolderSettings[], Record<string, unknown>>;
 
 		// Destroy FeatureFlagManager before destroying featureSettings
-		FeatureFlagManager.destroy();
+		safely("FeatureFlagManager", () => FeatureFlagManager.destroy());
 
-		this.featureSettings.destroy();
+		safely("featureSettings", () => this.featureSettings?.destroy());
 		this.featureSettings = null as unknown as NamespacedSettings<FeatureFlags, Record<string, unknown>>;
-		this.vaultMemory.destroy();
+		safely("vaultMemory", () => this.vaultMemory?.destroy());
 		this.vaultMemory = null as unknown as NamespacedSettings<RememberedVault, Record<string, unknown>>;
-		this.loginSettings.destroy();
+		safely("loginSettings", () => this.loginSettings?.destroy());
 		this.loginSettings = null as unknown as NamespacedSettings<LoginSettings, Record<string, unknown>>;
-		this.endpointSettings.destroy();
+		safely("endpointSettings", () => this.endpointSettings?.destroy());
 		this.endpointSettings = null as unknown as NamespacedSettings<EndpointSettings, Record<string, unknown>>;
-		this.relayOnPremSettings.destroy();
+		safely("relayOnPremSettings", () => this.relayOnPremSettings?.destroy());
 		this.relayOnPremSettings = null as unknown as NamespacedSettings<RelayOnPremSettings, Record<string, unknown>>;
+
+		// The settings write above needs these three; they go last, once it
+		// has settled either way.
+		void settingsFlushed.finally(() => {
+			this.app = null as unknown as App;
+			this.manifest = null as unknown as PluginManifest;
+			this.vault = null as unknown as Vault;
+		});
 
 		this.interceptedUrls.length = 0;
 		PostOffice.destroy();

@@ -27,9 +27,24 @@ that ships beside this one and in the repository's NOTICE.
 */
 `;
 
-const gitTag = execSync("git describe --tags --always", {
+// The version this build reports about itself: the Relay-Version header,
+// the health check's ?version=, the device row on Knap's page, and the pill
+// the settings screen shows when it differs from the manifest. In CI the
+// checkout is shallow and the release tag does not exist yet, so `git
+// describe` degrades to a bare commit SHA; every shipped build then reported
+// a SHA, the pill showed on all of them, and a signal that should mean
+// "this build is not the release" meant nothing. A describe that carries no
+// tag falls back to the manifest's version, which is what the release is
+// about to be named.
+const described = execSync("git describe --tags --always", {
 	encoding: "utf8",
 }).trim();
+const manifestVersion = JSON.parse(
+	fs.readFileSync("manifest.json", "utf8"),
+).version;
+const gitTag = /^[0-9a-f]{7,40}$/.test(described)
+	? manifestVersion
+	: described;
 
 const develop = process.argv[2] === "develop";
 const staging = process.argv[2] === "staging";

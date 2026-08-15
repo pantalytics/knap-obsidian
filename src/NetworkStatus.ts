@@ -48,7 +48,9 @@ class NetworkStatus {
 			// No health URL configured (relay-onprem mode) - stay online
 			return;
 		}
-		if (!this.timer) {
+		// Compared against undefined rather than truthiness: a timer id can
+		// legitimately be 0.
+		if (this.timer === undefined) {
 			this.timer = this.checkStatusRepeatedly();
 		}
 	}
@@ -66,8 +68,12 @@ class NetworkStatus {
 	}
 
 	public stop() {
-		if (this.timer) {
-			window.clearInterval(this.timer);
+		if (this.timer !== undefined) {
+			// The timer came from the TimeProvider, so it goes back through
+			// it: window.clearInterval on a TimeProvider handle cleared
+			// nothing, and the check kept running after stop.
+			this.timeProvider.clearInterval(this.timer);
+			this.timer = undefined;
 		}
 	}
 
@@ -146,6 +152,10 @@ class NetworkStatus {
 	}
 
 	destroy() {
+		// Stop first: an interval that outlives this call would fire into the
+		// nulled callback arrays below, which after a plugin update means the
+		// old bundle throwing beside the new one.
+		this.stop();
 		this._onceOnline.clear();
 		this._onceOnline = null as unknown as Set<Callback>;
 		this.onOnline = null as unknown as Callback[];
