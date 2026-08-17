@@ -276,7 +276,7 @@ describe("RelayOnPremTokenProvider.requestFileToken", () => {
 		} as Response);
 	}
 
-	test("POSTs to /shares/{folderId}/file-token with fileId as the path, sha256/content_type/content_length in the body", async () => {
+	test("POSTs to /v1/shares/{folderId}/file-token with fileId as the path, sha256/content_type/content_length in the body", async () => {
 		mockFetch.mockImplementation(() => mockFileTokenResponse(200, FILE_TOKEN_RESPONSE));
 
 		const provider = new RelayOnPremTokenProvider({
@@ -296,7 +296,7 @@ describe("RelayOnPremTokenProvider.requestFileToken", () => {
 		await request;
 
 		expect(mockFetch).toHaveBeenCalledWith(
-			"https://cp.example.com/shares/folder1/file-token",
+			"https://cp.example.com/v1/shares/folder1/file-token",
 			expect.objectContaining({
 				method: "POST",
 				headers: expect.objectContaining({

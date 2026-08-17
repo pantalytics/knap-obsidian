@@ -20,6 +20,8 @@ import { reconcileWithConflictCopy } from "./y-diffMatchPatch";
 import { waitForBufferFlush } from "./websocketFlush";
 import { claimInitIfUnclaimed, wonInitClaim, markInitDone, awaitClaimSettled } from "./initContentClaim";
 import { owed, stateFor } from "./knapPresence";
+import { MAX_BATCH_DOCS } from "./auth/RelayOnPremTokenProvider";
+import { reportFault } from "./faults";
 
 export interface QueueItem {
 	guid: string;
@@ -104,7 +106,12 @@ export class BackgroundSync extends HasLogging {
 		private loginManager: LoginManager,
 		private timeProvider: TimeProvider,
 		private sharedFolders: SharedFolders,
-		private concurrency: number = 3,
+		// Eight at a time, the same width Knap's own copying settled on
+		// (ADR-0054). Three was set when every document also queued for its
+		// own token request; with the tokens warmed ahead in batches the
+		// connection is the whole cost, and three connections left a first
+		// sync waiting on round trips it did not need to.
+		private concurrency: number = 8,
 	) {
 		super();
 		RelayInstances.set(this, "BackgroundSync");
@@ -252,9 +259,38 @@ export class BackgroundSync extends HasLogging {
 		return progress;
 	}
 
+	/**
+	 * Ask for the tokens the queues will need next, ahead of admitting the
+	 * work. The token store dedupes and caches, so on most ticks this is a
+	 * hundred map lookups and no requests; when the window slides over new
+	 * items, the newcomers coalesce into one batch request. Without this the
+	 * batch route was starved: only the few admitted syncs ever waited on a
+	 * token, so a request built for a hundred documents carried three.
+	 *
+	 * The window is one batch wide on purpose. Tokens live five minutes, and
+	 * warming further ahead than the queue can spend inside that window is
+	 * signatures thrown away.
+	 */
+	private warmUpcomingTokens() {
+		const upcoming = [...(this.syncQueue ?? []), ...(this.downloadQueue ?? [])]
+			.filter((item) => item.sharedFolder.connected)
+			.slice(0, MAX_BATCH_DOCS);
+		for (const item of upcoming) {
+			const doc = item.doc;
+			if (doc instanceof SyncFile) {
+				// Attachments mint per-operation file tokens, on their own
+				// pacing; there is nothing to warm.
+				continue;
+			}
+			void doc.tokenStore?.warm(S3RN.encode(doc.s3rn), doc.getVaultPath());
+		}
+	}
+
 	private processSyncQueue() {
 		if (this.isPaused || this.isProcessingSync) return;
 		this.isProcessingSync = true;
+
+		this.warmUpcomingTokens();
 
 		// Filter for items with connected folders
 		const connectableItems = this.syncQueue.filter(
@@ -354,6 +390,7 @@ export class BackgroundSync extends HasLogging {
 						const group = this.syncGroups.get(item.sharedFolder);
 						if (group) {
 							this.error("[Sync Failed]", error);
+							reportFault("sync", error);
 							group.status = "failed";
 							this.syncGroups.set(item.sharedFolder, group);
 						}
@@ -381,6 +418,7 @@ export class BackgroundSync extends HasLogging {
 				const group = this.syncGroups.get(item.sharedFolder);
 				if (group) {
 					this.error("[Sync Startup Failed]", error);
+					reportFault("sync", error);
 					group.status = "failed";
 					this.syncGroups.set(item.sharedFolder, group);
 				}

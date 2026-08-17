@@ -32,7 +32,24 @@ export class MockTimeProvider implements TimeProvider {
 	//}
 
 	setInterval(callback: () => void, ms: number): number {
-		return this.setTimeout(callback, ms, true);
+		// Reschedule under the SAME id, so clearInterval(handle) still works
+		// after the interval has fired. The old shape rescheduled under a
+		// fresh id each firing, which made every interval uncancellable from
+		// its second tick on, and hid exactly the "timer keeps firing after
+		// stop" class of bug NetworkStatus had.
+		const timerId = this.nextTimerId++;
+		const schedule = () => {
+			this.timers.push({
+				id: timerId,
+				triggerTime: this.currentTime + ms,
+				callback: () => {
+					callback();
+					schedule();
+				},
+			});
+		};
+		schedule();
+		return timerId;
 	}
 
 	clearInterval(timerId: number): void {
@@ -96,14 +113,14 @@ export class MockTimeProvider implements TimeProvider {
 	}
 
 	private checkTimers(): void {
-		console.log(this.timers);
-		this.timers.forEach((timer) => {
-			if (this.currentTime >= timer.triggerTime) {
-				console.log("timer triggered");
-				timer.callback();
-				const id = <any>timer.id;
-				this.clearInterval(id);
-			}
-		});
+		// Remove the due entries first, then fire them: an interval's callback
+		// reschedules itself under the same id, and the old
+		// remove-by-id-after-firing swept that fresh entry away with the spent
+		// one, so intervals died after one tick.
+		const due = this.timers.filter(
+			(timer) => this.currentTime >= timer.triggerTime,
+		);
+		this.timers = this.timers.filter((timer) => !due.includes(timer));
+		due.forEach((timer) => timer.callback());
 	}
 }

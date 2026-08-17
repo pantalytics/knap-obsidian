@@ -162,8 +162,16 @@ class TokenRequestThrottle {
 export class RelayOnPremTokenProvider {
 	private log = curryLog("[RelayOnPremTokenProvider]");
 	private normalizedUrl: string;
-	/** Shared throttle — all token requests for this provider share one queue */
+	/** Shared throttle — all relay (document) token requests share one queue */
 	private throttle: TokenRequestThrottle;
+	/**
+	 * File tokens pace themselves separately. Their route carries no server
+	 * rate limit (measured, ADR-0051: attachments were never in the token
+	 * budget), and letting them queue behind document tokens meant a vault
+	 * with many attachments spent the sync's 25 slots a minute on presigned
+	 * URLs while the notes waited.
+	 */
+	private fileThrottle: TokenRequestThrottle;
 	/** Batches forming, keyed by relay, share and mode. See `joinBatch`. */
 	private batches = new Map<string, PendingBatch>();
 	/**
@@ -179,6 +187,10 @@ export class RelayOnPremTokenProvider {
 		this.normalizedUrl = config.controlPlaneUrl.replace(/\/+$/, "");
 		// 25 req/min leaves a 5-req safety margin below the server's 30 req/min limit
 		this.throttle = new TokenRequestThrottle(25);
+		// 120 req/min: no server ceiling to stay under, this is our own
+		// restraint so an attachment-heavy first sync is not mistaken for a
+		// flood by anything in between.
+		this.fileThrottle = new TokenRequestThrottle(120);
 	}
 
 	/**
@@ -254,8 +266,10 @@ export class RelayOnPremTokenProvider {
 		await this.throttle.acquire();
 
 		try {
+			// The /v1 mount is the canonical one; the bare path is the relay's
+			// deprecated alias (ADR-0051 rejects relying on it).
 			const response = await customFetch(
-				`${this.normalizedUrl}/tokens/relay`,
+				`${this.normalizedUrl}/v1/tokens/relay`,
 				{
 					method: "POST",
 					headers: {
@@ -540,11 +554,11 @@ export class RelayOnPremTokenProvider {
 			content_length: contentLength,
 		};
 
-		await this.throttle.acquire();
+		await this.fileThrottle.acquire();
 
 		try {
 			const response = await customFetch(
-				`${this.normalizedUrl}/shares/${folderId}/file-token`,
+				`${this.normalizedUrl}/v1/shares/${folderId}/file-token`,
 				{
 					method: "POST",
 					headers: {
@@ -605,5 +619,6 @@ export class RelayOnPremTokenProvider {
 
 	destroy() {
 		this.throttle.destroy();
+		this.fileThrottle.destroy();
 	}
 }

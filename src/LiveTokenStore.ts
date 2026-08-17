@@ -96,6 +96,25 @@ export class LiveTokenStore extends TokenStore<ClientToken> {
 	}
 
 	/**
+	 * Prefetch a token so the eventual getToken is a cache hit. Only in
+	 * relay-onprem mode: that is the mode with a batch route to coalesce
+	 * into and a rate limit worth staying ahead of. The System-3 path would
+	 * turn a warm sweep into one unthrottled request per document.
+	 */
+	async warm(documentId: string, friendlyName: string): Promise<void> {
+		if (!this.isRelayOnPremMode) {
+			return;
+		}
+		if (!this.loginManager.loggedIn) {
+			return;
+		}
+		if (friendlyName && friendlyName !== "unknown") {
+			this.filePathMap.set(documentId, friendlyName);
+		}
+		return super.warm(documentId, friendlyName);
+	}
+
+	/**
 	 * Override clear to also clear file path mappings
 	 */
 	clear(filter?: (token: TokenInfo<ClientToken>) => boolean) {
@@ -132,11 +151,18 @@ export class LiveTokenStore extends TokenStore<ClientToken> {
 		if (activePromise) {
 			return activePromise as Promise<FileToken>;
 		}
-		this.tokenMap.set(documentId, {
+		// Placeholder and result both live under `key`, because that is what
+		// getFileToken reads. This used to write the placeholder under the
+		// document id and the result under the bare hash, so the cache never
+		// hit once: every verify, read and write of an attachment paid a
+		// fresh throttled round trip, and the orphaned entries sat in the
+		// persisted store until they expired.
+		this.tokenMap.set(key, {
 			token: null,
+			friendlyName: "attachment",
 			expiryTime: 0,
 			attempts: 0,
-		} as TokenInfo<ClientToken>);
+		});
 		const sharedPromise = this.fetchFileToken(
 			documentId,
 			fileHash,
@@ -145,9 +171,9 @@ export class LiveTokenStore extends TokenStore<ClientToken> {
 		)
 			.then((newToken: FileToken) => {
 				const expiryTime = this.getJwtExpiry(newToken);
-				 
+
 				const existing = this.tokenMap.get(key)!;
-				this.tokenMap.set(fileHash, {
+				this.tokenMap.set(key, {
 					...existing,
 					token: newToken,
 					expiryTime,

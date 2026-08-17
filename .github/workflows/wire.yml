@@ -1,0 +1,204 @@
+# Wire end to ends, per ADR-0068 in knap-mcp-admin
+# (docs/adr/0068-a-release-passes-through-a-real-obsidian-first.md): no change
+# to the plugin or the sync path merges until the real chain passes in CI.
+#
+# Two jobs, both meant to become required checks:
+#
+#   wire           the plugin's own transport (src/client/provider.ts, bundled
+#                  as-is) against a real y-sweet relay. Headless, no Obsidian.
+#                  Verified runnable outside CI on 2026-08-17.
+#
+#   obsidian-wire  a real Obsidian in the admin repo's Docker harness, talking
+#                  to a real relay over TLS the app's own NSS store trusts,
+#                  both share scopes, disk -> CRDT -> relay -> second device
+#                  and back.
+#
+# HONESTY NOTE: the obsidian-wire job was authored on a box without Docker, by
+# reading knap-mcp-admin/scripts/dev/obsidian/obsidian.sh, its init scripts and
+# scripts/e2e/run-obsidian-wire.sh. It has NOT yet had a green run on a real
+# runner; its first run is the test of every line marked ASSUMPTION below. Do
+# not mark it required in branch protection before that first green run.
+#
+# Unlike ci.yml these jobs do not run continue-on-error under a gate: a red
+# here is a red check, which is the point of ADR-0068.
+
+name: Wire
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: wire-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+
+  # ── Transport against a real relay, headless ────────────────────────────────
+  wire:
+    name: "Wire e2e (y-sweet relay, no Obsidian)"
+    runs-on: ubuntu-latest
+    continue-on-error: false
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+
+      # run-wire.sh fetches y-sweet via npm into .cache/y-sweet on first run.
+      # Keying on the script means a version bump in it invalidates the cache.
+      - name: Cache y-sweet
+        uses: actions/cache@v4
+        with:
+          path: .cache/y-sweet
+          key: ysweet-${{ runner.os }}-${{ hashFiles('scripts/e2e/run-wire.sh') }}
+
+      - name: Run the wire end to end
+        run: bash scripts/e2e/run-wire.sh
+
+  # ── The real chain: Obsidian + relay + TLS ─────────────────────────────────
+  obsidian-wire:
+    name: "Obsidian wire e2e (real app, real relay)"
+    runs-on: ubuntu-latest
+    continue-on-error: false
+    timeout-minutes: 40
+    env:
+      ADMIN_REPO_TOKEN: ${{ secrets.ADMIN_REPO_TOKEN }}
+
+    steps:
+      # Measured on this job's first run (2026-08-17): the default
+      # GITHUB_TOKEN cannot read pantalytics/knap-mcp-admin, so without a
+      # token of its own the admin checkout 404s three lines in. Until the
+      # secret exists the job says exactly what is missing and skips, rather
+      # than painting every pull request red over a secret; ADR-0068's
+      # enforcement is the wire job today and this one from its first green
+      # run. To arm it: a fine-grained PAT (or GitHub App installation token)
+      # with contents:read on pantalytics/knap-mcp-admin, stored as the
+      # ADMIN_REPO_TOKEN secret.
+      - name: Check for the admin-repo token
+        id: gate
+        run: |
+          if [ -z "$ADMIN_REPO_TOKEN" ]; then
+            echo "::warning::ADMIN_REPO_TOKEN is not set, and the default GITHUB_TOKEN cannot read pantalytics/knap-mcp-admin (measured: 404 on the checkout). The real-chain job is skipped until the secret exists. Create a fine-grained PAT with contents:read on pantalytics/knap-mcp-admin and store it as ADMIN_REPO_TOKEN."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v7
+        with:
+          path: knap-obsidian
+
+      # The harness lives in the admin repo; run-obsidian-wire.sh finds it at
+      # ../knap-mcp-admin by default, so check it out as a sibling.
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v7
+        with:
+          repository: pantalytics/knap-mcp-admin
+          path: knap-mcp-admin
+          token: ${{ env.ADMIN_REPO_TOKEN }}
+
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: knap-obsidian/package-lock.json
+
+      - if: steps.gate.outputs.run == 'true'
+        run: npm ci
+        working-directory: knap-obsidian
+
+      - name: Build the plugin and assemble an installable folder
+        if: steps.gate.outputs.run == 'true'
+        working-directory: knap-obsidian
+        run: |
+          npm run build
+          mkdir -p /tmp/knap-plugin
+          cp manifest.json main.js styles.css /tmp/knap-plugin/
+
+      - name: Cache y-sweet
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/cache@v4
+        with:
+          path: knap-obsidian/.cache/y-sweet
+          key: ysweet-${{ runner.os }}-${{ hashFiles('knap-obsidian/scripts/e2e/run-wire.sh') }}
+
+      # Fetches y-sweet into .cache (run-obsidian-wire.sh refuses without it)
+      # and proves the relay itself runs on this runner before the minutes are
+      # spent on Obsidian. A failure here is a relay/transport problem, not a
+      # harness one.
+      - name: Wire preflight (also caches y-sweet)
+        if: steps.gate.outputs.run == 'true'
+        working-directory: knap-obsidian
+        run: bash scripts/e2e/run-wire.sh
+
+      # Chromium reads $HOME/.pki/nssdb, and opens it at startup. On the dev
+      # box the harness init creates that store before the app launches
+      # (because the box mounts its own proxy CA); on a bare runner nothing
+      # does, so create it in the config volume before `up` and let
+      # run-obsidian-wire.sh import its per-run CA into it later.
+      # ASSUMPTION: a store created here, and a CA imported into it after the
+      # app is up, is honoured by the running Chromium. Measured true on the
+      # dev box for the import half; the empty-store-at-startup half is what
+      # the first CI run tests.
+      - name: Pre-create the app's NSS store
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libnss3-tools
+          mkdir -p knap-mcp-admin/.dev/obsidian/config/.pki/nssdb
+          certutil -N --empty-password -d "sql:$PWD/knap-mcp-admin/.dev/obsidian/config/.pki/nssdb"
+
+      # First run pulls ~1.4 GB (lscr.io/linuxserver/obsidian). obsidian.sh
+      # waits up to 120s for the vault to open after the container is up.
+      # ASSUMPTION: a 2-core runner makes that budget.
+      - name: Start the Obsidian harness
+        if: steps.gate.outputs.run == 'true'
+        working-directory: knap-obsidian
+        run: ../knap-mcp-admin/scripts/dev/obsidian/obsidian.sh up
+
+      - name: Install and enable the plugin
+        if: steps.gate.outputs.run == 'true'
+        working-directory: knap-obsidian
+        run: ../knap-mcp-admin/scripts/dev/obsidian/obsidian.sh plugin /tmp/knap-plugin
+
+      # ASSUMPTIONS the script itself carries on a fresh runner:
+      #   - the container reaches the host relay through the docker bridge
+      #     gateway (relay binds 0.0.0.0:8099 on the host)
+      #   - python3 is on PATH inside the container for the TLS proxy
+      #   - apt-get inside the container can fetch libnss3-tools if certutil
+      #     is missing (run-obsidian-wire.sh installs it when absent)
+      - name: Run the Obsidian wire end to end
+        if: steps.gate.outputs.run == 'true'
+        working-directory: knap-obsidian
+        run: bash scripts/e2e/run-obsidian-wire.sh
+
+      - name: Collect harness debug output
+        if: failure() && steps.gate.outputs.run == 'true'
+        working-directory: knap-obsidian
+        run: |
+          mkdir -p /tmp/wire-debug
+          H=../knap-mcp-admin/scripts/dev/obsidian/obsidian.sh
+          "$H" shot /tmp/wire-debug/window.png || true
+          "$H" status > /tmp/wire-debug/status.txt 2>&1 || true
+          docker logs knap-obsidian > /tmp/wire-debug/container.log 2>&1 || true
+          docker exec knap-obsidian cat /tmp/knap-tls.log > /tmp/wire-debug/tls-proxy.log 2>&1 || true
+          docker exec knap-obsidian sh -c 'certutil -d sql:/config/.pki/nssdb -L' \
+            > /tmp/wire-debug/nss-store.txt 2>&1 || true
+
+      - name: Upload harness debug artifacts
+        if: failure() && steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: obsidian-wire-debug
+          path: /tmp/wire-debug/
+          if-no-files-found: ignore
