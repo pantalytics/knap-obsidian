@@ -19,6 +19,7 @@ import * as Y from "yjs";
 import {
 	diffMatchPatch,
 	reconcileWithConflictCopy,
+	alignDiffsToCodePoints,
 } from "../src/y-diffMatchPatch";
 
 function makeDocWithText(text: string): Y.Doc {
@@ -50,6 +51,113 @@ describe("diffMatchPatch", () => {
 		const doc = makeDocWithText("unchanged");
 		diffMatchPatch(doc, "unchanged");
 		expect(doc.getText("contents").toJSON()).toBe("unchanged");
+	});
+});
+
+/**
+ * REGRESSION: diff_main works in UTF-16 code units and will happily put a diff
+ * boundary between the halves of a surrogate pair. Two emoji that share a high
+ * surrogate (🍎 = D83C DF4E, 🍊 = D83C DF4A) used to come out as EQUAL "\uD83C"
+ * + DELETE "\uDF4E" + INSERT "\uDF4A", leaving lone surrogates in the Y.Text.
+ * That is not well-formed UTF-16, and it broadcasts as an ordinary edit, so it
+ * cannot be told apart from one afterwards.
+ */
+describe("diffMatchPatch does not split surrogate pairs", () => {
+	/** True if any surrogate survives after stripping well-formed pairs. */
+	function hasLoneSurrogate(text: string): boolean {
+		return /[\uD800-\uDFFF]/.test(
+			text.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, ""),
+		);
+	}
+
+	const FRONTMATTER = "---\n\nkanban-plugin: board\n\n---\n\n";
+
+	test("replacing an emoji with one that shares its high half", () => {
+		const doc = makeDocWithText("🍎");
+		diffMatchPatch(doc, "🍊");
+		expect(doc.getText("contents").toJSON()).toBe("🍊");
+		expect(hasLoneSurrogate(doc.getText("contents").toJSON())).toBe(false);
+	});
+
+	test("reordering two emoji cards on a board", () => {
+		const before = "## 📅 Todo\n\n- [ ] 🍎 a\n- [ ] 🍊 b\n";
+		const after = "## 📅 Todo\n\n- [ ] 🍊 b\n- [ ] 🍎 a\n";
+		const doc = makeDocWithText(before);
+		diffMatchPatch(doc, after);
+		expect(doc.getText("contents").toJSON()).toBe(after);
+		expect(hasLoneSurrogate(doc.getText("contents").toJSON())).toBe(false);
+	});
+
+	test("dropping an emoji from the frontmatter", () => {
+		const before = "---\n\ncover: 🚀\nkanban-plugin: board\n\n---\n\n## Todo\n";
+		const after = FRONTMATTER + "## Todo\n- [ ] b\n";
+		const doc = makeDocWithText(before);
+		diffMatchPatch(doc, after);
+		expect(doc.getText("contents").toJSON()).toBe(after);
+	});
+
+	test("an ASCII edit still applies as a single minimal transaction", () => {
+		const before = FRONTMATTER + "## Todo\n\n- [ ] a\n";
+		const after = FRONTMATTER + "## Todo\n\n- [ ] a\n- [ ] b\n";
+		const doc = makeDocWithText(before);
+		let transactions = 0;
+		doc.getText("contents").observe(() => transactions++);
+		diffMatchPatch(doc, after);
+		expect(doc.getText("contents").toJSON()).toBe(after);
+		expect(transactions).toBe(1);
+	});
+
+	test("lands exactly on the target for randomised emoji-heavy text", () => {
+		// Deterministic PRNG so any failure is reproducible from the seed.
+		let seed = 1337;
+		const rnd = () =>
+			(seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+		const alphabet = [
+			"a", "b", "\n", "- [ ] ", "## ", "🍎", "🍊", "📅", "🚀", "é", "---",
+		];
+		const gen = (n: number) =>
+			Array.from(
+				{ length: n },
+				() => alphabet[Math.floor(rnd() * alphabet.length)],
+			).join("");
+
+		for (let i = 0; i < 500; i++) {
+			const after = FRONTMATTER + gen(Math.floor(rnd() * 40));
+			const doc = makeDocWithText(FRONTMATTER + gen(Math.floor(rnd() * 40)));
+			diffMatchPatch(doc, after);
+			const result = doc.getText("contents").toJSON();
+			expect(result).toBe(after);
+			expect(hasLoneSurrogate(result)).toBe(false);
+		}
+	});
+
+	test("alignDiffsToCodePoints keeps both sides of the diff spelling the right text", () => {
+		const aligned = alignDiffsToCodePoints([
+			[0, "\uD83C"],
+			[-1, "\uDF4E"],
+			[1, "\uDF4A"],
+		]);
+
+		const oldText = aligned
+			.filter(([op]) => op !== 1)
+			.map(([, text]) => text)
+			.join("");
+		const newText = aligned
+			.filter(([op]) => op !== -1)
+			.map(([, text]) => text)
+			.join("");
+
+		expect(oldText).toBe("🍎");
+		expect(newText).toBe("🍊");
+		expect(aligned.every(([, text]) => !hasLoneSurrogate(text))).toBe(true);
+	});
+
+	test("alignDiffsToCodePoints leaves ASCII diffs untouched", () => {
+		const diffs: [number, string][] = [
+			[0, "## Todo\n"],
+			[1, "- [ ] b\n"],
+		];
+		expect(alignDiffsToCodePoints([...diffs])).toEqual(diffs);
 	});
 });
 

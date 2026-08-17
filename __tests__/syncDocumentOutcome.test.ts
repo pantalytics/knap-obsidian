@@ -40,6 +40,9 @@ interface VaultBehaviour {
 	connect?: boolean;
 	/** Never resolves when false, so the sync has to time out. */
 	providerSyncs?: boolean;
+	/** Text the relay hands back, i.e. what the Y.Doc holds after syncing. */
+	relayText?: string;
+	writeConflictCopy?: (...args: unknown[]) => Promise<string>;
 }
 
 interface Fixture {
@@ -54,6 +57,8 @@ function makeFixture(behaviour: VaultBehaviour = {}): Fixture {
 		read = () => Promise.resolve("# a note\n\nwith a body in it"),
 		connect = true,
 		providerSyncs = true,
+		relayText,
+		writeConflictCopy,
 	} = behaviour;
 
 	const logged: string[] = [];
@@ -64,11 +69,15 @@ function makeFixture(behaviour: VaultBehaviour = {}): Fixture {
 		};
 
 	const ydoc = new Y.Doc();
+	if (relayText) {
+		ydoc.getText("contents").insert(0, relayText);
+	}
 	const doc = Object.create(Document.prototype) as Document;
 	const sharedFolder = {
 		relayId: "relay-onprem",
 		exists: () => Promise.resolve(exists),
 		read,
+		writeConflictCopy,
 		tokenStore: { removeFromRefreshQueue: () => undefined },
 	};
 
@@ -267,5 +276,90 @@ describe("what the queue makes of a sync that wrote no body", () => {
 		expect(queue.item.status).toBe("failed");
 		expect(queue.group.completed).toBe(0);
 		expect(queue.group.status).toBe("failed");
+	});
+});
+
+/**
+ * REGRESSION: the vault file is read before connect() and before the wait on
+ * onceProviderSynced(), which is allowed to run for 30 seconds. Plugins that
+ * write through vault.modify -- Kanban and Excalidraw both do -- can rewrite
+ * the file inside that window. Reconciling against the copy read beforehand
+ * pushed that stale text into the Y.Doc, and from there back over the file,
+ * losing whatever the plugin had just written.
+ */
+describe("a file that changes while we wait for the relay", () => {
+	const BOARD = "---\n\nkanban-plugin: board\n\n---\n\n## Todo\n\n- [ ] a\n";
+	const BOARD_REWRITTEN = BOARD + "- [ ] added by the Kanban plugin\n";
+
+	/** Answers with the first version once, then with every later version. */
+	function readsThenChanges(first: string, then: string) {
+		let calls = 0;
+		const read = () => Promise.resolve(calls++ === 0 ? first : then);
+		return { read, calls: () => calls };
+	}
+
+	test("does not reconcile against the copy it read beforehand", async () => {
+		const { read } = readsThenChanges(BOARD, BOARD_REWRITTEN);
+		const writeConflictCopy = jest.fn(() => Promise.resolve("conflict.md"));
+		const fixture = makeFixture({
+			relayText: "something else entirely",
+			read,
+			writeConflictCopy,
+		});
+
+		const result = await fixture.sync.syncDocumentWebsocket(fixture.doc);
+
+		expect(result).toBe(false);
+		expect(writeConflictCopy).not.toHaveBeenCalled();
+		// The Y.Doc is left as the relay had it; the next round re-reads.
+		expect(fixture.doc.ydoc.getText("contents").toJSON()).toBe(
+			"something else entirely",
+		);
+	});
+
+	test("says why it skipped, so a stalled document is explainable", async () => {
+		const { read } = readsThenChanges(BOARD, BOARD_REWRITTEN);
+		const fixture = makeFixture({
+			relayText: "something else entirely",
+			read,
+			writeConflictCopy: () => Promise.resolve("conflict.md"),
+		});
+
+		await fixture.sync.syncDocumentWebsocket(fixture.doc);
+
+		expect(fixture.logged.join("\n")).toContain("changed while we waited");
+	});
+
+	test("still reconciles normally when the file held still", async () => {
+		const writeConflictCopy = jest.fn(() => Promise.resolve("conflict.md"));
+		const fixture = makeFixture({
+			relayText: "stale relay content",
+			read: () => Promise.resolve(BOARD),
+			writeConflictCopy,
+		});
+
+		const result = await fixture.sync.syncDocumentWebsocket(fixture.doc);
+
+		expect(result).toBe(true);
+		expect(writeConflictCopy).toHaveBeenCalled();
+		expect(fixture.doc.ydoc.getText("contents").toJSON()).toBe(BOARD);
+	});
+
+	test("fails closed when the file cannot be re-read", async () => {
+		let calls = 0;
+		const writeConflictCopy = jest.fn(() => Promise.resolve("conflict.md"));
+		const fixture = makeFixture({
+			relayText: "stale relay content",
+			read: () =>
+				calls++ === 0
+					? Promise.resolve(BOARD)
+					: Promise.reject(new Error("EACCES")),
+			writeConflictCopy,
+		});
+
+		const result = await fixture.sync.syncDocumentWebsocket(fixture.doc);
+
+		expect(result).toBe(false);
+		expect(writeConflictCopy).not.toHaveBeenCalled();
 	});
 });

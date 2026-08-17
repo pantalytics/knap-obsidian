@@ -1011,6 +1011,34 @@ export class BackgroundSync extends HasLogging {
 				// file (TR-01, #814d6d9b) — nothing is silently discarded, and if
 				// the preserve step itself fails we skip reconciling rather than
 				// risk it.
+				// `currentFileContents` was read before connect() and before the
+				// wait on onceProviderSynced(), which is allowed to take up to
+				// 30 seconds. Plugins that write through vault.modify — Kanban
+				// and Excalidraw both do — can rewrite the file inside that
+				// window, and reconciling would then push a stale disk state
+				// into the Y.Doc and from there back over the file. Re-read and
+				// bail if the file moved under us; the next sync round picks it
+				// up with a fresh read. Fail closed if the re-read throws.
+				let latestFileContents: string;
+				try {
+					latestFileContents = await doc.sharedFolder.read(doc);
+				} catch (e: unknown) {
+					this.warn(
+						`[syncDocumentWebsocket] Skipped reconciliation for ${doc.path} — ` +
+							`could not re-read the vault file to check it is still current`,
+						e,
+					);
+					return false;
+				}
+				if (latestFileContents !== currentFileContents) {
+					this.log(
+						`[syncDocumentWebsocket] Skipped reconciliation for ${doc.path} — ` +
+							`the vault file changed while we waited for the relay ` +
+							`(read=${currentFileContents.length}, now=${latestFileContents.length})`,
+					);
+					return false;
+				}
+
 				const timestamp = new Date()
 					.toISOString()
 					.replace(/[:.]/g, "-");
