@@ -94,9 +94,24 @@ docker cp "$WORK/proxy.py" "$CONTAINER:/tmp/knap-tls-proxy.py" >/dev/null
 docker exec "$CONTAINER" sh -c \
 	"(nohup python3 /tmp/knap-tls-proxy.py /tmp/knap-tls.pem $TLS_PORT $GATEWAY $RELAY_PORT >/tmp/knap-tls.log 2>&1 &); sleep 2" >/dev/null
 
-# Chromium on Linux reads NSS, not the system store, and only at startup.
-docker exec "$CONTAINER" sh -c \
-	'certutil -d sql:/config/.pki/nssdb -A -t "C,," -n knap-e2e-ca -i /tmp/knap-ca.crt' >/dev/null 2>&1 || true
+# Chromium on Linux reads NSS, not the system store. On the agent box the
+# admin harness's init (scripts/dev/obsidian/init/20-trust-ca.sh) has already
+# installed certutil and created the store, but that init only runs when the
+# box mounts its own proxy CA, so on a bare runner (CI) neither exists yet.
+# Install and create what is missing, and fail loudly rather than let an
+# untrusted CA read as a broken websocket three assertions later.
+docker exec "$CONTAINER" sh -c '
+	set -e
+	if ! command -v certutil >/dev/null 2>&1; then
+		apt-get update -qq >/dev/null 2>&1
+		apt-get install -y -qq --no-install-recommends libnss3-tools >/dev/null 2>&1
+	fi
+	mkdir -p /config/.pki/nssdb
+	if [ ! -f /config/.pki/nssdb/cert9.db ]; then
+		certutil -d sql:/config/.pki/nssdb -N --empty-password >/dev/null 2>&1
+	fi
+	certutil -d sql:/config/.pki/nssdb -A -t "C,," -n knap-e2e-ca -i /tmp/knap-ca.crt
+' || { echo "could not trust the e2e CA in the app's NSS store" >&2; exit 2; }
 
 # --- the same note, carried by each mode in turn ---------------------------- #
 # Whole vault is the default and one folder is the option, so both have to move
