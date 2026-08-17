@@ -644,7 +644,7 @@
 					<div class="setting-item-name">{LINKED_TO_LABEL}</div>
 					<div class="setting-item-description">{UNLINK_EXPLANATION}</div>
 				</div>
-				<div class="setting-item-control knap-value">
+				<div class="setting-item-control knap-value knap-linked">
 					<span class="knap-value-text">{syncingWith.path}</span>
 					<button
 						class="knap-btn"
@@ -885,6 +885,29 @@
 	.knap-value-text {
 		min-width: 0;
 		overflow-wrap: anywhere;
+	}
+
+	/* The Linked to row, which carries the one fact on this screen somebody
+	   chose rather than a value the plugin worked out: which cloud vault this
+	   device answers to (ADR-0066). At the muted value size the name read as
+	   fine print and #71 showed what that costs, so it gets full colour and a
+	   size up, and the button sits under it with room instead of beside it in
+	   whatever width the name left over. */
+	.knap-linked {
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 8px;
+	}
+
+	.knap-linked .knap-value-text {
+		color: var(--text-normal);
+		font-size: var(--font-ui-medium, 15px);
+		font-weight: var(--font-semibold, 600);
+	}
+
+	.knap-linked .knap-btn {
+		font-size: var(--font-ui-medium, 15px);
+		padding: 8px 18px;
 	}
 
 	.knap-note {
