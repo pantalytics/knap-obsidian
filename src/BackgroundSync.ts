@@ -21,6 +21,7 @@ import { waitForBufferFlush } from "./websocketFlush";
 import { claimInitIfUnclaimed, wonInitClaim, markInitDone, awaitClaimSettled } from "./initContentClaim";
 import { owed, stateFor } from "./knapPresence";
 import { MAX_BATCH_DOCS } from "./auth/RelayOnPremTokenProvider";
+import { reportFault } from "./faults";
 
 export interface QueueItem {
 	guid: string;
@@ -389,6 +390,7 @@ export class BackgroundSync extends HasLogging {
 						const group = this.syncGroups.get(item.sharedFolder);
 						if (group) {
 							this.error("[Sync Failed]", error);
+							reportFault("sync", error);
 							group.status = "failed";
 							this.syncGroups.set(item.sharedFolder, group);
 						}
@@ -416,6 +418,7 @@ export class BackgroundSync extends HasLogging {
 				const group = this.syncGroups.get(item.sharedFolder);
 				if (group) {
 					this.error("[Sync Startup Failed]", error);
+					reportFault("sync", error);
 					group.status = "failed";
 					this.syncGroups.set(item.sharedFolder, group);
 				}

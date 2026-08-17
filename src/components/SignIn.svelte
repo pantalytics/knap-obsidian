@@ -607,6 +607,21 @@
 			});
 	}
 
+	// The fault-reporting switch (ADR-0071). The plugin reports that it
+	// failed, never what it held, and this is the way out of even that. The
+	// row is here for everybody, signed in or not: faults do not wait for an
+	// account. main.ts subscribes to the setting and flips the reporter, so
+	// this component only writes the answer down.
+	let faultReporting =
+		plugin.reportingSettings.get().faultReporting !== false;
+	function toggleFaultReporting() {
+		faultReporting = !faultReporting;
+		void plugin.reportingSettings.update((s) => ({
+			...s,
+			faultReporting,
+		}));
+	}
+
 	async function signOut() {
 		error = "";
 		try {
@@ -833,6 +848,35 @@
 			{replacing ? "Working on it" : REPLACE_FOLDERS_LABEL}
 		</button>
 	{/if}
+
+	<!-- What the plugin says when it breaks, and the way to say nothing. One
+	     row, one honest sentence: exactly what is sent, and what never is. -->
+	<div class="setting-item mod-toggle">
+		<div class="setting-item-info">
+			<div class="setting-item-name">Send anonymous error reports</div>
+			<div class="setting-item-description">
+				When something breaks, Knap sends the kind of error, where in the
+				plugin it happened, the plugin version and your platform, and never a
+				note, a file name or anything that identifies you.
+			</div>
+		</div>
+		<div class="setting-item-control">
+			<div
+				class="checkbox-container"
+				class:is-enabled={faultReporting}
+				role="checkbox"
+				aria-checked={faultReporting}
+				aria-label="Send anonymous error reports"
+				tabindex="0"
+				on:click={toggleFaultReporting}
+				on:keypress={(e) => {
+					if (e.key === "Enter" || e.key === " ") toggleFaultReporting();
+				}}
+			>
+				<input type="checkbox" checked={faultReporting} tabindex="-1" />
+			</div>
+		</div>
+	</div>
 
 	{#if error}
 		<div class="knap-form-error">{error}</div>

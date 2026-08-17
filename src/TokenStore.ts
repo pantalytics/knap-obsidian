@@ -4,6 +4,7 @@ import { decodeJwt } from "jose";
 import type { TimeProvider } from "./TimeProvider";
 import { RelayInstances } from "./debug";
 import { RateLimitError } from "./auth/RelayOnPremTokenProvider";
+import { reportFault } from "./faults";
 
 interface TokenStoreConfig<StorageToken, NetToken> {
 	log: (message: string) => void;
@@ -334,6 +335,7 @@ export class TokenStore<TokenType extends HasToken> {
 				return newToken;
 			})
 			.catch((err: unknown) => {
+				reportFault("tokens", err);
 				this.onRefreshFailure(documentId);
 				this._activePromises.delete(documentId);
 				throw err;

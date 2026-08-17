@@ -141,6 +141,7 @@ import {
 	rememberedVaultId,
 	type RememberedVault,
 } from "./vaultMemory";
+import { reportFault, setFaultReporting } from "./faults";
 
 interface DebugSettings {
 	debugging: boolean;
@@ -150,7 +151,21 @@ const DEFAULT_DEBUG_SETTINGS: DebugSettings = {
 	debugging: false,
 };
 
-interface RelaySettings extends FeatureFlags, DebugSettings {
+/**
+ * Whether the plugin reports its faults (ADR-0071): error type, component,
+ * plugin version and platform, and nothing else. On by default, with the off
+ * switch on the settings screen, because default-on with no exit is not a
+ * privacy stance.
+ */
+export interface ReportingSettings {
+	faultReporting: boolean;
+}
+
+const DEFAULT_REPORTING_SETTINGS: ReportingSettings = {
+	faultReporting: true,
+};
+
+interface RelaySettings extends FeatureFlags, DebugSettings, ReportingSettings {
 	sharedFolders: SharedFolderSettings[];
 	endpoints: EndpointSettings;
 	relayOnPrem: RelayOnPremSettings;
@@ -179,6 +194,7 @@ const DEFAULT_SETTINGS: RelaySettings = {
 	vault: {},
 	...FeatureFlagDefaults,
 	...DEFAULT_DEBUG_SETTINGS,
+	...DEFAULT_REPORTING_SETTINGS,
 };
 
 declare const GIT_TAG: string;
@@ -214,6 +230,8 @@ export default class Live extends Plugin {
 	settings!: Settings<RelaySettings>;
 	private featureSettings!: NamespacedSettings<FeatureFlags>;
 	private debugSettings!: NamespacedSettings<DebugSettings>;
+	/** The fault-reporting switch (ADR-0071). Public: the settings screen toggles it. */
+	public reportingSettings!: NamespacedSettings<ReportingSettings>;
 	private folderSettings!: NamespacedSettings<SharedFolderSettings[]>;
 	/**
 	 * The cloud vault this device was told to sync (#64).
@@ -449,6 +467,15 @@ export default class Live extends Plugin {
 		const settingsBase = this.settings as unknown as Settings<unknown>;
 		this.featureSettings = new NamespacedSettings(settingsBase, "(enable*)");
 		this.debugSettings = new NamespacedSettings(settingsBase, "(debugging)");
+		this.reportingSettings = new NamespacedSettings(settingsBase, "(faultReporting)");
+		// Runs once at subscribe time as well, so the reporter starts in
+		// whatever state the setting was left in. Absent means on: the switch
+		// is default-on and an install that predates it has never said no.
+		this.register(
+			this.reportingSettings.subscribe((settings) => {
+				setFaultReporting(settings.faultReporting !== false);
+			}),
+		);
 		this.folderSettings = new NamespacedSettings(
 			settingsBase,
 			"sharedFolders",
@@ -991,6 +1018,7 @@ export default class Live extends Plugin {
 				// parts that did not come up are the parts that would have
 				// said so.
 				this.error("setup failed", e);
+				reportFault("startup", e);
 				new Notice(
 					"Knap could not finish starting, so sync may not be running. Restart Obsidian to try again. The log in the plugin folder has the details.",
 					15000,
@@ -2381,6 +2409,8 @@ export default class Live extends Plugin {
 
 		safely("debugSettings", () => this.debugSettings?.destroy());
 		this.debugSettings = null as unknown as NamespacedSettings<DebugSettings, Record<string, unknown>>;
+		safely("reportingSettings", () => this.reportingSettings?.destroy());
+		this.reportingSettings = null as unknown as NamespacedSettings<ReportingSettings, Record<string, unknown>>;
 		safely("folderSettings", () => this.folderSettings?.destroy());
 		this.folderSettings = null as unknown as NamespacedSettings<SharedFolderSettings[], Record<string, unknown>>;
 
