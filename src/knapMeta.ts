@@ -111,6 +111,19 @@ export interface KnapDevice {
 	platform: string;
 	/** The plugin build writing this, so a stale device is recognisable. */
 	version: string;
+	/**
+	 * Which account this device is signed in as, by the relay's id for them.
+	 *
+	 * The id and never the address. Everybody on the vault reads this
+	 * document, and Knap's page already knows what address the id belongs to
+	 * because it is the one on the vault's own member list, so writing the
+	 * address here would put a second copy of somebody's email in a place
+	 * nothing can correct it (ADR-0067 in the admin repository).
+	 *
+	 * Empty for a device that is not signed in, which is a state the row
+	 * outlives: the vault stays on the list with nobody's name on it.
+	 */
+	user: string;
 	/** When this device last connected, epoch milliseconds. */
 	seen: number;
 }
@@ -148,6 +161,7 @@ export function stampKnapDevice(
 		mine.vault === device.vault &&
 		mine.platform === device.platform &&
 		mine.version === device.version &&
+		mine.user === device.user &&
 		device.seen - mine.seen < DEVICE_STAMP_INTERVAL_MS
 	) {
 		return false;
@@ -203,6 +217,7 @@ function readDevice(raw: unknown): KnapDevice | null {
 			vault: typeof parsed.vault === "string" ? parsed.vault : "",
 			platform: typeof parsed.platform === "string" ? parsed.platform : "",
 			version: typeof parsed.version === "string" ? parsed.version : "",
+			user: typeof parsed.user === "string" ? parsed.user : "",
 			seen: typeof parsed.seen === "number" ? parsed.seen : 0,
 		};
 	} catch {
