@@ -69,6 +69,7 @@ import { storedLink } from "./vaultMemory";
 import { claimVpathIfUnclaimed, awaitVpathClaimSettled, wonVpathClaim } from "./uploadClaim";
 import { forgetKnapDevice, stampKnapDevice, stampKnapMeta } from "./knapMeta";
 import { RepeatedEntryFailures, type EntryFailure } from "./syncFaults";
+import { sweepEmptyDocs } from "./emptyDocSweep";
 import {
 	publishPresence,
 	withdrawPresence,
@@ -437,6 +438,110 @@ export class SharedFolder extends HasProvider {
 			await this.fillFromLocalFiles();
 		} finally {
 			this._filling = false;
+		}
+		// And then go back over it, because the walk finishing is not the
+		// same thing as every note having arrived (#56). Not awaited: both
+		// callers run syncFileTree straight after this and the sweep spends
+		// most of its life waiting.
+		void this.startEmptyDocSweep();
+	}
+
+	/** The running sweep's timer, so tearing the share down stops it. */
+	private sweepTimer?: number;
+	/** And the wait it is sitting in, so stopping it is not abandoning it. */
+	private sweepWake?: () => void;
+	private sweeping = false;
+
+	/**
+	 * Offer the notes the fill left empty to the sync queue again (#56).
+	 *
+	 * The rule the sweep is built on, and the reason this is worth doing at
+	 * all: a note with bytes on this disk and nothing on the relay is a note
+	 * that did not finish uploading, whatever the walk reported. Opening it
+	 * by hand fixes it, and this is that, without the hand.
+	 *
+	 * One at a time per share. A second fill starting while the first
+	 * sweep waits does not start a second one, because the sweep reads what
+	 * is empty when a round comes round rather than what was empty when it
+	 * started.
+	 */
+	private async startEmptyDocSweep(): Promise<void> {
+		if (this.sweeping) return;
+		this.sweeping = true;
+		try {
+			const report = await sweepEmptyDocs({
+				empty: () => (this.destroyed ? [] : this.emptyDocuments()),
+				localBytes: (vpath) => this.localBytes(vpath),
+				offer: (vpath) => {
+					const file = this.getLoadedFile(vpath);
+					if (file && isDocument(file)) {
+						// The same offer opening the note makes: the queue
+						// reconciles, so a relay that turns out to hold
+						// something wins rather than being written over, and
+						// the queue skips a note it is already holding.
+						void this.backgroundSync.enqueueSync(file);
+					}
+				},
+				wait: (ms) =>
+					new Promise<void>((resolve) => {
+						this.sweepWake = resolve;
+						this.sweepTimer = window.setTimeout(() => {
+							this.sweepWake = undefined;
+							resolve();
+						}, ms);
+					}),
+				log: (message) => {
+					this.log(message);
+				},
+			});
+			if (report.offered > 0) {
+				this.log(
+					`[sweep] offered ${report.offered} notes again over ${report.rounds} rounds`,
+				);
+			}
+		} catch (e: unknown) {
+			// A repair pass failing is not worth taking anything down for.
+			this.warn("could not sweep the notes the fill left empty", e);
+		} finally {
+			this.sweeping = false;
+		}
+	}
+
+	/**
+	 * The loaded documents in this share that currently hold nothing.
+	 *
+	 * Loaded only, on purpose: reading a note's store opens it, and asking
+	 * every path in the file list would open every note in the vault.
+	 */
+	private emptyDocuments(): string[] {
+		const empty: string[] = [];
+		this.syncStore.forEach((meta, vpath) => {
+			if (meta.type !== SyncType.Document) return;
+			const file = this.getLoadedFile(vpath);
+			if (file && isDocument(file) && file.text.length === 0) {
+				empty.push(vpath);
+			}
+		});
+		return empty;
+	}
+
+	/**
+	 * How many bytes this note has on disk, and 0 when there is no file.
+	 *
+	 * A note the operating system reports as 0 bytes is not proof of an
+	 * empty note, because a cloud folder hands back a placeholder until the
+	 * file is pulled down. It does not matter here: 0 means the sweep leaves
+	 * it alone, which is the right answer for a placeholder and for a note
+	 * somebody meant to leave blank.
+	 */
+	private localBytes(vpath: string): number {
+		try {
+			const file = this.vault.getAbstractFileByPath(
+				normalizePath(this.getPath(vpath)),
+			);
+			return file instanceof TFile ? file.stat.size : 0;
+		} catch {
+			return 0;
 		}
 	}
 
@@ -2746,6 +2851,17 @@ export class SharedFolder extends HasProvider {
 
 	destroy() {
 		this.destroyed = true;
+		// The sweep over the notes the fill left empty waits in minutes, so
+		// it outlives the share unless the timer goes with it (#56). Woken
+		// rather than left hanging: the round it wakes into asks what is
+		// empty, a destroyed share answers nothing, and the sweep ends.
+		if (this.sweepTimer !== undefined) {
+			window.clearTimeout(this.sweepTimer);
+			this.sweepTimer = undefined;
+		}
+		const wake = this.sweepWake;
+		this.sweepWake = undefined;
+		if (wake) wake();
 		// Stop claiming to be here before the socket goes. Politeness rather
 		// than correctness, since the server withdraws this on a close anyway;
 		// the durable row stays, because a device that still syncs this vault
