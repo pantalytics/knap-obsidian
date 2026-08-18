@@ -1166,8 +1166,11 @@ export class SharedFolder extends HasProvider {
 		// take a doc and it's new path.
 		diffLog?.push(`${file.path} was renamed to ${this.getPath(path)}`);
 		if (file instanceof TFile) {
+			// dirname of a root-level path is ".", which is the share root
+			// itself: it always exists, and asking mkdir for it trips the
+			// dot-segment exclusion and kills the whole pass (#85).
 			const dir = dirname(path);
-			if (!this.existsSync(dir)) {
+			if (dir !== "." && dir !== "" && !this.existsSync(dir)) {
 				await this.mkdir(dir);
 				diffLog?.push(`creating directory ${dir}`);
 			}
@@ -1185,9 +1188,12 @@ export class SharedFolder extends HasProvider {
 		diffLog?: string[],
 	): Promise<IFile> {
 		console.debug(`[SharedFolder] _handleServerCreate: vpath=${vpath}, type=${meta.type}, id=${meta.id?.slice(0,8)}`);
-		// Create directories as needed
+		// Create directories as needed. dirname of a root-level path is ".",
+		// which is the share root itself: it always exists, and asking mkdir
+		// for it trips the dot-segment exclusion, whose throw killed the whole
+		// first fill of a joined vault (#85).
 		const dir = dirname(vpath);
-		if (!this.existsSync(dir)) {
+		if (dir !== "." && dir !== "" && !this.existsSync(dir)) {
 			await this.mkdir(dir);
 			diffLog?.push(`creating directory ${dir}`);
 		}
@@ -1607,12 +1613,25 @@ export class SharedFolder extends HasProvider {
 				if (metaEntries.length > 0) console.debug(`[SharedFolder] syncFileTree meta entries:`, metaEntries.slice(0, 20));
 				if (legacyEntries.length > 0) console.debug(`[SharedFolder] syncFileTree legacy entries:`, legacyEntries.slice(0, 20));
 
+				// One entry that cannot be written must not silence the rest
+				// of the tree: before #85 the first rejected create took the
+				// folder pass down with it, the file pass never ran, and a
+				// joined vault stayed empty with every light green. The entry
+				// is logged and skipped; the next pass retries it.
+				const settled = (op: Operation) =>
+					op.promise.catch((e: unknown) => {
+						this.warn(
+							`[syncFileTree] ${op.op} failed for ${op.path}:`,
+							e instanceof Error ? e.message : e,
+						);
+					});
+
 				void this.ydoc.transact(() => {
 					// Sync folder operations first because renames/moves also affect files
 					this.syncStore.migrateUp();
 					this.syncByType(syncStore, diffLog, ops, [SyncType.Folder]);
 				}, this);
-				await Promise.all(ops.map((op) => op.promise));
+				await Promise.all(ops.map(settled));
 				void this.ydoc.transact(() => {
 					this.syncByType(
 						syncStore,
@@ -1630,7 +1649,14 @@ export class SharedFolder extends HasProvider {
 				// Ensure these complete before checking for deletions
 				await Promise.all(
 					[...creates, ...renames].map((op) =>
-						withTimeoutWarning<IFile | void>(op.promise, op),
+						withTimeoutWarning<IFile | void>(op.promise, op).catch(
+							(e: unknown) => {
+								this.warn(
+									`[syncFileTree] ${op.op} failed for ${op.path}:`,
+									e instanceof Error ? e.message : e,
+								);
+							},
+						),
 					),
 				);
 
