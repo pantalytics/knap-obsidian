@@ -68,6 +68,7 @@ import {
 import { storedLink } from "./vaultMemory";
 import { claimVpathIfUnclaimed, awaitVpathClaimSettled, wonVpathClaim } from "./uploadClaim";
 import { forgetKnapDevice, stampKnapDevice, stampKnapMeta } from "./knapMeta";
+import { RepeatedEntryFailures, type EntryFailure } from "./syncFaults";
 import {
 	publishPresence,
 	withdrawPresence,
@@ -193,6 +194,7 @@ export class SharedFolder extends HasProvider {
 	private persistenceSynced: boolean = false;
 	private syncFileTreePromise: SharedPromise<void> | null = null;
 	private syncRequestedDuringSync: boolean = false;
+	private _syncFailures?: RepeatedEntryFailures;
 	private authoritative: boolean;
 	private pendingUpload: LocalStorage<string>;
 	private unsubscribes: Unsubscriber[] = [];
@@ -1568,6 +1570,20 @@ export class SharedFolder extends HasProvider {
 		}
 	}
 
+	/**
+	 * Which file tree entries are failing pass after pass (#89).
+	 *
+	 * Made on first use rather than at construction, so it is there for
+	 * every way a SharedFolder comes into being and costs a share that never
+	 * fails nothing at all.
+	 */
+	private get syncFailures(): RepeatedEntryFailures {
+		if (!this._syncFailures) {
+			this._syncFailures = new RepeatedEntryFailures();
+		}
+		return this._syncFailures;
+	}
+
 	syncByType(
 		syncStore: SyncStore,
 		diffLog: string[],
@@ -1618,13 +1634,21 @@ export class SharedFolder extends HasProvider {
 				// folder pass down with it, the file pass never ran, and a
 				// joined vault stayed empty with every light green. The entry
 				// is logged and skipped; the next pass retries it.
-				const settled = (op: Operation) =>
-					op.promise.catch((e: unknown) => {
-						this.warn(
-							`[syncFileTree] ${op.op} failed for ${op.path}:`,
-							e instanceof Error ? e.message : e,
-						);
-					});
+				//
+				// Skipping it quietly is the other half of the same problem,
+				// though (#89): the console is on somebody's laptop. Every
+				// failure of this pass is collected, and an entry that fails
+				// again on the next pass is filed as a fault, so a vault that
+				// cannot fill says so where somebody can see it.
+				const failures: EntryFailure[] = [];
+				const skip = (op: Operation) => (e: unknown) => {
+					this.warn(
+						`[syncFileTree] ${op.op} failed for ${op.path}:`,
+						e instanceof Error ? e.message : e,
+					);
+					failures.push({ path: op.path, error: e });
+				};
+				const settled = (op: Operation) => op.promise.catch(skip(op));
 
 				void this.ydoc.transact(() => {
 					// Sync folder operations first because renames/moves also affect files
@@ -1649,16 +1673,20 @@ export class SharedFolder extends HasProvider {
 				// Ensure these complete before checking for deletions
 				await Promise.all(
 					[...creates, ...renames].map((op) =>
-						withTimeoutWarning<IFile | void>(op.promise, op).catch(
-							(e: unknown) => {
-								this.warn(
-									`[syncFileTree] ${op.op} failed for ${op.path}:`,
-									e instanceof Error ? e.message : e,
-								);
-							},
-						),
+						withTimeoutWarning<IFile | void>(op.promise, op).catch(skip(op)),
 					),
 				);
+
+				// Everything this pass could not write, against what the last
+				// pass could not write. An entry on both lists is a bug rather
+				// than a moment of bad luck, and it goes to the fault channel
+				// as its error type alone (#89, ADR-0071).
+				const reported = this.syncFailures.pass(failures);
+				if (reported > 0) {
+					this.warn(
+						`[syncFileTree] ${reported} of ${this.syncFailures.failing} failing entries have now failed more than once`,
+					);
+				}
 
 				const deletes = this.cleanupExtraLocalFiles(remotePaths, diffLog);
 				if ([...ops, ...deletes].every((op) => op.op === "noop")) {

@@ -1,6 +1,7 @@
 # Changelog
 
 ## 1.14.0
+- A vault that cannot fill itself says so now. An entry the file tree fails to write is skipped and retried on the next pass, which keeps the rest of the notes arriving and, until now, left a line in a console on somebody's laptop as the only record that anything had gone wrong. That was the shape of #85: four days of releases where a joined vault downloaded nothing, and the only faults that reached us were about tokens, three steps away from the cause. The same entry failing on every pass is a bug rather than bad luck, so from the second failure it goes to the fault channel under `sync`. What is sent is the error's type and nothing else. Never the note's path, which is a fact about your work and not ours.
 - A device now says whose it is. The row this plugin writes into a cloud vault says what the local vault is called, whether it is a desktop or a phone, and which build it is on, and on a vault two people sync that was four machines with no way to tell which two were yours. It carries the account it is signed in as now, by the relay's id for that account and never by an address: everybody on the vault reads that document, and Knap's page turns the id back into the address it already has on the vault's own member list. A device that is not signed in carries nobody, which is what an empty row means rather than a fault.
 
 ## 1.13.1
