@@ -103,6 +103,7 @@ describe("which local vaults sync this cloud vault", () => {
 		vault: "Pantalytics",
 		platform: "desktop",
 		version: "1.11.0",
+		user: "user-rutger",
 		seen: 1_000_000,
 	};
 
@@ -179,6 +180,41 @@ describe("which local vaults sync this cloud vault", () => {
 		);
 	});
 
+	test("two people's devices each say whose they are", () => {
+		// What the row could not answer until now: a vault two people sync
+		// listed four machines and no way to tell which two were yours. The
+		// id and not the address -- everybody on the vault reads this, and
+		// Knap resolves the id against the member list it already has.
+		const doc = new Y.Doc();
+		stampKnapDevice(doc, "app-1", laptop);
+		stampKnapDevice(doc, "app-2", { ...laptop, user: "user-daniel" });
+
+		expect(Object.values(readKnapDevices(doc)).map((d) => d.user).sort()).toEqual([
+			"user-daniel",
+			"user-rutger",
+		]);
+	});
+
+	test("signing in on a device that was not is written through at once", () => {
+		// Same rule as a rename: it is what the row says about itself, and an
+		// hour of a laptop showing up as nobody's is an hour of the wrong page.
+		const doc = new Y.Doc();
+		stampKnapDevice(doc, "app-1", { ...laptop, user: "" });
+
+		expect(stampKnapDevice(doc, "app-1", laptop)).toBe(true);
+		expect(readKnapDevices(doc)["app-1"].user).toBe("user-rutger");
+	});
+
+	test("a row from a build before the field reads as nobody, not as broken", () => {
+		const doc = new Y.Doc();
+		doc.getMap<string>(KNAP_DEVICES_KEY).set(
+			"app-1",
+			JSON.stringify({ vault: "Pantalytics", platform: "desktop", version: "1.13.2", seen: 1 }),
+		);
+
+		expect(readKnapDevices(doc)["app-1"].user).toBe("");
+	});
+
 	test("leaving takes the row out", () => {
 		const doc = new Y.Doc();
 		stampKnapDevice(doc, "app-1", laptop);
@@ -213,6 +249,7 @@ describe("which local vaults sync this cloud vault", () => {
 			vault: "V",
 			platform: "",
 			version: "",
+			user: "",
 			seen: 0,
 		});
 	});

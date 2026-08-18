@@ -383,6 +383,11 @@ export class SharedFolder extends HasProvider {
 					vault: this.vault.getName(),
 					platform: Platform.isMobileApp ? "mobile" : "desktop",
 					version: GIT_TAG,
+					// And whose device it is, so a vault two people sync is a
+					// list of people rather than a list of machines. The id
+					// rather than the address, which Knap resolves against the
+					// vault's own member list (ADR-0067).
+					user: this.loginManager?.user?.id || "",
 					seen: Date.now(),
 				});
 			} catch (e) {
