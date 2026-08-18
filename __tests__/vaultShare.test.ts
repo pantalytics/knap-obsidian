@@ -167,14 +167,13 @@ describe("what a row says about a vault", () => {
 		}
 	});
 
-	test("somebody else's vault says so", () => {
-		expect(vaultRowLines(folderShare("Clients", "1", { is_owner: false }))).toEqual([
-			"Someone else's vault",
-		]);
-	});
-
-	test("your own says nothing about ownership, because that is the ordinary case", () => {
-		expect(vaultRowLines(folderShare("V", "1", { is_owner: true }))).toEqual([]);
+	test("nothing about who made it, because it changes nothing (ADR-0073)", () => {
+		// One kind of person is in a vault and they can all do everything to
+		// it, so a row saying whose it is would be a difference a person
+		// cannot act on.
+		for (const is_owner of [true, false, undefined]) {
+			expect(vaultRowLines(folderShare("V", "1", { is_owner }))).toEqual([]);
+		}
 		expect(vaultRowLines(folderShare("V"))).toEqual([]);
 	});
 
