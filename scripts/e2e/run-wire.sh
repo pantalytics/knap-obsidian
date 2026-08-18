@@ -43,3 +43,6 @@ done
 
 cd "$ROOT"
 node scripts/e2e/wire.e2e.mjs "ws://127.0.0.1:$PORT"
+# The same relay, a second question: what a member joining a vault it did not
+# create receives, and whether the share will write all of it (#90).
+node scripts/e2e/join.e2e.mjs "ws://127.0.0.1:$PORT"
