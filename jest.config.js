@@ -14,6 +14,11 @@ module.exports = {
 		"^(\\.{1,2}/.*)\\.js$": "$1",
 		"^src/(.*)$": "<rootDir>/src/$1",
 		"^obsidian$": "<rootDir>/__tests__/mocks/obsidian.ts",
+		// yjs ships its internals under a path jest's resolver will not follow
+		// (no "exports" entry for it). Everything imported from there is a type,
+		// and the package root has the same shapes, so point it at the root
+		// rather than leaving TextViewPlugin.ts untestable.
+		"^yjs/dist/src/internals$": "yjs",
 	},
 	testPathIgnorePatterns: ["/__tests__/mocks/", "/__tests__/jest.setup.js"],
     globals: {

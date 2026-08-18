@@ -15,6 +15,11 @@ import { flag } from "./flags";
 import type { HasMimeType, IFile } from "./IFile";
 import { getMimeType } from "./mimetypes";
 import { diffMatchPatch } from "./y-diffMatchPatch";
+import {
+	decideCarry,
+	stateVectorsEqual,
+	type CarryDecision,
+} from "./carryDiskWrite";
 
 export function isDocument(file?: IFile): file is Document {
 	return file instanceof Document;
@@ -43,6 +48,18 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 	_diskBufferStore?: DiskBufferStore;
 	unsubscribes: Unsubscriber[] = [];
 	pendingOps: ((data: string) => string)[] = [];
+	// The Y.Doc's state vector at the last moment the file and the Y.Text were
+	// known to hold the same text. Undefined until there has been such a
+	// moment, and an undefined vector means "reconcile", never "carry".
+	private _agreedStateVector?: Uint8Array;
+	// Greater than zero while this device is writing the Y.Text's own content
+	// to the file, so the vault.modify patch can tell our own write apart from
+	// somebody else's. Read synchronously, which is the only moment it is true.
+	private _ownWriteDepth = 0;
+	// Until when a write we already accounted for is still echoing. The modify
+	// EVENT arrives after the write, long past the depth going back to zero, so
+	// the event side needs a short window rather than a flag.
+	private _ownWriteUntil = 0;
 
 	constructor(
 		path: string,
@@ -447,8 +464,104 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 			this.warn("skipping save for pending delete", this.path);
 			return;
 		}
-		void this.vault.modify(this.tfile, this.text);
+		// Writing the Y.Text to the file is the clearest moment the two sides
+		// agree, so it is where the agreed vector comes from -- but only if the
+		// write lands and only if nothing moved the Y.Doc while it was in
+		// flight, otherwise the file holds text the vector no longer describes.
+		const before = Y.encodeStateVector(this.ydoc);
+		this.noteOwnWrite();
+		let write: Promise<void> | undefined;
+		this._ownWriteDepth++;
+		try {
+			write = this.vault.modify(this.tfile, this.text);
+		} finally {
+			this._ownWriteDepth--;
+		}
+		void write?.then(
+			() => {
+				this.noteOwnWrite();
+				this.agreeIfStill(before);
+			},
+			() => {
+				// The write did not land, so there is nothing to agree on.
+			},
+		);
 		this.warn("file saved", this.path);
+	}
+
+	/**
+	 * True only while this device is inside its own `vault.modify` call. The
+	 * patch on `vault.modify` reads it synchronously, which is the one moment
+	 * it can be true, and skips carrying our own text back into the Y.Text.
+	 */
+	isWritingOwnContent(): boolean {
+		return this._ownWriteDepth > 0;
+	}
+
+	/**
+	 * Open a short window in which a modify EVENT for this note is our own echo
+	 * rather than news. Same shape as `InboundFileDownloader.isInboundWriting`,
+	 * and for the same reason: the event arrives after the write, so a flag
+	 * held across the call is already down by the time it does.
+	 */
+	noteOwnWrite(graceMs = 1000): void {
+		this._ownWriteUntil = Date.now() + graceMs;
+	}
+
+	/** True while a write we already accounted for could still be echoing. */
+	isOwnWriteEcho(): boolean {
+		return this._ownWriteDepth > 0 || Date.now() < this._ownWriteUntil;
+	}
+
+	/** Record that the file and the Y.Text are known to hold the same text. */
+	markAgreed(): void {
+		this._agreedStateVector = Y.encodeStateVector(this.ydoc);
+	}
+
+	/** Take a vector recorded earlier, if the Y.Doc has not moved since. */
+	private agreeIfStill(vector: Uint8Array): void {
+		if (stateVectorsEqual(vector, Y.encodeStateVector(this.ydoc))) {
+			this._agreedStateVector = vector;
+		}
+	}
+
+	/**
+	 * True when the Y.Doc has not moved since the file and the Y.Text last
+	 * agreed. False when it has, and false when they never have.
+	 *
+	 * A local operation moves the vector as surely as a remote one does, and
+	 * this deliberately does not tell them apart: a local operation the file
+	 * does not know about is content a carried write would delete, which is the
+	 * same loss by a different route.
+	 */
+	get crdtHeldStill(): boolean {
+		return stateVectorsEqual(
+			this._agreedStateVector,
+			Y.encodeStateVector(this.ydoc),
+		);
+	}
+
+	/**
+	 * Take a write to this note's file and decide what it means for the Y.Text.
+	 *
+	 * Applies the write when it is provably an edit on top of what the Y.Text
+	 * holds, and otherwise only reports. The caller owns the two verdicts that
+	 * need something outside this note: `reconcile` is the old route, and
+	 * `refuse` leaves both sides exactly as they are.
+	 */
+	carryDiskWrite(diskText: string): CarryDecision {
+		const decision = decideCarry({
+			crdtText: this.text,
+			diskText,
+			crdtHeldStill: this.crdtHeldStill,
+		});
+		if (decision.verdict === "noop") {
+			this.markAgreed();
+		} else if (decision.verdict === "carry") {
+			diffMatchPatch(this.ydoc, diskText, this);
+			this.markAgreed();
+		}
+		return decision;
 	}
 
 	requestSave = debounce(() => this.save(), 2000);

@@ -110,6 +110,35 @@ export class TFolder {
 
 export class Vault {}
 
+/**
+ * Enough of a view to hang an instance patch on. `TextFileViewPlugin` patches
+ * `setViewData` and `requestSave` on the view object it is given and calls
+ * `getViewData()`, so those three are what a test needs; the rest of
+ * Obsidian's view is not involved.
+ */
+export class View {}
+
+export class TextFileView extends View {
+	file: TFile | null = null;
+	data = "";
+	getViewData(): string {
+		return this.data;
+	}
+	setViewData(data: string, _clear: boolean): void {
+		this.data = data;
+	}
+	requestSave(): void {}
+	getViewType(): string {
+		return "text";
+	}
+}
+
+export class MarkdownView extends TextFileView {
+	override getViewType(): string {
+		return "markdown";
+	}
+}
+
 /** Records every Notice construction so tests can assert on it. Reset with noticeMock.mockClear(). */
 export const noticeMock = jest.fn<(message: string, timeout?: number) => void>();
 

@@ -99,7 +99,7 @@ import { IndexedDBAnalysisModal } from "./ui/IndexedDBAnalysisModal";
 
 import { SyncSettingsManager } from "./SyncSettings";
 import { ContentAddressedFileStore, isSyncFile } from "./SyncFile";
-import { isDocument } from "./Document";
+import { isDocument, type Document } from "./Document";
 import { EndpointManager, type EndpointSettings } from "./EndpointManager";
 import {
 	DEFAULT_RELAY_ONPREM_SETTINGS,
@@ -1989,6 +1989,59 @@ export default class Live extends Plugin {
 		}
 	}
 
+	/**
+	 * Put a write to a note's file into the note, when the note can show the
+	 * write is an edit on top of what it already holds (#81, #82).
+	 *
+	 * Everything that needs the Y.Text is on the Document; what is left here is
+	 * the two verdicts that reach past the note. `reconcile` keeps the old
+	 * route, which writes a conflict copy and is only taken where it was taken
+	 * before, so this can add carried writes without adding conflict copies.
+	 * `refuse` leaves the file and the note exactly as they are.
+	 */
+	carryDiskWrite(doc: Document, diskText: string, mayReconcile = false): void {
+		let decision;
+		try {
+			decision = doc.carryDiskWrite(diskText);
+		} catch (e: unknown) {
+			this.log("[Knap][Vault] could not read the note to carry a write", e);
+			return;
+		}
+		if (decision.verdict === "refuse") {
+			// No path and no body: a note's name is a fact about somebody's
+			// work (ADR-0071). The guid is enough to find it in a log.
+			this.warn(
+				"[Knap][Vault] declined to carry a write into a note:",
+				decision.reason,
+				doc.guid,
+			);
+			return;
+		}
+		if (decision.verdict === "reconcile" && mayReconcile) {
+			void doc.sharedFolder.backgroundSync.enqueueSync(doc);
+		}
+	}
+
+	/**
+	 * The backstop for writes the vault.modify patch never sees, `adapter.write`
+	 * among them. It has a path and not the bytes, so it goes and reads them.
+	 */
+	async carryModifiedDocument(folder: SharedFolder, doc: Document): Promise<void> {
+		// A write we already accounted for, echoing back as an event. Reading
+		// the file again would find it equal and cost a read per save.
+		if (doc.isOwnWriteEcho()) return;
+		let diskText: string;
+		try {
+			diskText = await folder.read(doc);
+		} catch (e: unknown) {
+			this.log("[Knap][Vault] could not re-read a modified note", e);
+			return;
+		}
+		// A note with no socket is where the old code reconciled, and the only
+		// place it still does.
+		this.carryDiskWrite(doc, diskText, !doc.connected);
+	}
+
 	setup() {
 		this.folderNavDecorations = new FolderNavigationDecorations(
 			this.vault,
@@ -2143,12 +2196,18 @@ export default class Live extends Plugin {
 						if (file && isSyncFile(file)) {
 							void file.sync();
 						}
-						// For Documents (folder share files): if the file has no active
-						// WS connection, edits bypass Y.Text entirely (no live CM binding).
-						// Enqueue a background sync to push vault content to relay.
-						// When connected, LiveCMPluginValue handles sync automatically.
-						if (file && isDocument(file) && !file.connected) {
-							void folder.backgroundSync.enqueueSync(file);
+						// For Documents (folder share files): a write to the file is
+						// an edit, and it belongs in the Y.Text whether or not the
+						// note's socket happens to be open. This used to ask
+						// `!file.connected`, which is a fact about the network and
+						// not about the editor -- a Kanban board or an Excalidraw
+						// drawing with an open socket and nothing binding it to
+						// CodeMirror had its writes dropped here (#81, #82).
+						// The patch on vault.modify below sees most writes with
+						// their exact bytes; this is the backstop for the routes it
+						// does not, adapter.write among them.
+						if (file && isDocument(file)) {
+							void plugin.carryModifiedDocument(folder, file);
 						}
 					}
 					// Trigger metadata resolve with the actual TFile (not our Document proxy)
@@ -2178,6 +2237,48 @@ export default class Live extends Plugin {
 		});
 
 		getPatcher().patch(this.app.vault, {
+			// A plugin that writes a note through vault.modify -- Kanban and
+			// Excalidraw both do -- hands us the exact bytes and the exact
+			// moment. The modify event that follows has neither: it says a path
+			// changed and leaves us to go and read it, by which time it may
+			// have changed again. Same seam as the process patch below.
+			modify(old: unknown) {
+				return function (
+					this: unknown,
+					tfile: unknown,
+					data: unknown,
+					options?: unknown,
+				) {
+					const write = (old as (...args: unknown[]) => unknown).call(
+						this,
+						tfile,
+						data,
+						options,
+					) as Promise<void>;
+					try {
+						if (!(tfile instanceof TFile) || typeof data !== "string") {
+							return write;
+						}
+						const folder = plugin.sharedFolders.lookup(tfile.path);
+						if (!folder) return write;
+						const file = folder.proxy.getFile(tfile);
+						if (!file || !isDocument(file)) return write;
+						// Our own save writing the Y.Text back out. Read now,
+						// because this is the only moment it is true.
+						if (file.isWritingOwnContent()) return write;
+						if (typeof write?.then !== "function") return write;
+						return write.then(() => {
+							// Only once the bytes are on disk. Carrying a write
+							// that then failed would leave the note holding an
+							// edit the file never got.
+							plugin.carryDiskWrite(file, data);
+						});
+					} catch (e: unknown) {
+						plugin.log(e);
+					}
+					return write;
+				};
+			},
 			process(old: unknown) {
 				return function (
 					this: unknown,

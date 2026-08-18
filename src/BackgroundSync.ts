@@ -16,7 +16,8 @@ import { Canvas } from "./Canvas";
 import { areObjectsEqual } from "./areObjectsEqual";
 import type { CanvasData } from "./CanvasView";
 import { SyncFile, isSyncFile } from "./SyncFile";
-import { reconcileWithConflictCopy } from "./y-diffMatchPatch";
+import { diffMatchPatch, reconcileWithConflictCopy } from "./y-diffMatchPatch";
+import { decideCarry } from "./carryDiskWrite";
 import { waitForBufferFlush } from "./websocketFlush";
 import { claimInitIfUnclaimed, wonInitClaim, markInitDone, awaitClaimSettled } from "./initContentClaim";
 import { owed, stateFor } from "./knapPresence";
@@ -996,6 +997,11 @@ export class BackgroundSync extends HasLogging {
 					);
 					text.insert(0, currentFileContents);
 					markInitDone(doc.ydoc);
+					// The file and the note now hold the same text, which is
+					// what a later write is measured against (#81, #82).
+					if (text.toJSON() === currentFileContents) {
+						doc.markAgreed();
+					}
 				} else if (text.length === 0) {
 					this.warn(
 						`[syncDocumentWebsocket] Skipped initial-content insert for ${doc.path} — lost the init claim to a concurrently-connecting client`,
@@ -1039,6 +1045,43 @@ export class BackgroundSync extends HasLogging {
 					return false;
 				}
 
+				// Which of the three this is (#81, #82). A conflict copy is for a
+				// remote edit that genuinely arrived in between, and the note's
+				// state vector is what says whether one did. It also catches the
+				// two shapes of write not worth applying at all, which is where
+				// a Kanban board lost its opening fence.
+				const decision = decideCarry({
+					crdtText: syncedText,
+					diskText: currentFileContents,
+					crdtHeldStill: doc.crdtHeldStill,
+				});
+				if (decision.verdict === "refuse") {
+					this.warn(
+						`[syncDocumentWebsocket] Declined to write the vault file into ${doc.path} - ` +
+							decision.reason,
+					);
+					return false;
+				}
+				if (decision.verdict === "carry") {
+					// The note has not moved since the two sides agreed, so the
+					// file is a descendant of what the note holds and there is
+					// nobody's work to preserve.
+					diffMatchPatch(doc.ydoc, currentFileContents);
+					doc.markAgreed();
+					this.log(
+						`[syncDocumentWebsocket] Carried the vault file into ${doc.path} ` +
+							`(relay=${syncedText.length}, vault=${currentFileContents.length})`,
+					);
+					await waitForBufferFlush(doc._provider.ws);
+					if (intent === "disconnected" && !doc.userLock) {
+						doc.disconnect();
+						doc.sharedFolder.tokenStore.removeFromRefreshQueue(
+							S3RN.encode(doc.s3rn),
+						);
+					}
+					return true;
+				}
+
 				const timestamp = new Date()
 					.toISOString()
 					.replace(/[:.]/g, "-");
@@ -1055,6 +1098,11 @@ export class BackgroundSync extends HasLogging {
 					(...args) => this.log("[syncDocumentWebsocket]", ...args),
 				);
 				if (result.reconciled) {
+					// The two sides agree again, so the next write to the file
+					// can be carried in rather than reconciled (#81, #82).
+					if (doc.text === currentFileContents) {
+						doc.markAgreed();
+					}
 					this.log(
 						`[syncDocumentWebsocket] Reconciled ${doc.path} with vault file ` +
 							`(relay=${syncedText.length}, vault=${currentFileContents.length}); ` +
@@ -1073,6 +1121,11 @@ export class BackgroundSync extends HasLogging {
 			// be sitting in bufferedAmount well past a fixed timer, and
 			// disconnecting at that point drops it silently (TR-51, #1cf58421).
 			await waitForBufferFlush(doc._provider.ws);
+		} else if (isDocument(doc) && contentsMatch && doc.text === currentFileContents) {
+			// Nothing to reconcile because the two sides already agreed, and
+			// they still do after the sync. Worth recording rather than
+			// discovering again on the next write (#81, #82).
+			doc.markAgreed();
 		}
 
 		// promise can take some time
@@ -1200,7 +1253,7 @@ export class BackgroundSync extends HasLogging {
 				return;
 			}
 			if (doc.sharedFolder.syncStore.has(doc.path)) {
-				void doc.sharedFolder.flush(doc, doc.text);
+				this.flushDocument(doc);
 				this.log("[getDocument] flushed");
 			}
 		} catch (e: unknown) {
@@ -1210,7 +1263,7 @@ export class BackgroundSync extends HasLogging {
 			try {
 				const synced = await this.syncDocumentWebsocket(doc);
 				if (synced && doc.sharedFolder.syncStore.has(doc.path)) {
-					void doc.sharedFolder.flush(doc, doc.text);
+					this.flushDocument(doc);
 					this.log("[getDocument] WS sync fallback successful, flushed to disk");
 				}
 			} catch (wsError: unknown) {
@@ -1218,6 +1271,28 @@ export class BackgroundSync extends HasLogging {
 			}
 			return;
 		}
+	}
+
+	/**
+	 * Write a note's Y.Text out to its file, and record that the two now agree
+	 * so the next write to that file can be carried in rather than reconciled
+	 * (#81, #82). Only if the write lands, and only if nothing moved the note
+	 * while it was in flight.
+	 */
+	private flushDocument(doc: Document): void {
+		const written = doc.text;
+		doc.noteOwnWrite();
+		void doc.sharedFolder.flush(doc, written).then(
+			() => {
+				doc.noteOwnWrite();
+				if (doc.text === written) {
+					doc.markAgreed();
+				}
+			},
+			() => {
+				// The write did not land, so there is nothing to agree on.
+			},
+		);
 	}
 
 	private async syncFile(file: SyncFile) {
