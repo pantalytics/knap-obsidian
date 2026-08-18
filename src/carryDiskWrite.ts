@@ -1,6 +1,8 @@
 /**
  * What a write to a note's file means for that note's Y.Text (#81, #82).
  *
+ * ADR-0075 in knap-mcp-admin is the decision this module carries out.
+ *
  * The old question was "is this note's socket open" -- `!file.connected` in
  * main.ts's modify handler. A socket is a fact about the network, not about the
  * editor, so a note whose socket was open had its disk writes dropped even when
