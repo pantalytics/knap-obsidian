@@ -117,10 +117,6 @@ import {
 import type { IAuthProvider } from "./auth/IAuthProvider";
 import { RelayOnPremShareClient, type FolderItem } from "./RelayOnPremShareClient";
 import { RelayOnPremShareClientManager, type ShareWithServer } from "./RelayOnPremShareClientManager";
-// ShareManagementModal only imports main.ts for its type, which erases at
-// compile time, so there is no runtime cycle for a plain import to trip over.
-// It was being pulled in with require() at three call sites instead.
-import { ShareManagementModal } from "./ui/ShareManagementModal";
 import { LocalStorage } from "./LocalStorage";
 import { SYNC_DOT_NAMES, vaultReading, type VaultReading } from "./vaultStatus";
 import {
@@ -894,22 +890,12 @@ export default class Live extends Plugin {
 							return;
 						}
 						if (folder.relayId) {
-							// The item that used to sit here opened upstream's relay
-							// screen for a relay id our shares do not have, so it
-							// landed on the settings screen by accident. There is one
-							// server and nothing to configure about it (ADR-0033).
-							menu.addItem((item) => {
-								item
-									.setTitle("Knap: folder settings")
-									.setIcon("settings")
-									.onClick(() => {
-										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
-											new ShareManagementModal(this.app, this, folder.settings.onpremServerId, undefined, folder.guid).open();
-										} else {
-											void this.openSettings(`/shared-folders?id=${folder.guid}`);
-										}
-									});
-							});
+							// No folder settings item. There is one server and nothing
+							// to configure about it (ADR-0033), and who may read a vault
+							// is set on Knap's page and nowhere else (ADR-0057). The
+							// screen this used to open was upstream's, and it asked
+							// whether you had created the folder before it would let you
+							// do anything (#92).
 							menu.addItem((item) => {
 								item
 									.setTitle(
@@ -925,19 +911,6 @@ export default class Live extends Plugin {
 											void folder.connect();
 										}
 										void this._liveViews.refresh("folder connection toggle");
-									});
-							});
-						} else {
-							menu.addItem((item) => {
-								item
-									.setTitle("Knap: folder settings")
-									.setIcon("settings")
-									.onClick(() => {
-										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
-											new ShareManagementModal(this.app, this, folder.settings.onpremServerId, undefined, folder.guid).open();
-										} else {
-											void this.openSettings(`/shared-folders?id=${folder.guid}`);
-										}
 									});
 							});
 						}

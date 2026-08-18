@@ -590,10 +590,10 @@ export class WebSyncManager {
 
 /**
  * Run an outbound content push under the WebSyncManager echo-guard if one is
- * available, else just run it (TR-25-followup, #1d244fb4). Callers — main.ts's
- * manual/full-sync commands, ShareManagementModal.ts, ShareDetailView.svelte —
- * may run before webSyncManager is initialized (or in a context that never
- * constructs one), so this degrades gracefully rather than throwing.
+ * available, else just run it (TR-25-followup, #1d244fb4). Callers, main.ts's
+ * manual and full-sync commands among them, may run before webSyncManager is
+ * initialized (or in a context that never constructs one), so this degrades
+ * gracefully rather than throwing.
  */
 export async function withOutboundSyncGuard<T>(
 	webSyncManager: WebSyncManager | undefined,
