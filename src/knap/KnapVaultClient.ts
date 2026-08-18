@@ -32,7 +32,7 @@ export interface OpenDoc {
  * constructor; ws's client satisfies the wire but not that lib typing, so
  * the seam is typed by shape rather than by name.
  */
-type WebSocketImpl = { new (url: string | URL, protocols?: string | string[]): unknown };
+export type WebSocketImpl = { new (url: string | URL, protocols?: string | string[]): unknown };
 
 export class KnapVaultClient {
 	private open = new Map<string, OpenDoc>();

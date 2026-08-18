@@ -24,7 +24,15 @@ export interface CloudVault {
 	mayWrite: boolean;
 }
 
-export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
+/** The slice of a fetch Response this module reads. requestUrl adapts to it too. */
+export interface HttpAnswer {
+	ok: boolean;
+	status: number;
+	json(): Promise<unknown>;
+	arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+export type Fetch = (url: string, init?: RequestInit) => Promise<HttpAnswer>;
 
 export class KnapServerError extends Error {
 	constructor(

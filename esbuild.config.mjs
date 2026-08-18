@@ -148,6 +148,10 @@ const context = await esbuild.context({
 		AUTH_URL: `"${authUrl}"`,
 		CONTROL_PLANE_URL: JSON.stringify(controlPlaneUrl),
 		PANEL_URL: JSON.stringify(panelUrl),
+		// The rebuild's beta switch (src/knap/ObsidianKnap.ts): empty in every
+		// ordinary build, set via the environment to point one test build at
+		// the new server. No screen ever offers a server field (ADR-0033).
+		KNAP_SERVER_URL: JSON.stringify(process.env.KNAP_SERVER_URL || ""),
 		REPOSITORY: `"pantalytics/knap-obsidian"`,
 	},
 	treeShaking: true,

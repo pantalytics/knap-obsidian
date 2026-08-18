@@ -30,6 +30,8 @@ module.exports = {
         // Knap's own page, behind the Dashboard button. A test address for the
         // same reason as the line above.
         "PANEL_URL": "https://knap.test/sync",
+        // The rebuild's beta switch: off under jest, like every ordinary build.
+        "KNAP_SERVER_URL": "",
     },
 	transform: {
 		".ts": [

@@ -76,6 +76,9 @@ import {
 	flushLogs,
 } from "./debug";
 import { getPatcher, Patcher } from "./Patcher";
+import { registerKnapBeta } from "./knap/ObsidianKnap";
+import type { KnapSync } from "./knap/KnapSync";
+import type { KnapLink } from "./knap/KnapSync";
 import { LiveTokenStore } from "./LiveTokenStore";
 import NetworkStatus from "./NetworkStatus";
 import { RelayManager } from "./RelayManager";
@@ -185,6 +188,12 @@ interface RelaySettings extends FeatureFlags, DebugSettings, ReportingSettings {
 	 * look identical.
 	 */
 	lastRunVersion?: string;
+	/**
+	 * The rebuild's sign-in and link (docs/rebuild-plan.md phase 2 in
+	 * knap-mcp-admin). Only a build with KNAP_SERVER_URL set ever reads or
+	 * writes it; every ordinary build leaves it untouched.
+	 */
+	knap?: KnapLink | null;
 }
 
 const DEFAULT_SETTINGS: RelaySettings = {
@@ -228,6 +237,7 @@ export default class Live extends Plugin {
 	relayManager!: RelayManager;
 	settingsTab!: LiveSettingsTab;
 	settings!: Settings<RelaySettings>;
+	knapSync: KnapSync | null = null;
 	private featureSettings!: NamespacedSettings<FeatureFlags>;
 	private debugSettings!: NamespacedSettings<DebugSettings>;
 	/** The fault-reporting switch (ADR-0071). Public: the settings screen toggles it. */
@@ -407,6 +417,10 @@ export default class Live extends Plugin {
 
 		this.settings = new Settings<RelaySettings>(this, DEFAULT_SETTINGS);
 		await this.settings.load();
+
+		// The rebuild's beta switch: a no-op unless the build carries a
+		// server address (src/knap/ObsidianKnap.ts).
+		this.knapSync = registerKnapBeta(this);
 
 		// Migrate relay-onprem settings from legacy single-server format to multi-server
 		const rawRelayOnPremSettings = this.settings.get().relayOnPrem;
@@ -2320,7 +2334,17 @@ export default class Live extends Plugin {
 		}
 	}
 
+	getKnapLink(): KnapLink | null {
+		return this.settings.get().knap ?? null;
+	}
+
+	async saveKnapLink(value: KnapLink | null): Promise<void> {
+		await this.settings.update((settings) => ({ ...settings, knap: value }));
+	}
+
 	onunload() {
+		this.knapSync?.stop();
+		this.knapSync = null;
 		// Save settings before cleanup to persist any changes. onunload cannot
 		// await, so the promise is kept: the fields the write needs (app,
 		// manifest, vault) are nulled only after it settles, further down.
