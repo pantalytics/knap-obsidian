@@ -83,16 +83,16 @@ export class VaultBinding {
 		this.stopTreeEvents = this.docs.tree().onChange((change) => {
 			void this.enqueue(async () => {
 				for (const [path, docId] of change.added) {
-					await this.pullNote(path, docId);
+					await this.bindNote(path, docId);
 				}
 				for (const [path, docId] of change.removed) {
-					// A move announces itself as removed+added under one id;
-					// the added half already wrote the new file.
+					// A move announces itself as removed+added under one id, and
+					// the added half above already wrote the new file, so the old
+					// path goes either way. Only a note that left the tree for
+					// good stops being watched.
+					await this.files.remove(path);
 					if (this.docs.tree().pathFor(docId) === undefined) {
-						await this.files.remove(path);
 						this.unobserveNote(docId);
-					} else {
-						await this.files.remove(path);
 					}
 				}
 			});
@@ -129,37 +129,8 @@ export class VaultBinding {
 			}
 		}
 		for (const [path, docId] of remote) {
-			if (!local.has(path)) {
-				await this.pullNote(path, docId);
-			} else {
-				await this.mergeAtLink(path, docId);
-			}
+			await this.bindNote(path, docId);
 		}
-	}
-
-	private async mergeAtLink(path: string, docId: string): Promise<void> {
-		const fileText = (await this.files.read(path)) ?? "";
-		const { doc, synced } = this.docs.note(docId);
-		await synced;
-		const docText = textOf(doc.getText(CONTENT));
-
-		if (docText === fileText) {
-			this.observeNote(path, docId);
-			return;
-		}
-		if (docText === "") {
-			// A minted note nobody typed in yet: the local text is the note.
-			splice(doc.getText(CONTENT), "", fileText, doc);
-		} else {
-			// Both sides wrote. The cloud text wins the path; the local text
-			// survives beside it, named for what happened, and pushed
-			// explicitly because link-time runs before the event stream is on.
-			const copy = buildConflictCopyPath(path, this.conflictLabel());
-			await this.files.write(copy, fileText);
-			await this.pushNote(copy);
-			await this.files.write(path, docText);
-		}
-		this.observeNote(path, docId);
 	}
 
 	// -- local to remote ------------------------------------------------------
@@ -205,12 +176,41 @@ export class VaultBinding {
 
 	// -- remote to local ------------------------------------------------------
 
-	private async pullNote(path: string, docId: string): Promise<void> {
+	/**
+	 * Take one note from the cloud onto disk, and start watching it.
+	 *
+	 * The three-way choice below is why this is one method rather than a
+	 * download at link time and a simpler one for notes that arrive later.
+	 * A note can turn up in the tree at a path where an unsynced local file
+	 * already sits: somebody wrote it on this laptop while another device
+	 * made a note of the same name. Writing the cloud text over it would be
+	 * the one thing this binding promises never to do.
+	 */
+	private async bindNote(path: string, docId: string): Promise<void> {
 		const { doc, synced } = this.docs.note(docId);
 		await synced;
-		const text = textOf(doc.getText(CONTENT));
-		if ((await this.files.read(path)) !== text) {
-			await this.files.write(path, text);
+		const content = doc.getText(CONTENT);
+		const docText = textOf(content);
+		const fileText = await this.files.read(path);
+
+		if (fileText === null) {
+			await this.files.write(path, docText);
+		} else if (fileText !== docText) {
+			if (docText === "") {
+				// A minted note nobody typed in yet: the local text is the
+				// note. A note somebody deliberately emptied looks exactly the
+				// same from here and nothing can tell them apart, so this goes
+				// the way that cannot lose anything.
+				splice(content, "", fileText, doc);
+			} else {
+				// Both sides wrote. The cloud text wins the path; the local
+				// text survives beside it, named for what happened, and pushed
+				// explicitly because this can run before the event stream is on.
+				const copy = buildConflictCopyPath(path, this.conflictLabel());
+				await this.files.write(copy, fileText);
+				await this.pushNote(copy);
+				await this.files.write(path, docText);
+			}
 		}
 		this.observeNote(path, docId);
 	}
