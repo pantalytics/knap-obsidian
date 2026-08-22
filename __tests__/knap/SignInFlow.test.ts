@@ -64,3 +64,18 @@ describe("SignInFlow", () => {
 		await expect(promise).rejects.toThrow(/without a code/);
 	});
 });
+
+describe("a deep link nobody is waiting for", () => {
+	it("says so rather than dropping the code in silence", () => {
+		const flow = new SignInFlow(serverWhereCode("c-1"), "Laptop");
+		// Nothing started here: no begin(), so nothing is pending.
+		expect(flow.handleDeepLink({ code: "c-1" })).toBe(false);
+	});
+
+	it("feeds a flow that did start here", async () => {
+		const flow = new SignInFlow(serverWhereCode("c-1"), "Laptop");
+		const waiting = flow.begin(() => {});
+		expect(flow.handleDeepLink({ code: "c-1" })).toBe(true);
+		await expect(waiting).resolves.toBe("knap_tok");
+	});
+});

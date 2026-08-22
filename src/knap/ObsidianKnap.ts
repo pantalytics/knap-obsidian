@@ -75,7 +75,15 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 	});
 
 	host.registerObsidianProtocolHandler(SIGNIN_ACTION, (params) => {
-		sync.handleDeepLink(params as unknown as Record<string, string>);
+		const fed = sync.handleDeepLink(params as unknown as Record<string, string>);
+		if (!fed) {
+			// A sign-in that was started somewhere other than here: the link
+			// arrives, nothing is waiting for it, and the code is dropped. It
+			// used to be dropped in silence, which reads exactly like the
+			// plugin being broken -- the browser said it worked and Obsidian
+			// said nothing at all.
+			new Notice("That sign-in did not start here. Run Sign in (beta) and try again.");
+		}
 	});
 
 	host.addCommand({
