@@ -173,6 +173,26 @@ describe("VaultBinding", () => {
 		expect(b.files.map.has("weg.md")).toBe(false);
 	});
 
+	it("a note arriving where an unsynced local file sits keeps both", async () => {
+		// Not link time: B is already linked and typing, and A makes a note of
+		// the same name on the other side of the world. The tree change reaches
+		// B with a file already at that path, and writing over it would be the
+		// one thing this binding promises never to do.
+		const hub = new Hub();
+		const a = await device(hub);
+		const b = await device(hub);
+		await settle(a.binding, b.binding);
+
+		b.files.map.set("Notes/idee.md", "wat ik zelf had");
+		await a.files.write("Notes/idee.md", "wat zij schreef");
+		await settle(a.binding, b.binding);
+
+		expect(b.files.map.get("Notes/idee.md")).toBe("wat zij schreef");
+		const copies = [...b.files.map].filter(([path]) => path.includes("conflict"));
+		expect(copies).toHaveLength(1);
+		expect(copies[0][1]).toBe("wat ik zelf had");
+	});
+
 	it("link-time conflict keeps the cloud text and saves the local text beside it", async () => {
 		const hub = new Hub();
 		const a = await device(hub, { "nota.md": "cloudversie" });

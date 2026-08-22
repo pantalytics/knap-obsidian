@@ -1,0 +1,117 @@
+name: Beta build (Knap server)
+# A plugin build that points at the rebuilt Knap server, for testing it on a
+# real laptop and a real phone (knap-mcp-admin, docs/rebuild-plan.md phase 2).
+#
+# Deliberately not part of the release path. `KNAP_SERVER_URL` is an esbuild
+# define that is empty in every ordinary build, and empty means the rebuilt
+# client registers nothing at all. This workflow is the only thing that fills
+# it in, it never runs on its own, and what it publishes is a pre-release under
+# its own tag, so nothing here can reach somebody who installed Knap normally.
+#
+# It leaves manifest.json, package.json, versions.json and manifest-beta.json
+# on the default branch alone. CI cross-checks those four for agreement, and a
+# beta that edited one of them would break the next real release.
+#
+# On the phone: BRAT, "Add beta plugin with frozen version", this repository,
+# and the tag this run prints.
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: 'The Knap server this build talks to, e.g. https://next.knap.pantalytics.com (no trailing slash)'
+        required: true
+      suffix:
+        description: 'Tag suffix, so two betas can exist at once'
+        required: false
+        default: 'knap-beta.1'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+
+      - name: Refuse a server URL that is not one
+        run: |
+          URL='${{ inputs.server_url }}'
+          case "$URL" in
+            https://*|http://127.0.0.1:*|http://localhost:*) ;;
+            *) echo "::error::server_url must be https, or http on localhost for a laptop test. Got '$URL'"; exit 1;;
+          esac
+          case "$URL" in
+            */) echo "::error::server_url must not end in a slash"; exit 1;;
+          esac
+
+      - run: npm ci || npm install
+
+      # The tag carries the released version plus the suffix, so it sorts
+      # beside the real releases and can never be mistaken for one.
+      - name: Work out the tag
+        id: tag
+        run: |
+          VER=$(node -p "require('./manifest.json').version")
+          echo "tag=${VER}-${{ inputs.suffix }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build with the switch set
+        env:
+          KNAP_SERVER_URL: ${{ inputs.server_url }}
+        run: npm run build
+
+      - name: Prove the switch actually landed in the bundle
+        # A build where the define silently stayed empty is a build that looks
+        # fine and does nothing, which is the one failure worth catching here.
+        env:
+          KNAP_SERVER_URL: ${{ inputs.server_url }}
+        run: |
+          grep -qF "$KNAP_SERVER_URL" main.js || {
+            echo "::error::main.js does not carry $KNAP_SERVER_URL — the define did not take"
+            exit 1
+          }
+
+      # BRAT reads the version out of the manifest it downloads, so it has to
+      # match the tag. Only in the published asset: the file in git is left
+      # exactly as it is.
+      - name: Stamp the beta version into the published manifest
+        run: |
+          node -e '
+            const fs = require("fs");
+            const m = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
+            m.version = process.argv[1];
+            fs.writeFileSync("manifest.json", JSON.stringify(m, null, "\t") + "\n");
+          ' "${{ steps.tag.outputs.tag }}"
+
+      - name: Publish the pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          ASSETS="main.js manifest.json"
+          [ -f styles.css ] && ASSETS="$ASSETS styles.css"
+          NOTES=$(cat <<EOF
+          A beta build of the rebuilt client, pointing at ${{ inputs.server_url }}.
+
+          Not an ordinary release: this build carries a server address baked in
+          at build time, and it is a pre-release so nobody reaches it by
+          accident.
+
+          On a phone: install BRAT, then *Add beta plugin with frozen version*,
+          \`${{ github.repository }}\`, tag \`$TAG\`. Enable **Knap**, then run
+          *Sign in (beta)*, *Link this vault to a cloud vault (beta)*.
+          EOF
+          )
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" $ASSETS --clobber
+          else
+            gh release create "$TAG" $ASSETS \
+              --title "$TAG" --notes "$NOTES" --prerelease \
+              --target "$(git rev-parse HEAD)"
+          fi
+          echo "### Beta published: \`$TAG\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "BRAT: *Add beta plugin with frozen version*, \`${{ github.repository }}\`, tag \`$TAG\`." >> "$GITHUB_STEP_SUMMARY"
