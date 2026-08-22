@@ -18,6 +18,7 @@ import type { CloudVault } from "./KnapServer";
 import { KnapSync } from "./KnapSync";
 import type { KnapLink } from "./KnapSync";
 import { ObsidianFileStore } from "./ObsidianFileStore";
+import { KnapSettingsTab } from "./KnapSettingsTab";
 import { SIGNIN_ACTION } from "./SignInFlow";
 import { obsidianFetch } from "./obsidianFetch";
 
@@ -45,8 +46,9 @@ class CloudVaultPickModal extends SuggestModal<CloudVault> {
 	}
 
 	renderSuggestion(vault: CloudVault, el: HTMLElement): void {
+		// The name and nothing else. There is one kind of person in a vault,
+		// so there is no access level to qualify it with.
 		el.createDiv({ text: vault.name });
-		el.createEl("small", { text: vault.mayWrite ? "you can edit" : "you can read" });
 	}
 
 	onChooseSuggestion(vault: CloudVault): void {
@@ -74,6 +76,30 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 		save: (value) => host.saveKnapLink(value),
 	});
 
+	const signIn = () => sync.signIn((url) => window.open(url));
+
+	const pickAndLink = () =>
+		sync.listVaults().then(
+			(vaults) =>
+				new Promise<void>((resolve, reject) => {
+					if (!vaults.length) {
+						reject(new Error("No cloud vaults yet. Make one in the Knap panel first."));
+						return;
+					}
+					new CloudVaultPickModal(host, vaults, (vault) => {
+						sync
+							.link(vault)
+							.then(() => {
+								new Notice(`Linked. This vault now syncs with ${vault.name}.`);
+								resolve();
+							})
+							.catch(reject);
+					}).open();
+				}),
+		);
+
+	host.addSettingTab(new KnapSettingsTab(host.app, sync, { app: host.app, signIn, pickAndLink }, serverUrl));
+
 	host.registerObsidianProtocolHandler(SIGNIN_ACTION, (params) => {
 		const fed = sync.handleDeepLink(params as unknown as Record<string, string>);
 		if (!fed) {
@@ -90,8 +116,7 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 		id: "knap-beta-sign-in",
 		name: "Sign in (beta)",
 		callback: () => {
-			sync
-				.signIn((url) => window.open(url))
+			signIn()
 				.then(() => new Notice("Signed in. Now link this vault to a cloud vault."))
 				.catch((error: Error) => new Notice(error.message));
 		},
@@ -101,21 +126,7 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 		id: "knap-beta-link-vault",
 		name: "Link this vault to a cloud vault (beta)",
 		callback: () => {
-			sync
-				.listVaults()
-				.then((vaults) => {
-					if (!vaults.length) {
-						new Notice("No cloud vaults yet. Make one in the Knap panel first.");
-						return;
-					}
-					new CloudVaultPickModal(host, vaults, (vault) => {
-						sync
-							.link(vault)
-							.then(() => new Notice(`Linked. This vault now syncs with ${vault.name}.`))
-							.catch((error: Error) => new Notice(error.message));
-					}).open();
-				})
-				.catch((error: Error) => new Notice(error.message));
+			pickAndLink().catch((error: Error) => new Notice(error.message));
 		},
 	});
 

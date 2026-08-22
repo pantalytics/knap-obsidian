@@ -21,7 +21,7 @@
 export interface CloudVault {
 	id: string;
 	name: string;
-	mayWrite: boolean;
+
 }
 
 /** The slice of a fetch Response this module reads. requestUrl adapts to it too. */
@@ -88,9 +88,9 @@ export class KnapServer {
 			throw new KnapServerError("The server did not answer.", response.status);
 		}
 		const body = (await response.json()) as {
-			vaults: { id: string; name: string; may_write: boolean }[];
+			vaults: { id: string; name: string }[];
 		};
-		return body.vaults.map((v) => ({ id: v.id, name: v.name, mayWrite: v.may_write }));
+		return body.vaults.map((v) => ({ id: v.id, name: v.name }));
 	}
 
 	/**
