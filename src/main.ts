@@ -1145,6 +1145,16 @@ export default class Live extends Plugin {
 		const log = curryLog("[RelayOnPrem]", "log");
 		const err = curryLog("[RelayOnPrem]", "error");
 
+		// A beta build talks to the rebuilt server and to nothing else. Left
+		// on, this reaches the control plane of the stack that build exists to
+		// replace, lists its shares as "cloud vaults" beside the real ones,
+		// and -- worse than confusing -- starts syncing them into whatever
+		// vault the beta is installed in.
+		if (this.knapSync) {
+			log("Beta build: not loading anything from the control plane.");
+			return;
+		}
+
 		try {
 			log("Loading existing shares from control plane...");
 
@@ -2017,7 +2027,14 @@ export default class Live extends Plugin {
 			void this.loadRelayOnPremShares();
 		}
 
-		this.addSettingTab(this.settingsTab);
+		// One world per build. A beta pointed at the rebuilt server showed the
+		// relay's own settings tab beside it, listing the shares of the stack
+		// this one replaces -- two lists of "cloud vaults" that disagree, with
+		// nothing on either saying which server it is talking about. The
+		// ordinary build is unaffected: knapBeta is null there.
+		if (!this.knapSync) {
+			this.addSettingTab(this.settingsTab);
+		}
 
 		const workspaceLog = curryLog("[Live][Workspace]", "log");
 
@@ -2312,7 +2329,11 @@ export default class Live extends Plugin {
 			void this.openSettings();
 		});
 
-		this.backgroundSync.start();
+		// Same reason as loadRelayOnPremShares: one syncer per build. The
+		// rebuilt client does its own syncing over its own socket.
+		if (!this.knapSync) {
+			this.backgroundSync.start();
+		}
 	}
 
 	removeCommand(command: string): void {
