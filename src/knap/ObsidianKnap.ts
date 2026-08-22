@@ -82,7 +82,7 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 			// used to be dropped in silence, which reads exactly like the
 			// plugin being broken -- the browser said it worked and Obsidian
 			// said nothing at all.
-			new Notice("That sign-in did not start here. Run Sign in (beta) and try again.");
+			new Notice("That sign-in did not start here. Run sign in (beta) and try again.");
 		}
 	});
 
