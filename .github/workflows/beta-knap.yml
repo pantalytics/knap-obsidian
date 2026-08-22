@@ -1,29 +1,30 @@
 name: Beta build (Knap server)
 # A plugin build that points at the rebuilt Knap server, for testing it on a
-# real laptop and a real phone (knap-mcp-admin, docs/rebuild-plan.md phase 2).
+# real laptop and a real phone (knap-mcp-admin, docs/plan.md phase 2).
 #
-# Deliberately not part of the release path. `KNAP_SERVER_URL` is an esbuild
-# define that is empty in every ordinary build, and empty means the rebuilt
-# client registers nothing at all. This workflow is the only thing that fills
-# it in, it never runs on its own, and what it publishes is a pre-release under
-# its own tag, so nothing here can reach somebody who installed Knap normally.
+# `KNAP_SERVER_URL` is an esbuild define that is empty in every ordinary build,
+# and empty means the rebuilt client registers nothing at all. This workflow is
+# the only thing that fills it in.
 #
-# It leaves manifest.json, package.json, versions.json and manifest-beta.json
-# on the default branch alone. CI cross-checks those four for agreement, and a
-# beta that edited one of them would break the next real release.
+# **It publishes an ordinary release, and bumps the patch version to do it.**
+# Pre-releases were the safer shape and they cost more than they bought: BRAT
+# on its usual setting installs the latest *release*, so every pre-release was
+# invisible unless somebody typed the tag by hand, and the person testing this
+# ended up back on 1.13.2 without noticing. The plugin is not in the community
+# catalogue, so a release reaches whoever installed it through BRAT and nobody
+# else.
 #
-# On the phone: BRAT, "Add beta plugin with frozen version", this repository,
-# and the tag this run prints.
+# It leaves manifest.json, package.json and versions.json on the default branch
+# alone: the bump lives only in the published asset. CI cross-checks those
+# three for agreement, and editing one here would break the next real release.
+#
+# On a phone: BRAT, add `pantalytics/knap-obsidian`, and it updates itself.
 on:
   workflow_dispatch:
     inputs:
       server_url:
         description: 'The Knap server this build talks to, e.g. https://next.knap.pantalytics.com (no trailing slash)'
         required: true
-      suffix:
-        description: 'Tag suffix, so two betas can exist at once'
-        required: false
-        default: 'knap-beta.1'
 
 permissions:
   contents: write
@@ -50,13 +51,21 @@ jobs:
 
       - run: npm ci || npm install
 
-      # The tag carries the released version plus the suffix, so it sorts
-      # beside the real releases and can never be mistaken for one.
-      - name: Work out the tag
+      # One patch above the highest version that has ever been released, so
+      # BRAT sees an update whatever it last installed. Read from the releases
+      # rather than from manifest.json, because the bump deliberately never
+      # lands in git and the file would hand out the same number twice.
+      - name: Work out the next version
         id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          VER=$(node -p "require('./manifest.json').version")
-          echo "tag=${VER}-${{ inputs.suffix }}" >> "$GITHUB_OUTPUT"
+          LATEST=$(gh release list --limit 100 --json tagName --jq '.[].tagName' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          LATEST=${LATEST:-$(node -p "require('./manifest.json').version")}
+          NEXT=$(node -p "const [a,b,c]='$LATEST'.split('.').map(Number); [a,b,c+1].join('.')")
+          echo "Latest released: $LATEST -> publishing $NEXT"
+          echo "tag=$NEXT" >> "$GITHUB_OUTPUT"
 
       - name: Build with the switch set
         env:
@@ -77,7 +86,7 @@ jobs:
       # BRAT reads the version out of the manifest it downloads, so it has to
       # match the tag. Only in the published asset: the file in git is left
       # exactly as it is.
-      - name: Stamp the beta version into the published manifest
+      - name: Stamp the version into the published manifest
         run: |
           node -e '
             const fs = require("fs");
@@ -86,7 +95,7 @@ jobs:
             fs.writeFileSync("manifest.json", JSON.stringify(m, null, "\t") + "\n");
           ' "${{ steps.tag.outputs.tag }}"
 
-      - name: Publish the pre-release
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -94,24 +103,23 @@ jobs:
           ASSETS="main.js manifest.json"
           [ -f styles.css ] && ASSETS="$ASSETS styles.css"
           NOTES=$(cat <<EOF
-          A beta build of the rebuilt client, pointing at ${{ inputs.server_url }}.
+          A build of the rebuilt client, pointing at ${{ inputs.server_url }}.
 
-          Not an ordinary release: this build carries a server address baked in
-          at build time, and it is a pre-release so nobody reaches it by
-          accident.
+          The server address is baked in at build time; an ordinary build has
+          none and behaves exactly as before.
 
-          On a phone: install BRAT, then *Add beta plugin with frozen version*,
-          \`${{ github.repository }}\`, tag \`$TAG\`. Enable **Knap**, then run
-          *Sign in (beta)*, *Link this vault to a cloud vault (beta)*.
+          BRAT installs this on its usual setting: add
+          \`${{ github.repository }}\` and it updates itself. Then
+          **Settings, Knap, Sign in**.
           EOF
           )
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" $ASSETS --clobber
           else
             gh release create "$TAG" $ASSETS \
-              --title "$TAG" --notes "$NOTES" --prerelease \
+              --title "$TAG" --notes "$NOTES" \
               --target "$(git rev-parse HEAD)"
           fi
-          echo "### Beta published: \`$TAG\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Published: \`$TAG\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "BRAT: *Add beta plugin with frozen version*, \`${{ github.repository }}\`, tag \`$TAG\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "BRAT picks this up on its usual setting; no tag to type." >> "$GITHUB_STEP_SUMMARY"
