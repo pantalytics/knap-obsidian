@@ -420,7 +420,19 @@ export default class Live extends Plugin {
 
 		// The rebuild's beta switch: a no-op unless the build carries a
 		// server address (src/knap/ObsidianKnap.ts).
-		this.knapSync = registerKnapBeta(this);
+		//
+		// Wrapped, because this runs early in onload and everything after it
+		// depends on onload finishing. A first version of the beta's settings
+		// tab threw here, and what a person saw was the ribbon icon gone --
+		// registered eighty lines further down, and never reached. A half-built
+		// beta layer is worth a notice; it is not worth the plugin.
+		try {
+			this.knapSync = registerKnapBeta(this);
+		} catch (error) {
+			this.knapSync = null;
+			console.error("[Knap] the beta layer failed to start", error);
+			new Notice("Knap: the beta layer failed to start. The rest of the plugin is fine.");
+		}
 
 		// Migrate relay-onprem settings from legacy single-server format to multi-server
 		const rawRelayOnPremSettings = this.settings.get().relayOnPrem;

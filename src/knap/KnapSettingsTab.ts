@@ -13,13 +13,13 @@
  * says which one rather than offering a choice.
  */
 
-import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { Notice, type Plugin, PluginSettingTab, Setting } from "obsidian";
 
 import type { CloudVault } from "./KnapServer";
 import type { KnapSync } from "./KnapSync";
 
-export interface SignInHost {
-	app: App;
+/** The two acts the buttons perform, so the screen shares them with the commands. */
+export interface SignInActions {
 	/** Starts the browser half and resolves when the deep link comes back. */
 	signIn(): Promise<void>;
 	/** Offers the account's cloud vaults and links the one that is picked. */
@@ -27,13 +27,19 @@ export interface SignInHost {
 }
 
 export class KnapSettingsTab extends PluginSettingTab {
+	/**
+	 * ``plugin`` is the real plugin, not a stand-in. Obsidian registers the tab
+	 * against it, and handing it an object that merely looks like one threw
+	 * during onload -- which took everything registered after that call with
+	 * it, the ribbon icon included.
+	 */
 	constructor(
-		app: App,
+		plugin: Plugin,
 		private readonly sync: KnapSync,
-		private readonly host: SignInHost,
+		private readonly actions: SignInActions,
 		private readonly serverUrl: string,
 	) {
-		super(app, host as never);
+		super(plugin.app, plugin);
 	}
 
 	display(): void {
@@ -56,7 +62,7 @@ export class KnapSettingsTab extends PluginSettingTab {
 						.setButtonText("Sign in")
 						.setCta()
 						.onClick(() => {
-							void this.host
+							void this.actions
 								.signIn()
 								.then(() => {
 									new Notice("Signed in. Now link this vault to a cloud vault.");
@@ -80,7 +86,7 @@ export class KnapSettingsTab extends PluginSettingTab {
 					.setButtonText(linked ? "Link a different one" : "Link a cloud vault")
 					.setCta()
 					.onClick(() => {
-						void this.host
+						void this.actions
 							.pickAndLink()
 							.then(() => this.display())
 							.catch((error: Error) => new Notice(error.message));

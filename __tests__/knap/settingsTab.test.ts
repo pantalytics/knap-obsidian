@@ -70,11 +70,12 @@ function tabFor(state: { signedIn: boolean; linked: null | { id: string; name: s
 			: null,
 		unlink: async () => {},
 	};
-	const host = { app: {}, signIn: async () => {}, pickAndLink: async () => {} };
+	const plugin = { app: {} };
+	const actions = { signIn: async () => {}, pickAndLink: async () => {} };
 	const tab = new KnapSettingsTab(
-		{} as never,
+		plugin as never,
 		sync as never,
-		host as never,
+		actions as never,
 		"https://next.knap.test",
 	);
 	tab.containerEl = fakeContainer(rows) as never;
