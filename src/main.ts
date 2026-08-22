@@ -1494,6 +1494,23 @@ export default class Live extends Plugin {
 	}
 
 	/**
+	 * What the linked cloud vault is called, from the record on disk.
+	 *
+	 * The settings screen names the link on every screen where it is known,
+	 * signed out included: ending a session undoes nothing about the link, and
+	 * the one thing worth seeing before pressing Sign in again is which cloud
+	 * vault you are about to be back on. Signed out there is nothing to fetch,
+	 * so the answer comes from the record `rememberVault` wrote.
+	 *
+	 * Undefined on an install that linked its vault before there was anywhere
+	 * to write the answer down. `restoreRememberedVault` fills that in on the
+	 * next load, and until it does the screen says nothing rather than guessing.
+	 */
+	public linkedVaultName(): string | undefined {
+		return this.vaultMemory?.get()?.name;
+	}
+
+	/**
 	 * Forget it, because this device has stopped syncing that vault.
 	 *
 	 * The one thing that must clear the memory, and the only thing that may:

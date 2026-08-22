@@ -153,12 +153,33 @@ export const CHOOSE_A_VAULT = "Cloud vaults";
  */
 export const NO_VAULTS_YET = "No cloud vaults yet.";
 
-/** The row for one vault: the name, and the little Knap will say about it. */
-export function vaultRowLines(vault: ShareLike): string[] {
+/**
+ * What a row says under the vault's name, which is usually nothing.
+ *
+ * It used to print the day the vault was made under every row. That is a fact
+ * Knap happens to hold rather than one anybody picks on: people choose a vault
+ * by its name, and a date under all three rows is three lines of noise to get
+ * past on the one screen where a wrong press costs the most.
+ *
+ * So the date is here for the one case that cannot be answered without it.
+ * `cloudVaults` sorts by name and then by id precisely because two vaults on one
+ * account may carry the same name, and two identical rows are a coin toss. When
+ * that happens the date is the difference, and it is printed on the rows it
+ * tells apart and nowhere else.
+ *
+ * `siblings` is the whole list the row is drawn in. Left out, the row carries
+ * only what is true of the vault on its own.
+ */
+export function vaultRowLines(vault: ShareLike, siblings: ShareLike[] = []): string[] {
 	const lines: string[] = [];
-	const made = formatDay(vault.created_at);
-	if (made) {
-		lines.push(`Added to Knap on ${made}`);
+	const twin = siblings.some(
+		(other) => other.id !== vault.id && other.path === vault.path,
+	);
+	if (twin) {
+		const made = formatDay(vault.created_at);
+		if (made) {
+			lines.push(`Added to Knap on ${made}`);
+		}
 	}
 	if (vault.is_owner === false) {
 		// Not "shared with you". Share is the control plane's noun and stays
@@ -169,14 +190,6 @@ export function vaultRowLines(vault: ShareLike): string[] {
 	return lines;
 }
 
-/**
- * The button that starts a new one.
- *
- * It does not name the vault it is about to make. The name comes from this
- * local vault, which is the word at the top of the window somebody is looking
- * at, and putting it in a button label spends a line on a fact already on the
- * screen.
- */
 export const NEW_VAULT_LABEL = "Create new";
 
 /**

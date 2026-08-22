@@ -29,11 +29,19 @@
  * `vaultShare.ts` is the pattern.
  */
 
-/** One line of the list. */
+/**
+ * One line of the list.
+ *
+ * The title is what the row says and the detail is what opens under it. That
+ * split is the whole point of the shape: the three of them together ran to a
+ * hundred and thirty words, which is a wall in front of the button they are
+ * about. Four words each costs three lines, and the sentence is one press away
+ * for the person who wants it.
+ */
 export interface ChecklistItem {
-	/** The check itself, in the imperative. */
+	/** The check itself, four or five words. This is the row. */
 	title: string;
-	/** Why it matters, which is what makes somebody bother. */
+	/** Why it matters. This opens under the row. */
 	detail: string;
 }
 
@@ -41,18 +49,18 @@ export const CHECKLIST_TITLE = "Before you start";
 
 export const CHECKLIST: readonly ChecklistItem[] = [
 	{
-		title: "Only one thing syncs this vault",
+		title: "One sync per vault",
 		detail:
-			"If Obsidian Sync, Relay or another sync plugin is on for this vault, turn it off first. Two of them writing one note means the last write wins and the other version is gone.",
+			"Turn off Obsidian Sync, Relay or any other sync plugin for this vault first. Two of them writing one note means the last write wins and the other version is gone.",
 	},
 	{
-		title: "The vault is not inside iCloud, Dropbox or OneDrive",
+		title: "Not in iCloud or Dropbox",
 		detail:
-			"A vault in one of those folders is being copied by two things at once. That is how a note comes back as a conflicted copy, or reads as empty here while the drive is still fetching it.",
+			"A vault inside iCloud, Dropbox or OneDrive is being copied by two things at once. That is where a conflicted copy comes from, and why a note can read as empty here while the drive is still fetching it.",
 	},
 	{
-		title: "Obsidian stays open until the first copy finishes",
+		title: "Keep Obsidian open",
 		detail:
-			"The first copy sends every note you have, which on a big vault takes a while. Close it and it picks up where it left off.",
+			"The first copy sends every note you have, which takes a while on a big vault. Close it and it picks up where it left off.",
 	},
 ];

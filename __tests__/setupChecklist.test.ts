@@ -36,6 +36,19 @@ describe("the list somebody reads before starting", () => {
 		expect(titles).toMatch(/icloud|dropbox|onedrive/);
 	});
 
+	test("the row is four or five words, and the reason opens under it", () => {
+		// The three of them together ran to a hundred and thirty words on the
+		// screen with the button that starts the sync. The title is the row now
+		// and the detail is what a press opens, so the wall costs three lines
+		// until somebody wants it.
+		for (const item of CHECKLIST) {
+			expect(item.title.split(" ").length).toBeLessThanOrEqual(5);
+			expect(item.detail.split(" ").length).toBeGreaterThan(
+				item.title.split(" ").length,
+			);
+		}
+	});
+
 	test("every line has a reason under it", () => {
 		for (const item of CHECKLIST) {
 			expect(item.title.trim().length).toBeGreaterThan(0);
