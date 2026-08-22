@@ -42,6 +42,17 @@ describe("a beta build does not also run the relay", () => {
 		expect(body.slice(0, 800)).toMatch(/if \(this\.knapSync\) \{[\s\S]*?return;/);
 	});
 
+	it("cannot take the rest of onload down with it", () => {
+		// registerKnapBeta runs early in onload; the ribbon icon is registered
+		// eighty lines later. A throw in here once meant no icon at all, and
+		// nothing on screen saying why.
+		const at = main.indexOf("registerKnapBeta(this)");
+		expect(at).toBeGreaterThan(-1);
+		const around = main.slice(at - 200, at + 300);
+		expect(around).toMatch(/try \{/);
+		expect(around).toMatch(/catch \(error\)/);
+	});
+
 	it("leaves an ordinary build alone: the flag is null without a server url", () => {
 		const registrar = readFileSync(
 			join(__dirname, "..", "..", "src", "knap", "ObsidianKnap.ts"),

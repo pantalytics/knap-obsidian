@@ -98,7 +98,7 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 				}),
 		);
 
-	host.addSettingTab(new KnapSettingsTab(host.app, sync, { app: host.app, signIn, pickAndLink }, serverUrl));
+	host.addSettingTab(new KnapSettingsTab(host, sync, { signIn, pickAndLink }, serverUrl));
 
 	host.registerObsidianProtocolHandler(SIGNIN_ACTION, (params) => {
 		const fed = sync.handleDeepLink(params as unknown as Record<string, string>);
