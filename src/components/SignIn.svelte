@@ -25,7 +25,6 @@
 		NO_VAULTS_YET,
 		UNLINK_EXPLANATION,
 		UNLINK_LABEL,
-		VAULT_SCOPE_NOTE,
 		REPLACE_FOLDERS_LABEL,
 		type LocalShare,
 		type ShareLike,
@@ -799,8 +798,11 @@
 			<p class="knap-hero-word">{word}</p>
 			<p class="knap-hero-note">{syncInstruction(word)}</p>
 			<div class="knap-hero-act">
+				<!-- Not "Sign in again": the line directly above already ends
+				     with those three words, and a button repeating the end of
+				     its own sentence is the stutter this screen was full of. -->
 				<button class="knap-btn mod-cta" disabled={signingIn} on:click={signIn}>
-					{signingIn ? "Waiting for the browser" : "Sign in again"}
+					{signingIn ? "Waiting for the browser" : "Sign in"}
 				</button>
 			</div>
 		</div>
@@ -1023,7 +1025,6 @@
 						</button>
 					</div>
 					<p class="knap-open-note">{ANOTHER_DEVICE_NOTE}</p>
-					<p class="knap-open-note">{VAULT_SCOPE_NOTE}</p>
 				</div>
 			</details>
 		</div>
