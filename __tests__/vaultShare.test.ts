@@ -155,22 +155,32 @@ describe("clearing folder shares out of the way", () => {
 });
 
 describe("what a row says about a vault", () => {
-	test("the day it was made, which is what tells two apart", () => {
-		expect(vaultRowLines(folderShare("V", "1", { created_at: "2026-08-11T09:14:00Z" }))).toEqual(
-			["Added to Knap on 11 August 2026"],
-		);
+	test("nothing, on a vault whose name already tells it apart", () => {
+		// The date used to print under every row. People pick a vault by its
+		// name, and a fact Knap happens to hold is not a fact anybody asked for.
+		const one = folderShare("V", "1", { created_at: "2026-08-11T09:14:00Z" });
+		const other = folderShare("Clients", "2", { created_at: "2026-08-12T09:14:00Z" });
+		expect(vaultRowLines(one, [one, other])).toEqual([]);
+	});
+
+	test("the day it was made, on the rows a shared name cannot tell apart", () => {
+		const one = folderShare("V", "1", { created_at: "2026-08-11T09:14:00Z" });
+		const twin = folderShare("V", "2", { created_at: "2026-08-12T09:14:00Z" });
+		expect(vaultRowLines(one, [one, twin])).toEqual(["Added to Knap on 11 August 2026"]);
+		expect(vaultRowLines(twin, [one, twin])).toEqual(["Added to Knap on 12 August 2026"]);
 	});
 
 	test("a date Knap did not send is left out rather than guessed at", () => {
 		for (const created_at of [undefined, "", "the other day"]) {
-			expect(vaultRowLines(folderShare("V", "1", { created_at }))).toEqual([]);
+			const one = folderShare("V", "1", { created_at });
+			const twin = folderShare("V", "2", { created_at });
+			expect(vaultRowLines(one, [one, twin])).toEqual([]);
 		}
 	});
 
-	test("somebody else's vault says so", () => {
-		expect(vaultRowLines(folderShare("Clients", "1", { is_owner: false }))).toEqual([
-			"Someone else's vault",
-		]);
+	test("somebody else's vault says so, whatever it is called", () => {
+		const theirs = folderShare("Clients", "1", { is_owner: false });
+		expect(vaultRowLines(theirs, [theirs])).toEqual(["Someone else's vault"]);
 	});
 
 	test("your own says nothing about ownership, because that is the ordinary case", () => {
@@ -182,9 +192,11 @@ describe("what a row says about a vault", () => {
 		// A share record has neither, the files index is the web publishing
 		// artifact list and reads 0 on a private vault, and there is no device
 		// list on this side of the API at all.
-		const said = vaultRowLines(
+		const twins = [
 			folderShare("V", "1", { created_at: "2026-08-11T09:14:00Z", is_owner: false }),
-		).join(" ");
+			folderShare("V", "2", { created_at: "2026-08-12T09:14:00Z" }),
+		];
+		const said = vaultRowLines(twins[0], twins).join(" ");
 		expect(said).not.toMatch(/\d+ notes?\b/);
 		expect(said).not.toMatch(/\d+ (other )?devices?\b/);
 	});
@@ -268,6 +280,10 @@ describe("the copy that goes with it", () => {
 		JOIN_CONFIRMATION,
 		...vaultRowLines(
 			folderShare("V", "1", { created_at: "2026-08-11T09:14:00Z", is_owner: false }),
+			[
+				folderShare("V", "1", { created_at: "2026-08-11T09:14:00Z", is_owner: false }),
+				folderShare("V", "2", { created_at: "2026-08-12T09:14:00Z" }),
+			],
 		),
 		REPLACE_FOLDERS_LABEL,
 		replaceFoldersLine(1),

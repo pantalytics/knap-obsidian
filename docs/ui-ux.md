@@ -65,15 +65,44 @@ moment they are looking at the screen.
 
 ### 3. Working
 
-Two rows and two buttons, and that is the whole screen (ADR-0045). **Account** is
-the address signed in, **Status** is the state word with its dot, and under them
-sits whatever instruction the state carries. *Logout* ends the session on this
-device. *Dashboard* opens Knap's page in a browser, which is where the rest of
-it lives: which devices sync, and which AI is connected.
+**One state, one screen, and everything else a row away.** At the top is what the
+vault is doing: the mark, the state word, the count, and the bar under it. Below
+that a group of rows, and each row opens to whatever it is about rather than
+printing it on arrival. **Vault** is the cloud vault this one is linked to and
+opens to Unlink. **Account** is the address signed in and opens to Sign out.
+**Dashboard** leaves for Knap's page, which is where the rest of it lives: which
+devices sync, and which AI is connected. **Add another device** opens to the
+three steps and the string BRAT's field takes.
 
-The rows are Obsidian's own `setting-item`, label on the left and value on the
-right, so the screen reads like the settings pages either side of it rather than
-like a panel we built.
+`settingsScreen.ts` names which of the five screens the pane is showing, and the
+markup asks for the name. Nothing decides for itself whether to render, which is
+what this replaced: every block used to test whatever variable was nearest, and
+four screens nobody designed came out of it. They are in that file's header,
+each with the thing it cost, and each pinned in `__tests__/settingsScreen.test.ts`.
+
+**This is a departure from ADR-0045**, which said two rows and two buttons. That
+sentence was written before the vault chooser, the checklist, the link row and
+the second-device steps existed, and by 2026-08-22 the pane carried eight blocks
+rather than two rows. The state is the only fact on it that changes minute to
+minute and the reason anybody opens the tab, and the right-hand value slot of a
+setting row files it at the weight of an email address. The words are unchanged:
+the state word, its dot, the count and the instruction all still come from
+`syncStatus.ts`. What moved is where they sit. **The ADR is owed an amendment.**
+
+### 3b. Nothing is deleted, it is one row away
+
+The copy this screen owes somebody did not shrink, it moved. The forty words
+about what Unlink does are asked by `confirmDialog` at the moment the button is
+pressed rather than printed under it on every open. The three things to sort out
+before starting are four-word rows that open to their own sentence. The
+second-device steps, the line about what does not travel with the notes, and the
+inventory of what an error report contains are all behind the row they belong
+to. What stays on the screen unprompted is the promise rather than the
+inventory: *Never a note, a file name, or anything that identifies you.*
+
+The one thing genuinely dropped is the date under every vault in the list. It is
+a fact Knap happens to hold rather than one anybody picks on, and it is printed
+now only on rows that two vaults sharing a name cannot otherwise tell apart.
 
 ### 4. Folders are content, not settings
 
@@ -110,10 +139,23 @@ documents, and it goes when the last of those vaults has been through it.
 
 ### 5. Signed out
 
-The status word turns to *Signed out* with a red dot, the shares pause, and
-*Sign in* is the only button left: there is no account row to show and nothing on
-Knap's page to open without one. Nothing has been lost, and the copy says so:
-every note is still on this device.
+The status word turns to *Signed out*, the shares pause, and *Sign in again* is
+the only button: there is no account row to show and nothing on Knap's page to
+open without one. Nothing has been lost, and the copy says so: every note is
+still on this device.
+
+**The linked vault stays on the screen.** Ending a session undid nothing about
+which cloud vault this one belongs to, and the one thing worth seeing before
+pressing the button is which vault you are about to be back on. It used to
+vanish, and worse: the list of things to sort out before starting rendered on
+the absence of a link, so somebody who had been syncing since August was told to
+check whether their vault sits in Dropbox. Signed out there is nothing to fetch
+the name from, so it comes off the record `rememberVault` wrote, through
+`plugin.linkedVaultName()`.
+
+**A device that has never signed in is not signed out.** It has no vault to
+report on, and reporting on one anyway put the error dot on an install where
+nothing had gone wrong. That screen says *Not syncing* and carries one button.
 
 ## One vault, one row, and never a second level
 

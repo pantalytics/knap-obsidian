@@ -21,21 +21,39 @@
 		CHOOSE_A_VAULT,
 		JOIN_CONFIRMATION,
 		JOIN_LABEL,
-		LINKED_TO_LABEL,
-		linkedToLine,
 		NEW_VAULT_LABEL,
 		NO_VAULTS_YET,
 		UNLINK_EXPLANATION,
 		UNLINK_LABEL,
-		VAULT_SCOPE_NOTE,
 		REPLACE_FOLDERS_LABEL,
 		type LocalShare,
 		type ShareLike,
 	} from "../vaultShare";
 	import { RelayOnPremShareClientManager } from "../RelayOnPremShareClientManager";
-	import { hasSignInButton, syncInstruction } from "../syncStatus";
+	import {
+		syncInstruction,
+		PAUSED,
+		SIGNED_OUT,
+		UP_TO_DATE,
+		type SyncWord,
+	} from "../syncStatus";
 	import type { VaultReading } from "../vaultStatus";
 	import { CHECKLIST, CHECKLIST_TITLE } from "../setupChecklist";
+	import {
+		screenFor,
+		showsChecklist,
+		showsLinkedVault,
+		showsVaultState,
+		ACCOUNT_ROW_LABEL,
+		FAULT_REPORTING_LABEL,
+		FAULT_REPORTING_NOTE,
+		NOT_SYNCING_NOTE,
+		NOT_SYNCING_TITLE,
+		TRY_AGAIN_LABEL,
+		UNREACHABLE_NOTE,
+		UNREACHABLE_TITLE,
+		VAULT_ROW_LABEL,
+	} from "../settingsScreen";
 	import {
 		ANOTHER_DEVICE_NOTE,
 		ANOTHER_DEVICE_STEPS,
@@ -123,21 +141,108 @@
 	// instruction promises their notes are still on this device, which is true
 	// and beside the point on an install that has never synced anything.
 	$: returning = Boolean(server?.lastUserEmail);
-	// The instruction goes when something truer takes its place. Syncing with a
-	// count beside it and a bar under it does not also need a sentence about
-	// leaving Obsidian open: that sentence was on screen twice at once, once
-	// here and once as the first line of the first sync.
-	$: statusNote = !(auth.isSignedIn || returning)
-		? "Sign in with your Knap account, then pick the vault this one syncs with."
-		: counts
-			? ""
-			: syncInstruction(word);
+	// The instruction under the word, on the one screen that has a word to put
+	// it under. It used to be blanked whenever `counts` was set, so *Leave
+	// Obsidian open until it finishes* was on screen only while nothing was
+	// counting: during the sync it warns about, it was gone. It was blanked to
+	// stop the first-sync notice saying it at the same moment, and the notice
+	// is a few seconds of a sync that runs for an hour. The pane keeps it.
+	//
+	// Up to date returns an empty string from the shared list, so nothing is
+	// drawn and nothing is invented here.
+	$: statusNote = syncInstruction(word);
 
 	// How many folder shares an older build left behind, and whether the
 	// clean-up that replaces them is running. Zero on every install that never
 	// picked folders, which is the only shape a new one can be in.
 	let leftoverFolders = 0;
 	let replacing = false;
+
+	// Knap did not answer the last time the account's vaults were asked for.
+	// It is a screen of its own rather than a red line at the bottom of the
+	// pane, and only when the list was what the screen was for: a cloud vault
+	// already mounted goes on syncing whatever the listing did.
+	let unreachable = false;
+
+	// What the linked cloud vault is called when there is nothing to fetch it
+	// from, which is every screen where somebody is signed out. The link was
+	// not undone by the session ending and the screen says so.
+	let rememberedName = plugin.linkedVaultName();
+
+	// Whether a cloud vault is mounted, which is the fact rather than the
+	// answer the last fetch happened to give. Read on the same tick as the
+	// rest, so unlinking and joining both land without anything telling this
+	// component about it.
+	let mounted = hasVaultShare();
+
+	$: screen = screenFor({
+		signedIn: auth.isSignedIn,
+		returning,
+		linked: mounted,
+		unreachable,
+	});
+
+	// The name to print. What Knap called it if the list came back, and the
+	// record on disk otherwise.
+	$: linkedName = syncingWith?.path ?? rememberedName;
+
+	function hasVaultShare(): boolean {
+		return plugin.sharedFolders?.items().some((folder) => folder.isVaultScope) ?? false;
+	}
+
+	// Whether the account's vaults are being asked for again, so the button
+	// says so and cannot be pressed twice.
+	let asking = false;
+
+	/**
+	 * Ask Knap for the account's vaults again.
+	 *
+	 * The listing ran on mount and after a sign-in and nowhere else, so a
+	 * refused one left the settings tab with no way forward: closing it and
+	 * opening it again was the only route back. The work is a function that
+	 * already existed; what was missing was somewhere to press.
+	 */
+	async function askAgain() {
+		if (asking) return;
+		asking = true;
+		try {
+			await startSyncingTheVault();
+		} finally {
+			asking = false;
+		}
+	}
+
+	/**
+	 * The marks over the state word. Hairline strokes at one weight, so the
+	 * four of them read as one set, and `currentColor` so the dot classes in
+	 * the stylesheet stay the only place a state has a colour.
+	 *
+	 * Static strings, rendered with `{@html}`: nothing here comes from a note,
+	 * a vault name or a server.
+	 */
+	const MARK = {
+		sync: `<svg width="34" height="34" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 20a12 12 0 0 1 23 0"/><path d="M33 12.5 31 20l-6-4"/><path d="M32 20a12 12 0 0 1-23 0"/><path d="M7 27.5 9 20l6 4"/></svg>`,
+		ok: `<svg width="34" height="34" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="20" cy="20" r="14"/><path d="m14 20.5 4.2 4.2L26.5 16"/></svg>`,
+		off: `<svg width="34" height="34" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="20" cy="20" r="14"/><path d="M14.5 14.5 25.5 25.5"/></svg>`,
+		wait: `<svg width="34" height="34" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 27a6.5 6.5 0 0 1 .6-13 9 9 0 0 1 17 2.2A5.6 5.6 0 0 1 29.6 27z"/></svg>`,
+		error: `<svg width="34" height="34" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="20" cy="20" r="14"/><path d="M20 13v9"/><path d="M20 26.3v.2"/></svg>`,
+	};
+
+	/**
+	 * The mark for the word, so a paused vault does not wear the syncing one.
+	 * The word comes from the shared list and this only picks a drawing for it.
+	 */
+	function markFor(state: SyncWord): string {
+		if (state === UP_TO_DATE) return MARK.ok;
+		if (state === SIGNED_OUT) return MARK.off;
+		if (state === PAUSED) return MARK.wait;
+		return MARK.sync;
+	}
+
+	/** The mark on a row that opens, and on one that leads out of Obsidian. */
+	const CHEVRON = `<svg class="knap-chevron" width="7" height="12" viewBox="0 0 7 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m1 1 5 5-5 5"/></svg>`;
+
+	const LEAVES = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 3.5h6v6M12.5 3.5 6 10"/><path d="M11 9.5v3h-8v-8h3"/></svg>`;
 
 	function getAuthStatus(_refreshKey: number): {
 		isSignedIn: boolean;
@@ -162,8 +267,17 @@
 			// Signing out is not a vault waiting to be told anything. The word
 			// for it is Signed out and it has its own button. The list goes
 			// with the account it belonged to.
+			//
+			// The link does not go with it. Nothing about which cloud vault
+			// this one belongs to was undone by a session ending, and the one
+			// thing worth seeing before pressing Sign in again is which vault
+			// you are about to be back on. `syncingWith` used to be cleared
+			// here, which also put `Before you start` in front of somebody who
+			// had been syncing since August, because the list rendered on the
+			// absence of a link.
 			choices = undefined;
-			syncingWith = undefined;
+			unreachable = false;
+			rememberedName = plugin.linkedVaultName() ?? syncingWith?.path;
 			hold(false);
 		}
 	}
@@ -191,6 +305,7 @@
 	/** The one reading this screen and the corner of the window both draw on. */
 	function refreshReading() {
 		reading = plugin.readVaultStatus();
+		mounted = hasVaultShare();
 	}
 
 	/**
@@ -256,9 +371,19 @@
 			// The list is the screen, so there is nothing to draw without it.
 			// Say Knap could not be reached rather than showing an empty
 			// account, which is a different thing and has a button on it.
-			error = e instanceof Error ? e.message : "Could not reach Knap";
+			//
+			// `hold(true)` is the half that was missing. Returning here left
+			// `vaultHeld` at its default with no folders mounted, and
+			// `vaultSyncWord(true, [], false)` answers Up to date: a green dot
+			// over a vault syncing nothing, in the corner of the window as
+			// well as here. A vault that cannot be told what to belong to is
+			// standing still, and Paused is the word for that.
+			unreachable = true;
+			error = "";
+			hold(true);
 			return;
 		}
+		unreachable = false;
 
 		const decision = decideVaultShare(remote, local);
 		if (decision.action === "already-syncing") {
@@ -308,6 +433,13 @@
 	 */
 	async function unlink() {
 		if (unlinking) return;
+		// The forty words that used to sit under this button on every open are
+		// asked here instead, once, by the person who is about to press it.
+		// Nothing is deleted on either side, which is exactly what the sentence
+		// is for and exactly what is worth reading at the moment of deciding
+		// rather than on every visit to the tab.
+		const agreed = await confirmDialog(plugin.app, UNLINK_EXPLANATION);
+		if (!agreed) return;
 		unlinking = true;
 		error = "";
 		try {
@@ -316,6 +448,8 @@
 				plugin.sharedFolders.delete(mounted);
 			}
 			syncingWith = undefined;
+			rememberedName = undefined;
+			mounted = hasVaultShare();
 			plugin.folderNavDecorations?.quickRefresh();
 			// Back to the list, so the screen somebody lands on after unlinking
 			// is the one that offers the next answer rather than an empty panel.
@@ -363,6 +497,8 @@
 			const joined = vault ?? (await createVault(clients));
 			attachShare(joined.id, joined.path);
 			syncingWith = joined;
+			rememberedName = joined.path;
+			mounted = hasVaultShare();
 			choices = undefined;
 		} catch (e: unknown) {
 			error = e instanceof Error ? e.message : "Could not start syncing this vault";
@@ -634,553 +770,367 @@
 	}
 </script>
 
-<!-- Two rows and two buttons (ADR-0045). Everything that used to sit here as a
-     sentence is either a row's value or the note under it, so the screen reads
-     like the settings pages either side of it: Obsidian's own setting-item,
-     label on the left and value on the right. -->
-<div class="knap-signin">
-	{#if auth.isSignedIn}
-		<div class="setting-item">
-			<div class="setting-item-info">
-				<div class="setting-item-name">Account</div>
-			</div>
-			<div class="setting-item-control knap-value">
-				<span class="knap-value-text">{auth.email ?? "Signed in"}</span>
+<!-- One state, one screen, and everything else a row away.
+     `settingsScreen.ts` names which of the five this is, and the branches below
+     draw exactly one of them. Nothing here decides for itself whether to
+     render: that was how four screens nobody designed came to exist, among them
+     a red dot on a fresh install and Before you start in front of somebody who
+     had been syncing for a month. -->
+<div class="knap">
+	{#if screen === "new"}
+		<!-- No account has ever been used here, so there is nothing to report
+		     and one thing to press. The state of a vault that has never synced
+		     is not a state: saying Signed out with the error dot put a failure
+		     light on an install where nothing had gone wrong. -->
+		<div class="knap-hero">
+			<span class="knap-mark knap-mark-wait">{@html MARK.wait}</span>
+			<p class="knap-hero-word">{NOT_SYNCING_TITLE}</p>
+			<p class="knap-hero-note">{NOT_SYNCING_NOTE}</p>
+			<div class="knap-hero-act">
+				<button class="knap-btn mod-cta" disabled={signingIn} on:click={signIn}>
+					{signingIn ? "Waiting for the browser" : "Sign in"}
+				</button>
 			</div>
 		</div>
-
-		<!-- Which vault on Knap this one syncs with, which is a choice somebody
-		     made and not a name that matched. It sits above Status because it
-		     is the fact the row underneath depends on: the vault named here is
-		     the one the word below is about. -->
-		{#if syncingWith}
-			<div class="setting-item">
-				<div class="setting-item-info">
-					<div class="setting-item-name">{LINKED_TO_LABEL}</div>
-					<div class="setting-item-description">{UNLINK_EXPLANATION}</div>
-				</div>
-				<div class="setting-item-control knap-value knap-linked">
-					<span class="knap-value-text">{syncingWith.path}</span>
-					<button
-						class="knap-btn"
-						disabled={unlinking}
-						on:click={unlink}
-					>
-						{unlinking ? "Unlinking" : UNLINK_LABEL}
-					</button>
-				</div>
+	{:else if screen === "signedOut"}
+		<div class="knap-hero">
+			<span class="knap-mark knap-mark-{dot}">{@html markFor(word)}</span>
+			<p class="knap-hero-word">{word}</p>
+			<p class="knap-hero-note">{syncInstruction(word)}</p>
+			<div class="knap-hero-act">
+				<!-- Not "Sign in again": the line directly above already ends
+				     with those three words, and a button repeating the end of
+				     its own sentence is the stutter this screen was full of. -->
+				<button class="knap-btn mod-cta" disabled={signingIn} on:click={signIn}>
+					{signingIn ? "Waiting for the browser" : "Sign in"}
+				</button>
 			</div>
-		{/if}
-	{/if}
-
-	<div class="setting-item">
-		<div class="setting-item-info">
-			<div class="setting-item-name">Status</div>
-			{#if statusNote}
-				<div class="setting-item-description">{statusNote}</div>
+		</div>
+	{:else if screen === "unreachable"}
+		<!-- The list was the screen and it did not come back. What a person
+		     wants from a failure they cannot fix is whether anything moved, and
+		     a way to ask again: there was neither, and the message landed as a
+		     red line below the error-reporting switch. -->
+		<div class="knap-hero">
+			<span class="knap-mark knap-mark-error">{@html MARK.error}</span>
+			<p class="knap-hero-word">{UNREACHABLE_TITLE}</p>
+			<p class="knap-hero-note">{UNREACHABLE_NOTE}</p>
+			<div class="knap-hero-act">
+				<button class="knap-btn" disabled={asking} on:click={askAgain}>
+					{asking ? "Asking" : TRY_AGAIN_LABEL}
+				</button>
+			</div>
+		</div>
+	{:else if screen === "choose"}
+		<!-- The list is the whole screen. Each row is a vault, and it says only
+		     what tells one vault from another: the name, and the day it was
+		     made on the rows where two share a name. -->
+		{#if leftoverFolders === 0}
+			<p class="knap-group-title">{CHOOSE_A_VAULT}</p>
+			{#if choices && choices.length > 0}
+				<div class="knap-group">
+					{#each choices as vault (vault.id)}
+						<button
+							class="knap-row knap-row-press"
+							disabled={Boolean(joining)}
+							on:click={() => join(vault)}
+						>
+							<span class="knap-row-body">
+								<span class="knap-row-label">{vault.path}</span>
+								{#each vaultRowLines(vault, choices) as fact}
+									<span class="knap-row-fact">{fact}</span>
+								{/each}
+							</span>
+							<!-- The word, not a chevron. #71 was a local vault pointed
+							     at the wrong cloud vault for days and nothing on any
+							     screen named the act; Link is the name of it
+							     (ADR-0066). -->
+							<span class="knap-row-trail knap-row-do">
+								{joining === vault.id ? "Linking" : JOIN_LABEL}
+							</span>
+						</button>
+					{/each}
+				</div>
+			{:else if choices}
+				<p class="knap-group-note">{NO_VAULTS_YET}</p>
 			{/if}
-		</div>
-		<div class="setting-item-control knap-value">
-			<span class="knap-dot knap-dot-{dot}"></span>
-			<span>{counts ? `${word} · ${counts}` : word}</span>
-		</div>
-	</div>
-
-	<!-- The bar only draws against a real denominator. A bar filling against an
-	     unknown total is a spinner wearing a percentage. -->
-	{#if progress !== undefined}
-		<div
-			class="knap-track"
-			role="progressbar"
-			aria-label="Sync progress"
-			aria-valuemin="0"
-			aria-valuemax="100"
-			aria-valuenow={Math.round(progress * 100)}
-		>
-			<i style="width: {Math.round(progress * 100)}%"></i>
-		</div>
-	{/if}
-
-	<!-- The two things worth sorting out before a vault starts, said once and
-	     read by the person rather than guessed at by the plugin (#41). It goes
-	     while the vault is syncing: a list of things to check before you begin
-	     is noise on a screen somebody opened to see how far along they are. -->
-	{#if !syncingWith}
-		<div class="knap-checklist">
-			<p class="knap-checklist-title">{CHECKLIST_TITLE}</p>
-			{#each CHECKLIST as item}
-				<div class="knap-check">
-					<span class="knap-check-mark" aria-hidden="true"></span>
-					<span class="knap-check-body">
-						<span class="knap-check-title">{item.title}</span>
-						<span class="knap-check-detail">{item.detail}</span>
-					</span>
-				</div>
-			{/each}
-		</div>
-	{/if}
-
-	<!-- The vaults this account reaches. Every row is what Knap will say about
-	     a vault from the outside and nothing more: the name, the day it was
-	     made, and whether somebody else owns it. No sentence under it telling
-	     somebody to pick one, because the rows are vaults and each carries the
-	     word for what pressing it does. -->
-	{#if choices}
-		<div class="knap-choose">
-			<p class="knap-choose-title">{CHOOSE_A_VAULT}</p>
-			<!-- Which cloud vault this one already answers to, said before the
-			     list rather than after it. Changing a link is a different act
-			     from answering for the first time, and the rows on their own
-			     cannot tell somebody which of the two they are about to do
-			     (#71, ADR-0066). -->
-			<p class="knap-note">{linkedToLine(syncingWith?.path)}</p>
-			{#if choices.length === 0}
-				<p class="knap-note">{NO_VAULTS_YET}</p>
-			{/if}
-			{#each choices as vault (vault.id)}
+			<div class="knap-group">
 				<button
-					class="knap-vault"
+					class="knap-row knap-row-press knap-row-accent"
 					disabled={Boolean(joining)}
-					on:click={() => join(vault)}
+					on:click={() => join()}
 				>
-					<span class="knap-vault-name">{vault.path}</span>
-					<span class="knap-vault-facts">
-						{#each vaultRowLines(vault) as fact}
-							<span>{fact}</span>
-						{/each}
+					<span class="knap-row-body">
+						<span class="knap-row-label"
+							>{joining === "new" ? "Working on it" : NEW_VAULT_LABEL}</span
+						>
 					</span>
-					<span class="knap-vault-join"
-						>{joining === vault.id ? "Joining" : JOIN_LABEL}</span
-					>
-				</button>
-			{/each}
-			<button
-				class="knap-btn mod-cta"
-				disabled={Boolean(joining)}
-				on:click={() => join()}
-			>
-				{joining === "new" ? "Working on it" : NEW_VAULT_LABEL}
-			</button>
-		</div>
-	{/if}
-
-	<!-- Anything the vault still needs said, which is now only the folder
-	     clean-up an older build left behind. -->
-	{#each vaultLines as line}
-		<p class="knap-note">{line}</p>
-	{/each}
-
-	<!-- Not a button: a place you go. The glyph says it opens a browser, and
-	     the row is the same shape as the two above it. -->
-	{#if auth.isSignedIn}
-		<button class="setting-item knap-row-link" on:click={openDashboard}>
-			<div class="setting-item-info">
-				<div class="setting-item-name">Dashboard</div>
-			</div>
-			<div class="setting-item-control knap-glyph">
-				<svg
-					viewBox="0 0 16 16"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="1.6"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					aria-hidden="true"
-				>
-					<path d="M6.5 3.5h6v6M12.5 3.5 6 10" />
-					<path d="M11 9.5v3h-8v-8h3" />
-				</svg>
-			</div>
-		</button>
-	{/if}
-
-	<!-- The end of the flow, and the only place it makes sense: a vault that is
-	     syncing is when somebody wants their phone on it as well. The address
-	     is a row of its own because BRAT asks for a repository and people
-	     paste a URL into it. -->
-	{#if syncingWith}
-		<div class="knap-another">
-			<p class="knap-another-title">{ANOTHER_DEVICE_TITLE}</p>
-			<ol class="knap-another-steps">
-				{#each ANOTHER_DEVICE_STEPS as step}
-					<li>{step}</li>
-				{/each}
-			</ol>
-			<div class="knap-paste">
-				<span class="knap-paste-label">{PASTE_LABEL}</span>
-				<code class="knap-paste-value">{KNAP_PLUGIN_REPO}</code>
-				<button class="knap-btn knap-btn-quiet" on:click={copyRepo}>
-					{copied ? "Copied" : "Copy"}
+					<span class="knap-row-trail">{@html CHEVRON}</span>
 				</button>
 			</div>
-			<p class="knap-note">{ANOTHER_DEVICE_NOTE}</p>
-		</div>
-	{/if}
 
-	<div class="knap-actions">
-		{#if auth.isSignedIn}
-			<!-- Quiet, and on its own: it is the one thing on this screen
-			     somebody can regret pressing. -->
-			<button class="knap-btn knap-btn-quiet" on:click={signOut}>Sign out</button>
-		{:else if hasSignInButton(word)}
-			<button class="knap-btn mod-cta" disabled={signingIn} on:click={signIn}>
-				{signingIn
-					? "Waiting for the browser"
-					: returning
-						? "Sign in again"
-						: "Sign in"}
-			</button>
+			<!-- The list of things to sort out, on the one screen where it can be
+			     acted on and split into rows. Together the three ran to a hundred
+			     and thirty words in front of the button that starts the sync; four
+			     words each costs three lines, and the sentence is one press away. -->
+			{#if showsChecklist(screen)}
+				<p class="knap-group-title">{CHECKLIST_TITLE}</p>
+				<div class="knap-group">
+					{#each CHECKLIST as item}
+						<details class="knap-open">
+							<summary class="knap-row">
+								<span class="knap-row-body">
+									<span class="knap-row-label">{item.title}</span>
+								</span>
+								<span class="knap-row-trail">{@html CHEVRON}</span>
+							</summary>
+							<p class="knap-open-body">{item.detail}</p>
+						</details>
+					{/each}
+				</div>
+			{/if}
 		{/if}
-	</div>
 
-	{#if signingIn}
-		<p class="knap-note">
-			Finish in the browser window that just opened. Obsidian picks it up from
-			there.
-		</p>
+		<!-- The one button on this screen about what syncs, and it is here to
+		     be grown out of: it exists for vaults an older build left syncing
+		     folders, and it goes the moment they are gone. -->
+		{#if leftoverFolders > 0}
+			<p class="knap-group-note">{vaultLines.join(" ")}</p>
+			<div class="knap-group">
+				<button class="knap-row knap-row-press knap-row-accent" disabled={replacing} on:click={replaceFolders}>
+					<span class="knap-row-body">
+						<span class="knap-row-label"
+							>{replacing ? "Working on it" : REPLACE_FOLDERS_LABEL}</span
+						>
+					</span>
+					<span class="knap-row-trail">{@html CHEVRON}</span>
+				</button>
+			</div>
+		{/if}
+	{:else}
+		<!-- Linked, so the state of the sync is the screen. The count and the
+		     bar are the shared reading, unchanged; what moved is where they
+		     sit. A bar two pixels tall on a negative margin under a row is the
+		     thing somebody watches for an hour. -->
+		<div class="knap-hero">
+			<span class="knap-mark knap-mark-{dot}">{@html markFor(word)}</span>
+			<p class="knap-hero-word">{word}</p>
+			{#if counts}
+				<p class="knap-hero-count">{counts}</p>
+			{/if}
+			{#if progress !== undefined}
+				<div
+					class="knap-track"
+					role="progressbar"
+					aria-label="Sync progress"
+					aria-valuemin="0"
+					aria-valuemax="100"
+					aria-valuenow={Math.round(progress * 100)}
+				>
+					<i style="width: {Math.round(progress * 100)}%"></i>
+				</div>
+			{/if}
+			{#if statusNote}
+				<p class="knap-hero-note">{statusNote}</p>
+			{/if}
+		</div>
 	{/if}
 
-	<!-- The only button on this screen about what syncs, and it is here to be
-	     grown out of: it exists for vaults an older build left syncing folders,
-	     and it goes the moment they are gone. -->
-	{#if leftoverFolders > 0}
-		<button class="knap-btn mod-cta" disabled={replacing} on:click={replaceFolders}>
-			{replacing ? "Working on it" : REPLACE_FOLDERS_LABEL}
-		</button>
+	<!-- The vault, the account and the way out of both. One group, in the same
+	     order on every screen that has them, and each row opens to whatever it
+	     is about rather than printing it on arrival. -->
+	{#if auth.isSignedIn || (showsLinkedVault(screen) && linkedName)}
+		<div class="knap-group">
+			{#if showsLinkedVault(screen) && linkedName}
+				{#if screen === "linked"}
+					<details class="knap-open">
+						<summary class="knap-row">
+							<span class="knap-row-body">
+								<span class="knap-row-label">{VAULT_ROW_LABEL}</span>
+							</span>
+							<span class="knap-row-trail">
+								<span class="knap-row-value">{linkedName}</span>
+								{@html CHEVRON}
+							</span>
+						</summary>
+						<div class="knap-open-body">
+							<button class="knap-btn" disabled={unlinking} on:click={unlink}>
+								{unlinking ? "Unlinking" : UNLINK_LABEL}
+							</button>
+						</div>
+					</details>
+				{:else}
+					<div class="knap-row">
+						<span class="knap-row-body">
+							<span class="knap-row-label">{VAULT_ROW_LABEL}</span>
+						</span>
+						<span class="knap-row-trail">
+							<span class="knap-row-value">{linkedName}</span>
+						</span>
+					</div>
+				{/if}
+			{/if}
+
+			{#if auth.isSignedIn}
+				<details class="knap-open">
+					<summary class="knap-row">
+						<span class="knap-row-body">
+							<span class="knap-row-label">{ACCOUNT_ROW_LABEL}</span>
+						</span>
+						<span class="knap-row-trail">
+							<span class="knap-row-value">{auth.email ?? "Signed in"}</span>
+							{@html CHEVRON}
+						</span>
+					</summary>
+					<div class="knap-open-body">
+						<button class="knap-btn" on:click={signOut}>Sign out</button>
+					</div>
+				</details>
+
+				<!-- Not a button: a place you go. Everything about the vault is
+				     set here (ADR-0031), so this leads to the half that
+				     reports. -->
+				<button class="knap-row knap-row-press knap-row-accent" on:click={openDashboard}>
+					<span class="knap-row-body">
+						<span class="knap-row-label">Dashboard</span>
+					</span>
+					<span class="knap-row-trail">{@html LEAVES}</span>
+				</button>
+			{/if}
+		</div>
 	{/if}
 
-	<!-- What the plugin says when it breaks, and the way to say nothing. One
-	     row, one honest sentence: exactly what is sent, and what never is. -->
-	<div class="setting-item mod-toggle">
-		<div class="setting-item-info">
-			<div class="setting-item-name">Send anonymous error reports</div>
-			<div class="setting-item-description">
-				When something breaks, Knap sends the kind of error, where in the
-				plugin it happened, the plugin version and your platform, and never a
-				note, a file name or anything that identifies you.
-			</div>
+	<!-- The end of the flow, and the day somebody wants their phone on it. One
+	     row, opening to the three steps and the string BRAT's field takes. -->
+	{#if screen === "linked"}
+		<div class="knap-group">
+			<details class="knap-open">
+				<summary class="knap-row">
+					<span class="knap-row-body">
+						<span class="knap-row-label">{ANOTHER_DEVICE_TITLE}</span>
+					</span>
+					<span class="knap-row-trail">{@html CHEVRON}</span>
+				</summary>
+				<div class="knap-open-body">
+					<ol class="knap-steps">
+						{#each ANOTHER_DEVICE_STEPS as step}
+							<li>{step}</li>
+						{/each}
+					</ol>
+					<div class="knap-paste">
+						<span class="knap-paste-label">{PASTE_LABEL}</span>
+						<code class="knap-paste-value">{KNAP_PLUGIN_REPO}</code>
+						<button class="knap-btn knap-btn-mini" on:click={copyRepo}>
+							{copied ? "Copied" : "Copy"}
+						</button>
+					</div>
+					<p class="knap-open-note">{ANOTHER_DEVICE_NOTE}</p>
+				</div>
+			</details>
 		</div>
-		<div class="setting-item-control">
-			<div
-				class="checkbox-container"
-				class:is-enabled={faultReporting}
-				role="checkbox"
-				aria-checked={faultReporting}
-				aria-label="Send anonymous error reports"
-				tabindex="0"
-				on:click={toggleFaultReporting}
-				on:keypress={(e) => {
-					if (e.key === "Enter" || e.key === " ") toggleFaultReporting();
-				}}
-			>
-				<input type="checkbox" checked={faultReporting} tabindex="-1" />
-			</div>
+	{/if}
+
+	<!-- What the plugin says when it breaks, and the way to say nothing. The
+	     forty-five words listing what is sent buried the half that is a
+	     promise, so the promise is the line (ADR-0003). -->
+	<div class="knap-group">
+		<div
+			class="knap-row"
+			role="checkbox"
+			aria-checked={faultReporting}
+			aria-label={FAULT_REPORTING_LABEL}
+			tabindex="0"
+			on:click={toggleFaultReporting}
+			on:keypress={(e) => {
+				if (e.key === "Enter" || e.key === " ") toggleFaultReporting();
+			}}
+		>
+			<span class="knap-row-body">
+				<span class="knap-row-label">{FAULT_REPORTING_LABEL}</span>
+			</span>
+			<span class="knap-row-trail">
+				<span class="knap-switch" class:is-on={faultReporting}></span>
+			</span>
 		</div>
 	</div>
+	<p class="knap-group-note">{FAULT_REPORTING_NOTE}</p>
 
+	<!-- Beside what caused it, never at the far end of the scroll. -->
 	{#if error}
-		<div class="knap-form-error">{error}</div>
-	{/if}
-
-	<!-- The one line about what a vault is. It answers the question a bare
-	     second device raises, which outlives the upload that raises it. -->
-	{#if auth.isSignedIn}
-		<p class="knap-foot">{VAULT_SCOPE_NOTE}</p>
+		<div class="knap-error">{error}</div>
 	{/if}
 </div>
 
 <style>
-	/* Stretch, not flex-start: a setting row has to span the pane for the
-	   value to sit against the right edge, the way every other row in
-	   Obsidian's settings does. */
-	.knap-signin {
+	.knap {
 		display: flex;
 		flex-direction: column;
-		align-items: stretch;
+		max-width: 34em;
 	}
 
-	/* The rows are Obsidian's, so only the value side needs anything: a dot
-	   next to a word, and the same muted weight the app gives a setting's
-	   current value. */
-	.knap-value {
+	/* The state of the vault, which is the reason the tab was opened. */
+	.knap-hero {
 		display: flex;
+		flex-direction: column;
 		align-items: center;
-		gap: 8px;
-		color: var(--text-muted);
-		font-size: var(--font-ui-small, 13px);
-		/* A long value wraps onto a second line rather than sliding off the
-		   left edge of the row. It used to be one line with the overflow
-		   hidden, and because the value sits against the right edge, a vault
-		   called 260812_RH_Obsidian_vault lost its front and read as
-		   )bsidian_vault. The front is the half that tells one vault from
-		   another, and the line under this row says the name is the only
-		   thing a second device matches on. Ellipsis never ran anyway: the
-		   text is an anonymous item inside a flex row, and text-overflow does
-		   not reach it. */
-		flex-wrap: wrap;
-		justify-content: flex-end;
-		text-align: right;
-		min-width: 0;
+		text-align: center;
+		padding: 22px 8px 26px;
 	}
 
-	/* The value itself, so it has something to break inside. A vault name is
-	   one word as often as not, and a word with no spaces in it needs telling
-	   that it may break mid-word. */
-	.knap-value-text {
-		min-width: 0;
-		overflow-wrap: anywhere;
-	}
-
-	/* The Linked to row, which carries the one fact on this screen somebody
-	   chose rather than a value the plugin worked out: which cloud vault this
-	   device answers to (ADR-0066). At the muted value size the name read as
-	   fine print and #71 showed what that costs, so it gets full colour and a
-	   size up, and the button sits under it with room instead of beside it in
-	   whatever width the name left over. */
-	.knap-linked {
-		flex-direction: column;
-		align-items: flex-end;
-		gap: 8px;
-	}
-
-	.knap-linked .knap-value-text {
-		color: var(--text-normal);
-		font-size: var(--font-ui-medium, 15px);
-		font-weight: var(--font-semibold, 600);
-	}
-
-	.knap-linked .knap-btn {
-		font-size: var(--font-ui-medium, 15px);
-		padding: 8px 18px;
-	}
-
-	.knap-note {
-		margin: 8px 0 0;
-		color: var(--text-muted);
-		font-size: 12px;
-		max-width: 46em;
-	}
-
-	/* The list of vaults, which is the whole screen while it is up. It is not
-	   a setting row: a row shows a value, and this is a question. */
-	.knap-choose {
-		display: flex;
-		flex-direction: column;
-		align-items: stretch;
-		margin-top: 16px;
-		max-width: 46em;
-	}
-
-	.knap-choose-title {
-		margin: 0 0 8px;
-		color: var(--text-normal);
-		font-size: 13px;
-		font-weight: var(--font-semibold, 600);
-	}
-
-	/* One vault, one button, so pressing it anywhere joins it. The facts sit
-	   under the name at caption weight, and the words that say what pressing
-	   does sit on the right where a value would be.
-
-	   `height: auto` and `white-space: normal` are not decoration. Obsidian
-	   gives every button `height: var(--input-height)` and `white-space:
-	   nowrap`, which fits a button with one word in it and not a row of two
-	   lines: the box stayed one line tall, the date and the word Sync fell
-	   out below the border, and the Create new button underneath was drawn
-	   over them. */
-	.knap-vault {
-		display: grid;
-		grid-template-columns: 1fr auto;
-		grid-template-areas: "name join" "facts join";
-		gap: 2px 12px;
-		align-items: center;
-		width: 100%;
-		height: auto;
-		white-space: normal;
-		padding: 10px 12px;
-		margin-top: 6px;
-		background: transparent;
-		box-shadow: none;
-		border: 1px solid var(--background-modifier-border);
-		border-radius: var(--radius-s, 4px);
-		text-align: left;
-		font: inherit;
-		cursor: pointer;
-	}
-
-	.knap-vault:hover:not(:disabled) {
-		background: var(--background-modifier-hover);
-		border-color: var(--interactive-accent);
-	}
-
-	.knap-vault:disabled {
-		cursor: default;
-		opacity: 0.6;
-	}
-
-	.knap-vault-name {
-		grid-area: name;
-		color: var(--text-normal);
-		font-size: 14px;
-		overflow-wrap: anywhere;
-	}
-
-	/* Empty on a vault Knap will say nothing else about, and then the row is
-	   one line rather than one line and a gap. */
-	.knap-vault-facts {
-		grid-area: facts;
-		display: flex;
-		flex-wrap: wrap;
-		gap: 4px 10px;
+	.knap-mark {
+		display: block;
 		color: var(--text-faint);
-		font-size: 12px;
+		margin-bottom: 14px;
 	}
 
-	.knap-vault-facts:empty {
-		display: none;
+	.knap-mark-ok {
+		color: var(--color-green, #28a745);
 	}
 
-	.knap-vault-join {
-		grid-area: join;
-		color: var(--text-accent);
-		font-size: 12px;
-		white-space: nowrap;
+	.knap-mark-working {
+		color: var(--interactive-accent);
 	}
 
-	/* The new vault sits under the list rather than in it: it is the answer
-	   when none of the rows is the one, and on an empty account it is the only
-	   thing to press. */
-	.knap-choose > .knap-btn {
-		align-self: flex-start;
-		margin-top: 12px;
+	.knap-mark-error {
+		color: var(--text-error);
 	}
 
-
-	/* One block, never two, so it can afford to be the loudest thing on the
-	   screen. A rule down the side rather than a filled panel: this is a
-	   settings tab, and a coloured box in the middle of it reads as an error
-	   the plugin has hit rather than something to go and do. */
-	/* The list before the vault starts. Not a warning: nothing here has gone
-	   wrong, and painting it in the colour of an error would make the one that
-	   is an error unreadable. */
-	.knap-checklist {
-		margin-top: 16px;
-		max-width: 46em;
-	}
-
-	.knap-checklist-title {
-		margin: 0 0 8px;
-		color: var(--text-normal);
-		font-size: 13px;
-		font-weight: var(--font-semibold, 600);
-	}
-
-	.knap-check {
-		display: flex;
-		align-items: flex-start;
-		gap: 8px;
-		margin: 8px 0;
-	}
-
-	/* An empty box rather than a tick: these are things for somebody to check,
-	   and a tick already drawn says the plugin checked them, which is the
-	   thing it stopped doing. */
-	.knap-check-mark {
-		flex: none;
-		width: 12px;
-		height: 12px;
-		margin-top: 3px;
-		border: 1px solid var(--background-modifier-border);
-		border-radius: 3px;
-	}
-
-	.knap-check-body {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		min-width: 0;
-	}
-
-	.knap-check-title {
-		color: var(--text-normal);
-		font-size: 13px;
-	}
-
-	.knap-check-detail {
-		color: var(--text-muted);
-		font-size: 12px;
-	}
-
-	/* The next device, at the end. */
-	.knap-another {
-		margin-top: 20px;
-		padding-top: 16px;
-		border-top: 1px solid var(--background-modifier-border);
-		max-width: 46em;
-	}
-
-	.knap-another-title {
-		margin: 0 0 8px;
-		color: var(--text-normal);
-		font-size: 13px;
-		font-weight: var(--font-semibold, 600);
-	}
-
-	.knap-another-steps {
+	.knap-hero-word {
 		margin: 0;
-		padding-left: 20px;
-		color: var(--text-muted);
-		font-size: 12px;
-	}
-
-	.knap-another-steps li {
-		margin: 4px 0;
-	}
-
-	/* The string itself, on its own line with a button beside it. It wraps
-	   rather than scrolling: an address cut off at the edge of a settings pane
-	   on a phone is an address somebody types wrong. */
-	.knap-paste {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 8px;
-		margin-top: 10px;
-	}
-
-	.knap-paste-label {
-		color: var(--text-faint);
-		font-size: 12px;
-	}
-
-	.knap-paste-value {
-		padding: 2px 6px;
-		background: var(--background-modifier-form-field, var(--background-secondary));
-		border-radius: var(--radius-s, 4px);
+		font-size: var(--font-ui-large, 20px);
+		font-weight: var(--font-semibold, 600);
+		letter-spacing: -0.02em;
 		color: var(--text-normal);
-		font-family: var(--font-monospace);
-		font-size: 12px;
-		overflow-wrap: anywhere;
 	}
 
-	/* The one permanent line, at caption weight: it is worth saying and it is
-	   not the headline. */
-	.knap-foot {
-		margin: 20px 0 0;
-		color: var(--text-faint);
-		font-size: 12px;
-		max-width: 46em;
+	.knap-hero-count {
+		margin: 4px 0 0;
+		font-size: var(--font-ui-small, 13px);
+		color: var(--text-muted);
+		font-variant-numeric: tabular-nums;
 	}
 
-	/* Two pixels of fact where two paragraphs used to be. It hangs under the
-	   status row rather than beside it, so the row keeps the shape every other
-	   setting in the app has. */
+	.knap-hero-note {
+		margin: 6px 0 0;
+		font-size: var(--font-ui-smaller, 12px);
+		color: var(--text-muted);
+		max-width: 30em;
+	}
+
+	.knap-hero-act {
+		margin-top: 18px;
+	}
+
+	/* Wide enough to read from a metre away, which a two-pixel line hanging
+	   off a row's negative margin was not. */
 	.knap-track {
-		height: 2px;
+		width: 100%;
+		max-width: 22em;
+		height: 4px;
 		border-radius: 2px;
 		background: var(--background-modifier-border);
 		overflow: hidden;
-		margin: -4px 0 4px;
+		margin: 14px 0 0;
 	}
 
 	.knap-track > i {
@@ -1197,91 +1147,258 @@
 		}
 	}
 
-	/* A setting row that happens to be a button, so it reads as a place to go
-	   and still lines up with the rows above it. Same height reset as the
-	   vault row: a setting row is taller than the button height Obsidian
-	   hands out, so without it the hover background is a band across the
-	   middle of the text. */
-	.knap-row-link {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		width: 100%;
-		height: auto;
-		white-space: normal;
-		box-shadow: none;
-		background: transparent;
-		text-align: left;
-		font: inherit;
-		cursor: pointer;
-		border-radius: var(--radius-s, 4px);
+	/* A group of rows, the shape Obsidian's own lists and every settings app
+	   a person already uses share. */
+	.knap-group {
+		background: var(--background-secondary);
+		border-radius: var(--radius-m, 8px);
+		overflow: hidden;
+		margin-top: 8px;
 	}
 
-	.knap-row-link:hover {
-		background: var(--background-modifier-hover);
+	.knap-hero + .knap-group {
+		margin-top: 0;
 	}
 
-	.knap-row-link .setting-item-name {
-		color: var(--text-accent);
-	}
-
-	.knap-glyph {
-		display: flex;
+	.knap-group-title {
+		margin: 22px 0 6px 14px;
+		font-size: var(--font-ui-smaller, 12px);
+		font-weight: var(--font-medium, 500);
+		letter-spacing: 0.02em;
+		text-transform: uppercase;
 		color: var(--text-faint);
 	}
 
-	.knap-glyph svg {
-		width: 14px;
-		height: 14px;
+	.knap-group-note {
+		margin: 6px 14px 0;
+		font-size: var(--font-ui-smaller, 12px);
+		color: var(--text-faint);
+		line-height: 1.45;
 	}
 
-	.knap-actions {
+	.knap-row {
 		display: flex;
-		gap: 8px;
-		margin-top: 16px;
-		align-self: flex-start;
+		align-items: center;
+		gap: 12px;
+		width: 100%;
+		padding: 11px 14px;
+		background: transparent;
+		border: 0;
+		box-shadow: none;
+		border-radius: 0;
+		height: auto;
+		white-space: normal;
+		font: inherit;
+		font-size: var(--font-ui-medium, 15px);
+		color: var(--text-normal);
+		text-align: left;
+		position: relative;
 	}
 
-	.knap-actions:empty {
-		display: none;
+	/* The hairline sits inside the group and starts where the text does, so a
+	   run of rows reads as one object rather than as a stack of boxes. */
+	.knap-group > * + * .knap-row::before,
+	.knap-group > * + *.knap-row::before {
+		content: "";
+		position: absolute;
+		top: 0;
+		left: 14px;
+		right: 0;
+		height: 1px;
+		background: var(--background-modifier-border);
 	}
 
-	.knap-dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: var(--text-faint);
-		flex: none;
-	}
-
-	/* One class per dot in the shared list, so the two screens can be held
-	   side by side and compared. */
-	.knap-dot-ok {
-		background: var(--color-green, #28a745);
-	}
-
-	.knap-dot-working {
-		background: var(--interactive-accent);
-	}
-
-	.knap-dot-wait {
-		background: var(--text-faint);
-	}
-
-	.knap-dot-error {
-		background: var(--text-error);
-	}
-
-	.knap-btn {
-		padding: 6px 14px;
+	.knap-row-press {
 		cursor: pointer;
 	}
 
-	/* The clean-up button stands on its own rather than in the actions row, so
-	   it needs the same shrink-to-fit the row gets. */
-	.knap-signin > .knap-btn {
-		align-self: flex-start;
-		margin-top: 12px;
+	.knap-row-press:hover:not(:disabled) {
+		background: var(--background-modifier-hover);
+	}
+
+	.knap-row-press:disabled {
+		cursor: default;
+		opacity: 0.6;
+	}
+
+	/* Obsidian draws focus with a box-shadow, and every custom row here sets
+	   `box-shadow: none` to stop looking like a button. Without this the
+	   keyboard has no visible position anywhere on the pane. */
+	.knap-row:focus-visible,
+	.knap-open > summary:focus-visible {
+		outline: 2px solid var(--interactive-accent);
+		outline-offset: -2px;
+	}
+
+	.knap-row-body {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		min-width: 0;
+	}
+
+	.knap-row-label {
+		overflow-wrap: anywhere;
+	}
+
+	.knap-row-fact {
+		font-size: var(--font-ui-smaller, 12px);
+		color: var(--text-faint);
+	}
+
+	.knap-row-trail {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-left: auto;
+		min-width: 0;
+		color: var(--text-faint);
+	}
+
+	/* The value wraps rather than sliding off the left edge. A vault called
+	   260812_RH_Obsidian_vault lost its front and read as )bsidian_vault, and
+	   the front is the half that tells one vault from another. */
+	.knap-row-value {
+		color: var(--text-muted);
+		font-size: var(--font-ui-small, 13px);
+		text-align: right;
+		overflow-wrap: anywhere;
+		min-width: 0;
+	}
+
+	.knap-row-accent .knap-row-label {
+		color: var(--text-accent);
+	}
+
+	.knap-row-do {
+		color: var(--text-accent);
+		font-size: var(--font-ui-small, 13px);
+		white-space: nowrap;
+	}
+
+	/* A row that opens. Native details, so the keyboard and the screen reader
+	   get it for nothing. */
+	.knap-open {
+		position: relative;
+	}
+
+	.knap-open > summary {
+		list-style: none;
+		cursor: pointer;
+	}
+
+	.knap-open > summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.knap-open > summary:hover {
+		background: var(--background-modifier-hover);
+	}
+
+	/* `:global` because the mark is an {@html} string, so Svelte's scoped-CSS
+	   pass cannot see the class and drops the rule. It stays scoped in
+	   practice: nothing outside this component is inside a `.knap-open`. */
+	.knap-open > summary :global(.knap-chevron) {
+		transition: transform 180ms ease;
+	}
+
+	.knap-open[open] > summary :global(.knap-chevron) {
+		transform: rotate(90deg);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.knap-open > summary :global(.knap-chevron) {
+			transition: none;
+		}
+	}
+
+	.knap-open-body {
+		padding: 0 14px 13px;
+		font-size: var(--font-ui-smaller, 12px);
+		line-height: 1.5;
+		color: var(--text-muted);
+	}
+
+	.knap-open-note {
+		margin: 8px 0 0;
+	}
+
+	.knap-steps {
+		margin: 0;
+		padding-left: 18px;
+	}
+
+	.knap-steps li {
+		margin: 4px 0;
+	}
+
+	.knap-paste {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		margin-top: 10px;
+	}
+
+	.knap-paste-label {
+		color: var(--text-faint);
+	}
+
+	.knap-paste-value {
+		padding: 2px 7px;
+		background: var(--background-modifier-form-field, var(--background-primary));
+		border-radius: var(--radius-s, 4px);
+		color: var(--text-normal);
+		font-family: var(--font-monospace);
+		overflow-wrap: anywhere;
+	}
+
+	.knap-switch {
+		width: 36px;
+		height: 21px;
+		border-radius: 11px;
+		background: var(--background-modifier-border);
+		position: relative;
+		flex: none;
+		transition: background 120ms ease;
+	}
+
+	.knap-switch.is-on {
+		background: var(--interactive-accent);
+	}
+
+	.knap-switch::after {
+		content: "";
+		position: absolute;
+		top: 2px;
+		left: 2px;
+		width: 17px;
+		height: 17px;
+		border-radius: 50%;
+		background: var(--background-primary);
+		transition: left 120ms ease;
+	}
+
+	.knap-switch.is-on::after {
+		left: 17px;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.knap-switch,
+		.knap-switch::after {
+			transition: none;
+		}
+	}
+
+	.knap-btn {
+		padding: 6px 16px;
+		border-radius: var(--radius-m, 8px);
+		cursor: pointer;
+	}
+
+	.knap-btn-mini {
+		padding: 3px 10px;
+		font-size: var(--font-ui-smaller, 12px);
 	}
 
 	.knap-btn:disabled {
@@ -1289,23 +1406,30 @@
 		opacity: 0.6;
 	}
 
-	/* Text, not a slab. Signing out is rare and irreversible in the small way
-	   that matters: it should not sit at the same weight as the way in. */
-	.knap-btn-quiet {
-		background: transparent;
-		box-shadow: none;
-		color: var(--text-muted);
-		padding-left: 0;
-	}
-
-	.knap-btn-quiet:hover {
-		background: transparent;
+	.knap-error {
+		margin: 10px 14px 0;
+		font-size: var(--font-ui-smaller, 12px);
 		color: var(--text-error);
 	}
 
-	.knap-form-error {
-		margin-top: 12px;
-		color: var(--text-error);
-		font-size: 12px;
+	/* On a phone the pane is narrow and a value pushed against the right edge
+	   wraps to a column of two-letter lines. Below this the value drops under
+	   its label instead. */
+	@media (max-width: 480px) {
+		.knap-row {
+			align-items: flex-start;
+			flex-direction: column;
+			gap: 3px;
+		}
+
+		.knap-row-trail {
+			margin-left: 0;
+			width: 100%;
+			justify-content: space-between;
+		}
+
+		.knap-row-value {
+			text-align: left;
+		}
 	}
 </style>
