@@ -46,7 +46,7 @@ describe("KnapServer", () => {
 			"/api/vaults": () =>
 				new Response(
 					JSON.stringify({
-						vaults: [{ id: "v1", name: "Demo", may_write: false }],
+						vaults: [{ id: "v1", name: "Demo" }],
 					}),
 					{ status: 200 },
 				),
@@ -54,7 +54,7 @@ describe("KnapServer", () => {
 		const server = new KnapServer("https://knap.test/", fetchFn);
 
 		const vaults = await server.listVaults("knap_abc");
-		expect(vaults).toEqual([{ id: "v1", name: "Demo", mayWrite: false }]);
+		expect(vaults).toEqual([{ id: "v1", name: "Demo" }]);
 		expect((calls[0].init?.headers as Record<string, string>).Authorization).toBe(
 			"Bearer knap_abc",
 		);

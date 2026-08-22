@@ -1,0 +1,107 @@
+/**
+ * The one screen the rebuilt client has: sign in, link, unlink.
+ *
+ * It exists because the three commands were the only way in, and a command
+ * palette is where somebody looks after they already know the thing is there.
+ * Asked to try the beta, the first thing a person does is open Settings and
+ * look for a button -- and in a beta build the relay's own tab is hidden, so
+ * they found nothing at all.
+ *
+ * Three lines and at most two buttons, because there are only ever three
+ * states: signed out, signed in but not linked, and linked. No server field
+ * (ADR-0033): which server this build talks to is baked in, and the screen
+ * says which one rather than offering a choice.
+ */
+
+import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
+
+import type { CloudVault } from "./KnapServer";
+import type { KnapSync } from "./KnapSync";
+
+export interface SignInHost {
+	app: App;
+	/** Starts the browser half and resolves when the deep link comes back. */
+	signIn(): Promise<void>;
+	/** Offers the account's cloud vaults and links the one that is picked. */
+	pickAndLink(): Promise<void>;
+}
+
+export class KnapSettingsTab extends PluginSettingTab {
+	constructor(
+		app: App,
+		private readonly sync: KnapSync,
+		private readonly host: SignInHost,
+		private readonly serverUrl: string,
+	) {
+		super(app, host as never);
+	}
+
+	display(): void {
+		const { containerEl } = this;
+		containerEl.empty();
+
+		const linked: CloudVault | null = this.sync.linked
+			? { id: this.sync.linked.cloudVaultId, name: this.sync.linked.cloudVaultName }
+			: null;
+
+		if (!this.sync.signedIn) {
+			new Setting(containerEl)
+				.setName("Sign in")
+				.setDesc(
+					"Opens your browser. Sign in there and it comes back here. " +
+						`This build talks to ${this.serverUrl}.`,
+				)
+				.addButton((button) =>
+					button
+						.setButtonText("Sign in")
+						.setCta()
+						.onClick(() => {
+							void this.host
+								.signIn()
+								.then(() => {
+									new Notice("Signed in. Now link this vault to a cloud vault.");
+									this.display();
+								})
+								.catch((error: Error) => new Notice(error.message));
+						}),
+				);
+			return;
+		}
+
+		new Setting(containerEl)
+			.setName("This vault")
+			.setDesc(
+				linked?.name
+					? `Syncs with the cloud vault ${linked.name}.`
+					: "Signed in, and not linked to a cloud vault yet.",
+			)
+			.addButton((button) =>
+				button
+					.setButtonText(linked ? "Link a different one" : "Link a cloud vault")
+					.setCta()
+					.onClick(() => {
+						void this.host
+							.pickAndLink()
+							.then(() => this.display())
+							.catch((error: Error) => new Notice(error.message));
+					}),
+			);
+
+		if (linked) {
+			new Setting(containerEl)
+				.setName("Unlink")
+				.setDesc(
+					"Stops the syncing. Nothing is deleted, here or in the cloud vault, " +
+						"and linking again picks up where this left off.",
+				)
+				.addButton((button) =>
+					button.setButtonText("Unlink").onClick(() => {
+						void this.sync.unlink().then(() => {
+							new Notice("Unlinked. Nothing was deleted, anywhere.");
+							this.display();
+						});
+					}),
+				);
+		}
+	}
+}
