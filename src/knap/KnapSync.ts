@@ -8,6 +8,12 @@
  * and `unlink` stops the sockets and clears the remembered vault while the
  * sign-in survives, because the account and the link are different facts.
  *
+ * `signOut` is the other direction of the same distinction: the account
+ * goes, and the link goes with it, because a link is to a cloud vault of
+ * the account that is leaving. Holding one without a token would be a
+ * settings row that says this vault syncs with something it can no longer
+ * reach, and that is how a device ends up showing somebody else's folders.
+ *
  * Persistence goes through two callbacks rather than a settings object, so
  * the host (Obsidian's data.json in production, a dict in tests) stays out
  * of the engine.
@@ -107,6 +113,35 @@ export class KnapSync {
 		if (stored) {
 			await this.options.save({ ...stored, cloudVaultId: "", cloudVaultName: "" });
 		}
+	}
+
+	/**
+	 * End the sign-in on this device: sockets down, token handed back, and
+	 * everything this vault remembered about the account forgotten.
+	 *
+	 * The local half always happens, network or no network. Somebody
+	 * pressing this on a train is signing out, and a plugin that refused
+	 * because it could not reach anything would leave them signed in with
+	 * an error on screen. `endedRemotely` says which of the two it was, so
+	 * the screen can be honest about a token that may still be live.
+	 */
+	async signOut(): Promise<{ endedRemotely: boolean }> {
+		this.stop();
+		this.flow.cancel(new Error("Signed out before this sign-in finished."));
+		const stored = this.options.load();
+		let endedRemotely = true;
+		if (stored?.token) {
+			try {
+				await this.server.signOut(stored.token);
+			} catch {
+				// Swallowed on purpose: whatever went wrong out there does
+				// not change what happens here, and the only thing the
+				// screen needs from it is that it did not land.
+				endedRemotely = false;
+			}
+		}
+		await this.options.save(null);
+		return { endedRemotely };
 	}
 
 	/** Bring the link up, if there is one. Safe to call at plugin load. */

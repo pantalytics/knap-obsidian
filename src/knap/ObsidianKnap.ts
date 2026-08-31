@@ -3,7 +3,7 @@
  *
  * `KNAP_SERVER_URL` is an esbuild define, empty in every ordinary build.
  * Empty means this whole file registers nothing and the plugin behaves
- * exactly as before; set, it adds the protocol handler and three commands,
+ * exactly as before; set, it adds the protocol handler and four commands,
  * and one test vault can point at the new server while everything else
  * stays where it is. That is the switch phase 2's plan asks for, and it is
  * build-time on purpose: no screen offers a server field (ADR-0033).
@@ -18,7 +18,7 @@ import type { CloudVault } from "./KnapServer";
 import { KnapSync } from "./KnapSync";
 import type { KnapLink } from "./KnapSync";
 import { ObsidianFileStore } from "./ObsidianFileStore";
-import { KnapSettingsTab } from "./KnapSettingsTab";
+import { KnapSettingsTab, signOutNotice } from "./KnapSettingsTab";
 import { SIGNIN_ACTION } from "./SignInFlow";
 import { obsidianFetch } from "./obsidianFetch";
 
@@ -127,6 +127,16 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 		name: "Link this vault to a cloud vault (beta)",
 		callback: () => {
 			pickAndLink().catch((error: Error) => new Notice(error.message));
+		},
+	});
+
+	host.addCommand({
+		id: "knap-beta-sign-out",
+		name: "Sign out (beta)",
+		callback: () => {
+			void sync
+				.signOut()
+				.then(({ endedRemotely }) => new Notice(signOutNotice(endedRemotely)));
 		},
 	});
 
