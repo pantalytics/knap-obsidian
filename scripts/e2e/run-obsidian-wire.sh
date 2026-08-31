@@ -197,33 +197,16 @@ run_scope() {
 
 REMOTE_LINE=$'\nDeze regel is van een ander apparaat.\n'
 
-# --- wait for the plugin, not for a delay ---------------------------------- #
-# Enabling a plugin returns before its onload has finished, and CI enables it
-# and starts driving it in the same second (measured: `Install and enable the
-# plugin` and `Run the Obsidian wire end to end` share a timestamp). Every
-# phase below reaches straight for sharedFolders, tokenStore and
-# folderSettings, all of which are assigned partway through onload, so
-# driving early is driving a half-built plugin.
-#
-# The harness's own `up` waits for `app.vault` and stops there, which says
-# Obsidian is ready and nothing about this plugin. So wait for the three
-# objects the phases actually use. Polling for the thing itself rather than
-# sleeping a guessed number of seconds: a slow runner then waits longer
-# instead of failing, and a plugin that never loads says so here rather than
-# as a hung evaluate three phases later.
-PLUGIN_READY=""
-for _ in $(seq 1 60); do
-	PLUGIN_READY="$("$HARNESS" eval "(() => {
-		const p = app.plugins.plugins['synced-vaults'];
-		return !!(p && p.sharedFolders && p.tokenStore && p.folderSettings);
-	})()" 2>/dev/null | tail -1)"
-	[ "$PLUGIN_READY" = "true" ] && break
-	sleep 1
-done
-[ "$PLUGIN_READY" = "true" ] || {
-	echo "synced-vaults never finished loading; nothing below could have worked" >&2
-	exit 2
-}
+# The plugin object existing is not the plugin being ready. The wait after the
+# restart above stops at `app.plugins.plugins['synced-vaults']`, which appears
+# as soon as onload starts; sharedFolders, tokenStore and folderSettings are
+# assigned partway through it, and every phase below reaches straight for all
+# three. So wait for what the phases actually use.
+wait_for "(() => {
+	const p = app.plugins.plugins['synced-vaults'];
+	return !!(p && p.sharedFolders && p.tokenStore && p.folderSettings);
+})()" "synced-vaults finishing its load" 60
+printf '\n'
 
 echo "relay, tls proxy and trust are up; driving Obsidian..."
 run_scope vault "00000000-0000-4000-8000-00000000f001"
