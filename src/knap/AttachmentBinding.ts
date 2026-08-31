@@ -5,7 +5,7 @@
  * thing notes are: text that merges. An attachment is the opposite. A PNG
  * has no common prefix worth keeping, no splice that means anything, and no
  * document at all: its bytes go over the file routes and the tree records
- * only that it exists, at `{hash, size}` (ADR-0077). Two engines, because
+ * only that it exists, at `{hash, size}` (ADR-0078). Two engines, because
  * one engine with a branch in every method is two engines wearing a coat.
  *
  * The rules, and they rhyme with the note ones on purpose:
