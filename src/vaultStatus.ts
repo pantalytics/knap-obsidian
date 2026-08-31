@@ -199,3 +199,38 @@ export function vaultReading(
 		progress: moving ? syncProgress(done, total) : undefined,
 	};
 }
+
+/** What the corner of the window puts on screen, worked out once. */
+export interface StatusBarPaint {
+	dot: SyncDot;
+	/** "290 of 2,567", or empty while there is nothing worth counting. */
+	count: string;
+	/** The tooltip, which is where the word itself is said. */
+	label: string;
+	/**
+	 * How wide the bar is drawn, 0 to 100, or undefined when there is no bar.
+	 * A whole number because it goes straight into a width in percent, and a
+	 * bar is two pixels tall: nothing below a percent is visible.
+	 */
+	percent: number | undefined;
+}
+
+/**
+ * The corner of the window, in one call.
+ *
+ * The icon carries the word and the tooltip says it, so the count and the bar
+ * are the only things that need working out, and both come off the reading
+ * every other screen uses. It is here rather than in `main.ts` because a
+ * phrasing that lives next to the elements it writes into is a phrasing no
+ * test reaches.
+ */
+export function statusBarPaint(reading: VaultReading): StatusBarPaint {
+	const word = reading.word.toLowerCase();
+	return {
+		dot: reading.dot,
+		count: reading.counts,
+		label: reading.counts ? `Knap: ${word}, ${reading.counts}` : `Knap: ${word}`,
+		percent:
+			reading.progress === undefined ? undefined : Math.round(reading.progress * 100),
+	};
+}
