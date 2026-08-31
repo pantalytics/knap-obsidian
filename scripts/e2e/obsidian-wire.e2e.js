@@ -33,22 +33,36 @@
 
 	// connect() registers the intent without always acting on it, so this
 	// pokes the provider too and waits for the socket rather than for a delay.
-	const bringUp = async (holder, budgetMs = 20000) => {
+	//
+	// The budget is what it is because each phase below is one
+	// `Runtime.evaluate` over the harness's devtools socket, and that socket
+	// gives up after thirty seconds (`cdp.py` in the admin repository). The
+	// waits in a phase have to add up to less than that, or a connection that
+	// never comes back reads as a timeout with nothing in it rather than as
+	// the assertion it is: this phase used to budget 20s twice and a further
+	// 12s, and a red run said only `TimeoutError`. Polling is quick and the
+	// poke is not, because connect() on a provider that is already dialling
+	// is noise.
+	const bringUp = async (holder, budgetMs = 8000) => {
 		const provider = holder._provider;
 		const deadline = Date.now() + budgetMs;
+		let poked = 0;
 		while (Date.now() < deadline) {
 			if (provider.wsconnected) return true;
-			try {
-				holder.connect();
-			} catch (e) {
-				/* the intent is enough */
+			if (Date.now() - poked >= 1500) {
+				poked = Date.now();
+				try {
+					holder.connect();
+				} catch (e) {
+					/* the intent is enough */
+				}
+				try {
+					provider.connect();
+				} catch (e) {
+					/* already connecting */
+				}
 			}
-			try {
-				provider.connect();
-			} catch (e) {
-				/* already connecting */
-			}
-			await settle(1500);
+			await settle(250);
 		}
 		return provider.wsconnected;
 	};
@@ -112,21 +126,38 @@
 	}
 
 	if ("__PHASE__" === "push") {
+		const started = Date.now();
 		const share = window.__knapShare;
-		await bringUp(share);
-		for (let i = 0; i < 12 && !share.synced; i++) await settle(1000);
+		await bringUp(share, 10000);
+		const msShare = Date.now() - started;
+		for (let i = 0; i < 16 && !share.synced; i++) await settle(250);
 		const doc = share.getDoc(share.getVirtualPath(vpath), false);
 		window.__knapDoc = doc;
-		await bringUp(doc);
-		await settle(1500);
+		// Taken here, and not off the provider at the end. The document's
+		// socket is the plugin's to hold and to let go of: the background sync
+		// releases it once the document is synced, so a flag read three
+		// seconds later says whether the plugin has finished, not whether it
+		// ever connected. Measured: `shouldConnect` is already false by the
+		// time enqueueSync returns, with the file's bytes in the CRDT.
+		const docConnected = await bringUp(doc, 10000);
+		const msDoc = Date.now() - started;
+		await settle(500);
 		await plugin.backgroundSync.enqueueSync(doc);
-		await settle(3000);
+		// Poll for the bytes rather than sleeping through the worst case: the
+		// waits are what push a phase past the devtools socket's patience, and
+		// a first sync is usually done well inside a second.
+		for (let i = 0; i < 16 && doc.ytext.toString() !== body; i++) await settle(250);
 		return JSON.stringify({
 			folderSynced: share.synced,
-			docConnected: doc._provider.wsconnected,
+			docConnected,
 			docUrl: doc._provider.url,
 			inCrdt: doc.ytext.toString(),
 			expected: body,
+			// How long each half took, because a red run that says only
+			// "never held an open socket" cannot tell slow from broken.
+			msShare,
+			msDoc,
+			msTotal: Date.now() - started,
 		});
 	}
 
