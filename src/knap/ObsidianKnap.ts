@@ -12,9 +12,10 @@
  * here says server, relay or share to a person.
  */
 
-import { Notice, Platform, Plugin, SuggestModal } from "obsidian";
+import { Notice, Platform, Plugin, SuggestModal, editorInfoField } from "obsidian";
 
 import type { CloudVault } from "./KnapServer";
+import { knapLiveEditing } from "./knapEditor";
 import { KnapSync } from "./KnapSync";
 import type { KnapLink } from "./KnapSync";
 import { ObsidianFileStore } from "./ObsidianFileStore";
@@ -99,6 +100,13 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 		);
 
 	host.addSettingTab(new KnapSettingsTab(host, sync, { signIn, pickAndLink }, serverUrl));
+
+	// Live editing and the cursors on it, for whichever note an editor is
+	// showing. Which file that is is Obsidian's answer to give, so it comes
+	// in as a function and the extension itself stays testable.
+	host.registerEditorExtension(
+		knapLiveEditing(sync, (state) => state.field(editorInfoField, false)?.file?.path ?? null),
+	);
 
 	host.registerObsidianProtocolHandler(SIGNIN_ACTION, (params) => {
 		const fed = sync.handleDeepLink(params as unknown as Record<string, string>);

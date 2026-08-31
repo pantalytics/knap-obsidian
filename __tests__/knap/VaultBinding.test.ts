@@ -220,6 +220,52 @@ describe("VaultBinding", () => {
 		expect(b.files.writes).toBe(before.b);
 	});
 
+	it("stands down for a note an editor is holding, and catches the file up after", async () => {
+		const hub = new Hub();
+		const a = await device(hub, { "open.md": "eerste regel\n" });
+		const b = await device(hub);
+		await settle(a.binding, b.binding);
+
+		// Obsidian opens the note here: from now on the editor writes this
+		// file, so a remote change may not be written over its buffer.
+		const release = a.binding.hold("open.md");
+		const docId = hub.device().tree().docIdFor("open.md");
+		expect(docId).toBeTruthy();
+
+		await b.files.write("open.md", "eerste regel\ntweede regel\n");
+		await settle(a.binding, b.binding);
+		expect(a.files.map.get("open.md")).toBe("eerste regel\n");
+
+		// The editor closes: the file is brought up to date once, here.
+		release();
+		await settle(a.binding);
+		expect(a.files.map.get("open.md")).toBe("eerste regel\ntweede regel\n");
+	});
+
+	it("ignores the save event of a held note, whose editor is already ahead", async () => {
+		const hub = new Hub();
+		const a = await device(hub, { "open.md": "een\ntwee\n" });
+		const b = await device(hub);
+		await settle(a.binding, b.binding);
+
+		const release = a.binding.hold("open.md");
+		// The other device adds a line while this editor holds the note.
+		await b.files.write("open.md", "een\ntwee\ndrie van B\n");
+		await settle(a.binding, b.binding);
+
+		// The file here is a save behind the buffer somebody is typing in,
+		// which is the ordinary state of an open note. Set rather than
+		// written, because a write is what Obsidian is doing, not us.
+		a.files.map.set("open.md", "een\ntwee\n");
+		// And now Obsidian saves. Without the stand-down this splices the
+		// other device's line back out of the document for everybody.
+		a.files.emit({ type: "modify", path: "open.md" });
+		await settle(a.binding, b.binding);
+		expect(b.files.map.get("open.md")).toBe("een\ntwee\ndrie van B\n");
+
+		release();
+	});
+
 	it("only markdown is bound; other files stay local", async () => {
 		const hub = new Hub();
 		const a = await device(hub, { "foto.png": "bytes", "echt.md": "note" });
