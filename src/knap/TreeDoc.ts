@@ -13,7 +13,7 @@
  * `attachments` is the same idea for everything that is not a note, and it
  * maps a path to `{hash, size}` rather than to a document id, because an
  * attachment has no document: images, PDFs and audio do not merge, so their
- * bytes travel over the file routes instead (ADR-0076). Nothing is in both
+ * bytes travel over the file routes instead (ADR-0077). Nothing is in both
  * maps, and that exclusivity is a safety property rather than tidiness. One
  * map with a kind field would put a device's attachment bookkeeping in a
  * position to name a note's path and delete another device's note.
