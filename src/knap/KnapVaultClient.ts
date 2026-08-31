@@ -54,6 +54,11 @@ export class KnapVaultClient {
 		return this.treeDoc;
 	}
 
+	/** Resolves once the tree has had its first sync with the server. */
+	treeSynced(): Promise<void> {
+		return this.openDoc(TREE_DOC_ID).synced;
+	}
+
 	/** A note's live document, by id. Reuses an open socket. */
 	note(docId: string): OpenDoc {
 		return this.openDoc(docId);

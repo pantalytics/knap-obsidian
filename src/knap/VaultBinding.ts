@@ -47,10 +47,38 @@ export interface FileStore {
 /** What the binding needs from the wire. KnapVaultClient satisfies it. */
 export interface VaultDocs {
 	tree(): TreeDoc;
+	/**
+	 * Resolves once the tree has had its first sync with the server.
+	 *
+	 * Opening the tree's socket hands back a document immediately, and for a
+	 * moment that document is empty. Reconciling against it is how a note
+	 * that already exists in the cloud gets a second document minted for it.
+	 */
+	treeSynced(): Promise<void>;
 	note(docId: string): { doc: Y.Doc; synced: Promise<void> };
 }
 
 const CONTENT = "content";
+
+/** How long to wait for the tree's first sync before giving up on a link. */
+const TREE_SYNC_TIMEOUT_MS = 30_000;
+
+/** Reject with `message` if `promise` has not settled in `ms`. */
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const timer = window.setTimeout(() => reject(new Error(message)), ms);
+		promise.then(
+			(value) => {
+				window.clearTimeout(timer);
+				resolve(value);
+			},
+			(error: unknown) => {
+				window.clearTimeout(timer);
+				reject(error instanceof Error ? error : new Error(String(error)));
+			},
+		);
+	});
+}
 
 /** Y.Text implements toString; the lint rule cannot see that through AbstractType. */
 function textOf(content: Y.Text): string {
@@ -92,7 +120,15 @@ export class VaultBinding {
 					// the added half above already wrote the new file, so the old
 					// path goes either way. Only a note that left the tree for
 					// good stops being watched.
-					await this.files.remove(path);
+					//
+					// A path in both halves is not a departure: it is the same
+					// note pointed at a different document. Removing the file
+					// there deletes a note nobody deleted, and the delete event
+					// that follows takes the path out of the tree on every
+					// device. Measured on production 2026-08-31.
+					if (!change.added.has(path)) {
+						await this.files.remove(path);
+					}
 					if (this.docs.tree().pathFor(docId) === undefined) {
 						this.unobserveNote(docId);
 					}
@@ -161,6 +197,20 @@ export class VaultBinding {
 	// -- link time -----------------------------------------------------------
 
 	private async reconcileAll(): Promise<void> {
+		// Wait for the tree before deciding anything is missing from it.
+		// Measured on production 2026-08-31: a device that reconciled against
+		// an empty tree minted a fresh document for a path that already had
+		// one, and the note ended up with two documents and no name.
+		//
+		// Bounded, because a socket that never syncs would otherwise leave
+		// the Link button waiting with nothing on screen. Giving up here is
+		// better than reconciling against a tree that never arrived: the
+		// caller gets a sentence it can show, and the next start tries again.
+		await withTimeout(
+			this.docs.treeSynced(),
+			TREE_SYNC_TIMEOUT_MS,
+			"Could not reach the server. Nothing was changed; try again.",
+		);
 		const tree = this.docs.tree();
 		const local = new Set((await this.files.listNotes()).map(normalize));
 		const remote = tree.entries();

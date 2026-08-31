@@ -1,5 +1,5 @@
 /**
- * The one screen the rebuilt client has: sign in, link, unlink.
+ * The one screen the rebuilt client has: sign in, link, unlink, sign out.
  *
  * It exists because the three commands were the only way in, and a command
  * palette is where somebody looks after they already know the thing is there.
@@ -7,16 +7,32 @@
  * look for a button -- and in a beta build the relay's own tab is hidden, so
  * they found nothing at all.
  *
- * Three lines and at most two buttons, because there are only ever three
+ * Three lines and at most three buttons, because there are only ever three
  * states: signed out, signed in but not linked, and linked. No server field
  * (ADR-0033): which server this build talks to is baked in, and the screen
  * says which one rather than offering a choice.
+ *
+ * Signed in, there is always a way back out. A screen that can only sign in
+ * is one a person cannot hand their laptop on from, and the only alternative
+ * was uninstalling the plugin -- which leaves the token alive anyway.
  */
 
 import { Notice, type Plugin, PluginSettingTab, Setting } from "obsidian";
 
 import type { CloudVault } from "./KnapServer";
 import type { KnapSync } from "./KnapSync";
+
+/**
+ * What to say after a sign-out. One sentence, two entry points: this button
+ * and the command in the palette, which must not drift apart into two
+ * accounts of the same act.
+ */
+export function signOutNotice(endedRemotely: boolean): string {
+	return endedRemotely
+		? "Signed out. Nothing was deleted, anywhere."
+		: "Signed out on this device. Knap could not be reached, so this device may still " +
+				"count as signed in there.";
+}
 
 /** The two acts the buttons perform, so the screen shares them with the commands. */
 export interface SignInActions {
@@ -109,5 +125,20 @@ export class KnapSettingsTab extends PluginSettingTab {
 					}),
 				);
 		}
+
+		new Setting(containerEl)
+			.setName("Sign out")
+			.setDesc(
+				"Ends the sign-in on this device and stops the syncing. Your notes stay " +
+					"where they are, here and in the cloud vault.",
+			)
+			.addButton((button) =>
+				button.setButtonText("Sign out").onClick(() => {
+					void this.sync.signOut().then(({ endedRemotely }) => {
+						new Notice(signOutNotice(endedRemotely));
+						this.display();
+					});
+				}),
+			);
 	}
 }

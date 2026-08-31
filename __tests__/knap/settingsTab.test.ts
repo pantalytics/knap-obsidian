@@ -10,7 +10,7 @@
 
 import { KnapSettingsTab } from "../../src/knap/KnapSettingsTab";
 
-type Row = { name: string; desc: string; buttons: string[] };
+type Row = { name: string; desc: string; buttons: string[]; press?: () => void };
 
 /** A stand-in for Obsidian's Setting, recording what the screen asked for. */
 function fakeContainer(rows: Row[]) {
@@ -45,7 +45,10 @@ jest.mock("obsidian", () => {
 					return button;
 				},
 				setCta: () => button,
-				onClick: () => button,
+				onClick: (run: () => void) => {
+					this.row.press = run;
+					return button;
+				},
 			};
 			build(button);
 			return this;
@@ -61,15 +64,32 @@ jest.mock("obsidian", () => {
 	return { Setting, PluginSettingTab, Notice: class {}, App: class {} };
 });
 
-function tabFor(state: { signedIn: boolean; linked: null | { id: string; name: string } }) {
-	const rows: Row[] = [];
-	const sync = {
-		signedIn: state.signedIn,
-		linked: state.linked
-			? { cloudVaultId: state.linked.id, cloudVaultName: state.linked.name, token: "t" }
-			: null,
-		unlink: async () => {},
+/** A stand-in KnapSync that remembers whether it was signed out. */
+function fakeSync(state: { signedIn: boolean; linked: null | { id: string; name: string } }) {
+	let signedIn = state.signedIn;
+	let linked = state.linked;
+	return {
+		get signedIn() {
+			return signedIn;
+		},
+		get linked() {
+			return linked
+				? { cloudVaultId: linked.id, cloudVaultName: linked.name, token: "t" }
+				: null;
+		},
+		unlink: async () => {
+			linked = null;
+		},
+		signOut: async () => {
+			signedIn = false;
+			linked = null;
+			return { endedRemotely: true };
+		},
 	};
+}
+
+function tabWith(sync: ReturnType<typeof fakeSync>) {
+	const rows: Row[] = [];
 	const plugin = { app: {} };
 	const actions = { signIn: async () => {}, pickAndLink: async () => {} };
 	const tab = new KnapSettingsTab(
@@ -81,6 +101,10 @@ function tabFor(state: { signedIn: boolean; linked: null | { id: string; name: s
 	tab.containerEl = fakeContainer(rows) as never;
 	tab.display();
 	return rows;
+}
+
+function tabFor(state: { signedIn: boolean; linked: null | { id: string; name: string } }) {
+	return tabWith(fakeSync(state));
 }
 
 describe("the beta's settings screen", () => {
@@ -104,5 +128,32 @@ describe("the beta's settings screen", () => {
 		expect(rows.map((r) => r.desc).join(" ")).toContain("Pantalytics_v03");
 		expect(rows.flatMap((r) => r.buttons)).toContain("Unlink");
 		expect(rows.map((r) => r.desc).join(" ")).toContain("Nothing is deleted");
+	});
+
+	it("offers a way back out in both signed-in states", () => {
+		// The screen had no way out at all: the only way to stop being signed
+		// in on a device was to uninstall the plugin, which leaves the token
+		// alive anyway.
+		for (const linked of [null, { id: "v1", name: "Pantalytics_v03" }]) {
+			const rows = tabFor({ signedIn: true, linked });
+			expect(rows.flatMap((r) => r.buttons)).toContain("Sign out");
+			// Unlink stops the syncing; sign out is the account, and says so.
+			const out = rows.find((r) => r.name === "Sign out");
+			expect(out?.desc).toContain("this device");
+			expect(out?.desc).toContain("Your notes stay");
+		}
+	});
+
+	it("signs out when the button is pressed, and comes back offering sign in", async () => {
+		const sync = fakeSync({ signedIn: true, linked: { id: "v1", name: "Pantalytics_v03" } });
+		const rows = tabWith(sync);
+
+		rows.find((r) => r.name === "Sign out")?.press?.();
+		await Promise.resolve();
+		await Promise.resolve();
+
+		// The same rows array, redrawn: nothing about the account is left.
+		expect(rows.flatMap((r) => r.buttons)).toEqual(["Sign in"]);
+		expect(rows.map((r) => r.desc).join(" ")).not.toContain("Pantalytics_v03");
 	});
 });

@@ -61,6 +61,35 @@ class MemoryFiles implements FileStore {
 class Hub {
 	private byId = new Map<string, Y.Doc[]>();
 
+	/**
+	 * How long the tree takes to arrive after its socket opens. Zero is the
+	 * shape every test had before: the document is full the instant it is
+	 * opened, which no websocket has ever managed. Set it and a device starts
+	 * on an empty tree, which is what a real one does.
+	 */
+	treeDelay = 0;
+
+	/** The tree as the server holds it. */
+	treeOf(): Y.Map<string> {
+		const peers = this.byId.get("tree") ?? [];
+		return (peers[0] ?? new Y.Doc()).getMap<string>("files");
+	}
+
+	/** Every document that has ever been opened, minus the tree. */
+	documentCount(): number {
+		return [...this.byId.keys()].filter((id) => id !== "tree").length;
+	}
+
+	/** Point a path at a different document, with the given text in it. */
+	repoint(path: string, docId: string, text: string): void {
+		const doc = new Y.Doc();
+		doc.getText("content").insert(0, text);
+		const peers = this.byId.get(docId) ?? [];
+		peers.push(doc);
+		this.byId.set(docId, peers);
+		this.treeOf().set(path, docId);
+	}
+
 	device(): VaultDocs {
 		const mine = new Map<string, { doc: Y.Doc; synced: Promise<void> }>();
 		let tree: TreeDoc | null = null;
@@ -69,10 +98,14 @@ class Hub {
 			if (!entry) {
 				const doc = new Y.Doc();
 				const peers = this.byId.get(docId) ?? [];
-				for (const peer of peers) {
-					Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer));
-					Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
-				}
+				const late = docId === "tree" && this.treeDelay > 0;
+				const fill = () => {
+					for (const peer of peers) {
+						if (peer === doc) continue;
+						Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer));
+						Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+					}
+				};
 				const relay = (source: Y.Doc, targets: () => Y.Doc[]) => {
 					source.on("update", (update: Uint8Array, origin: unknown) => {
 						if (origin === "hub") return;
@@ -84,13 +117,25 @@ class Hub {
 				peers.push(doc);
 				this.byId.set(docId, peers);
 				relay(doc, () => this.byId.get(docId) ?? []);
-				entry = { doc, synced: Promise.resolve() };
+				let synced = Promise.resolve();
+				if (late) {
+					synced = new Promise<void>((resolve) =>
+						setTimeout(() => {
+							fill();
+							resolve();
+						}, this.treeDelay),
+					);
+				} else {
+					fill();
+				}
+				entry = { doc, synced };
 				mine.set(docId, entry);
 			}
 			return entry;
 		};
 		return {
 			tree: () => (tree ??= new TreeDoc(open("tree").doc)),
+			treeSynced: () => open("tree").synced,
 			note: (docId: string) => open(docId),
 		};
 	}
@@ -159,6 +204,63 @@ describe("VaultBinding", () => {
 
 		expect(b.files.map.has("oud.md")).toBe(false);
 		expect(b.files.map.get("Archief/nieuw.md")).toBe("tekst");
+	});
+
+	it("a device that starts before the tree arrives does not mint a second document", async () => {
+		// Measured on production 2026-08-31: one note ended up with two
+		// documents and then no name in the tree at all, and vanished from
+		// every device. The binding reconciled against a tree that had not
+		// synced yet, so every local file looked new.
+		const hub = new Hub();
+		const a = await device(hub, { "Welkom.md": "# Welkom\n" });
+		await settle(a.binding);
+		const first = a.binding ? hub.treeOf().get("Welkom.md") : undefined;
+
+		hub.treeDelay = 5;
+		const b = await device(hub, { "Welkom.md": "# Welkom\n" });
+		await settle(a.binding, b.binding);
+
+		expect(hub.treeOf().get("Welkom.md")).toBe(first);
+		expect(hub.documentCount()).toBe(1);
+	});
+
+	it("a note whose tree entry changes id stays on disk and in the tree", async () => {
+		// The other half of the same failure: an update to a tree entry was
+		// reported as removed plus added, and the removed half deleted the
+		// file. The delete event that followed then took the path out of the
+		// tree on every device.
+		const hub = new Hub();
+		const a = await device(hub, { "Welkom.md": "# Welkom\n" });
+		const b = await device(hub);
+		await settle(a.binding, b.binding);
+
+		// Somebody points the path at a different document, the way a device
+		// starting on an empty tree used to.
+		hub.repoint("Welkom.md", "1111ffff2222aaaa3333bbbb4444cccc", "# Welkom\n");
+		await settle(a.binding, b.binding);
+
+		expect(a.files.map.has("Welkom.md")).toBe(true);
+		expect(b.files.map.has("Welkom.md")).toBe(true);
+		expect(hub.treeOf().has("Welkom.md")).toBe(true);
+	});
+
+	it("a tree that never arrives fails the link with a sentence, not a hang", async () => {
+		// The cost of waiting for the tree: a socket that never syncs would
+		// leave the Link button waiting with nothing on screen.
+		jest.useFakeTimers();
+		try {
+			const hub = new Hub();
+			hub.treeDelay = 10 * 60 * 1000; // longer than the binding waits
+			const files = new MemoryFiles();
+			const binding = new VaultBinding(files, hub.device(), () => "conflict");
+			const started = binding.start();
+			const caught = started.catch((error: Error) => error.message);
+			await jest.advanceTimersByTimeAsync(31_000);
+
+			await expect(caught).resolves.toContain("Could not reach the server");
+		} finally {
+			jest.useRealTimers();
+		}
 	});
 
 	it("a delete leaves the tree and the other device's disk", async () => {
