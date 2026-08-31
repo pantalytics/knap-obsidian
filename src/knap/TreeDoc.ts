@@ -82,6 +82,32 @@ export class TreeDoc {
 	}
 
 	/**
+	 * Every note under a folder leaves the tree with the folder, in one
+	 * transaction. Deleting a folder in Obsidian deletes the notes in it,
+	 * and the delete that arrives names the folder rather than each note,
+	 * so without this the notes would stay in the tree and come back down
+	 * onto the disk they were just deleted from.
+	 *
+	 * Returns the document ids that left, so the caller can stop watching
+	 * them. An empty prefix removes nothing: there is no deleting the vault.
+	 */
+	removeUnder(folder: string): string[] {
+		const clean = normalize(folder);
+		if (!clean) return [];
+		const prefix = `${clean}/`;
+		const gone: string[] = [];
+		this.doc.transact(() => {
+			for (const [path, docId] of [...this.files.entries()]) {
+				if (path.startsWith(prefix)) {
+					this.files.delete(path);
+					gone.push(docId);
+				}
+			}
+		});
+		return gone;
+	}
+
+	/**
 	 * Watch the tree. The callback gets what appeared and what left; a moved
 	 * note shows up in both, under the same id. Returns an unsubscribe.
 	 */
