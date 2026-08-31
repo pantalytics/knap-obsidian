@@ -134,4 +134,43 @@ describe("KnapServer", () => {
 			expect((error as KnapServerError).status).toBe(404);
 		}
 	});
+
+	it("asks the server what it accepts rather than carrying its own numbers", async () => {
+		const { fetchFn, calls } = fakeFetch({
+			"/api/limits": () =>
+				new Response(
+					JSON.stringify({ max_attachment_bytes: 104857600, max_vault_bytes: 10737418240 }),
+					{ status: 200 },
+				),
+		});
+		const server = new KnapServer("https://knap.test", fetchFn);
+
+		expect(await server.limits("t")).toEqual({
+			maxAttachmentBytes: 104857600,
+			maxVaultBytes: 10737418240,
+		});
+		// The field names are the server's, and this is where a rename in the
+		// other repository shows up.
+		expect(calls[0].url).toBe("https://knap.test/api/limits");
+	});
+
+	it("keeps a full vault and an oversized file apart in what it says", async () => {
+		// Both come back from the same route, and they are different problems
+		// with different answers: one file to leave behind, or a vault to
+		// clear out. "The upload did not land" is neither of them.
+		const cases: [number, RegExp][] = [
+			[413, /larger than the cloud vault takes/],
+			[507, /vault is full/],
+			[500, /did not land/],
+		];
+		for (const [status, expected] of cases) {
+			const server = new KnapServer(
+				"https://knap.test",
+				async () => new Response("{}", { status }),
+			);
+			await expect(server.uploadFile("t", "v1", "foto.png", new ArrayBuffer(8))).rejects.toThrow(
+				expected,
+			);
+		}
+	});
 });

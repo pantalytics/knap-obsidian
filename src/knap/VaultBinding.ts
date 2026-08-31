@@ -31,7 +31,7 @@
 import * as Y from "yjs";
 
 import { buildConflictCopyPath } from "../conflictCopyPath";
-import { TreeDoc, normalize } from "./TreeDoc";
+import { TreeDoc, isNote, normalize } from "./TreeDoc";
 
 export interface FileEvent {
 	type: "create" | "modify" | "delete" | "rename";
@@ -39,13 +39,25 @@ export interface FileEvent {
 	oldPath?: string;
 }
 
-/** What the binding needs from a vault's files. Obsidian adapts to this. */
+/**
+ * What the two bindings need from a vault's files. Obsidian adapts to this.
+ *
+ * Text and bytes are separate methods rather than one that guesses, because
+ * the two callers are separate engines: `VaultBinding` reads a note as a
+ * string it can splice, `AttachmentBinding` reads a PNG as bytes it can
+ * hash. `onChange` reports every file, notes and attachments alike, and each
+ * binding ignores the half that is not its own.
+ */
 export interface FileStore {
 	read(path: string): Promise<string | null>;
 	write(path: string, text: string): Promise<void>;
+	readBinary(path: string): Promise<ArrayBuffer | null>;
+	writeBinary(path: string, content: ArrayBuffer): Promise<void>;
 	remove(path: string): Promise<void>;
 	rename(from: string, to: string): Promise<void>;
 	listNotes(): Promise<string[]>;
+	/** Every file in the vault that is not a note. */
+	listAttachments(): Promise<string[]>;
 	onChange(callback: (event: FileEvent) => void): () => void;
 }
 
@@ -135,6 +147,12 @@ export class VaultBinding {
 	async start(): Promise<void> {
 		await this.enqueue(() => this.reconcileAll());
 		this.stopFileEvents = this.files.onChange((event) => {
+			// The store reports both kinds, and each binding takes its own.
+			// A delete is the exception and may not be filtered on the path:
+			// deleting a folder names the folder, not the notes in it, so a
+			// filter that let only `.md` through would drop the one event
+			// that takes those notes out of the tree.
+			if (!isNote(event.path) && event.type !== "delete") return;
 			void this.enqueue(() => this.onFileEvent(event));
 		});
 		this.stopTreeEvents = this.docs.tree().onChange((change) => {
@@ -335,7 +353,9 @@ export class VaultBinding {
 
 	private async pushNote(path: string): Promise<void> {
 		const clean = normalize(path);
-		if (!clean.endsWith(".md")) return;
+		// Belt and braces: the event stream is filtered already, but
+		// reconcileAll and the conflict-copy path both call in directly.
+		if (!isNote(clean)) return;
 		const text = await this.files.read(clean);
 		if (text === null) return; // gone again before we got to it
 

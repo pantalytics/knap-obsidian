@@ -76,6 +76,7 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 		files: new ObsidianFileStore(host.app.vault, host.app.fileManager),
 		load: () => host.getKnapLink(),
 		save: (value) => host.saveKnapLink(value),
+		onRefused: (path, reason) => new Notice(`${path}: ${reason}`),
 		makeSeen: (cloudVaultId) =>
 			new ObsidianSeenTree(
 				host.app.vault.adapter,

@@ -44,8 +44,19 @@ class MemoryFiles implements FileStore {
 		this.map.set(to, text);
 		this.emit({ type: "rename", path: to, oldPath: from });
 	}
+	async readBinary(): Promise<ArrayBuffer | null> {
+		// The note half of the store. AttachmentBinding.test.ts has the
+		// store that carries bytes.
+		return null;
+	}
+	async writeBinary(): Promise<void> {
+		throw new Error("This store holds notes.");
+	}
 	async listNotes(): Promise<string[]> {
 		return [...this.map.keys()].filter((p) => p.endsWith(".md"));
+	}
+	async listAttachments(): Promise<string[]> {
+		return [...this.map.keys()].filter((p) => !p.endsWith(".md"));
 	}
 	onChange(callback: (event: FileEvent) => void): () => void {
 		this.listeners.push(callback);
