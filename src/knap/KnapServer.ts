@@ -2,9 +2,10 @@
  * The Knap server, as the plugin speaks to it (ADR-0073, the rebuild).
  *
  * One server, known at build time (ADR-0033), and one credential: the token
- * the sign-in flow minted. Four conversations, and nothing else:
+ * the sign-in flow minted. Five conversations, and nothing else:
  *
  * - the sign-in exchange: a one-time code in, the plugin's token out
+ * - the sign-out: the token handed back, so it stops opening anything
  * - which cloud vaults this account may open, and what it may do there
  * - the address of a document's sync socket
  * - attachments, up and down, as plain bytes
@@ -74,6 +75,25 @@ export class KnapServer {
 			throw new KnapServerError("The server answered without a token.", response.status);
 		}
 		return body.token;
+	}
+
+	/**
+	 * Hand the token back. Signing out that only forgot it here would leave a
+	 * working credential behind on a laptop somebody is passing on, which is
+	 * the one moment a person presses this.
+	 *
+	 * A 401 is the outcome, not a failure: the token is already gone, which
+	 * is what sign out is for. Anything else throws, so the screen can say
+	 * that the token may still be live rather than claim it is not.
+	 */
+	async signOut(token: string): Promise<void> {
+		const response = await this.fetchFn(`${this.baseUrl}/auth/plugin/signout`, {
+			method: "POST",
+			headers: { Authorization: `Bearer ${token}` },
+		});
+		if (!response.ok && response.status !== 401) {
+			throw new KnapServerError("The sign-out did not land.", response.status);
+		}
 	}
 
 	/** The cloud vaults this account may open. */
