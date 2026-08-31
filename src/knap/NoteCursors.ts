@@ -5,7 +5,7 @@
  * is looking at a line and false a second later, so it rides awareness, the
  * y-protocol's side channel, and never enters the document. Knap's server
  * forwards it, hands it to a device that opens the note later, and drops it
- * when the socket closes, all without writing a byte (ADR-0075 in the admin
+ * when the socket closes, all without writing a byte (ADR-0076 in the admin
  * repository, measured in its `scripts/spikes/cursor_presence/`).
  *
  * Positions travel as Yjs **relative** positions rather than offsets. An
