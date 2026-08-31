@@ -19,6 +19,8 @@
  * of the engine.
  */
 
+import type { AttachmentTransport, Refusal } from "./AttachmentBinding";
+import { AttachmentBinding } from "./AttachmentBinding";
 import type { FileStore } from "./VaultBinding";
 import { VaultBinding } from "./VaultBinding";
 import type { CloudVault, Fetch } from "./KnapServer";
@@ -42,6 +44,12 @@ export interface KnapSyncOptions {
 	save: (value: KnapLink | null) => Promise<void>;
 	/** Injected in tests; Obsidian's platform WebSocket by default. */
 	webSocket?: WebSocketImpl;
+	/**
+	 * Told when an attachment cannot travel, so the host can put it on
+	 * screen. A file over the ceiling is the common case, and somebody who
+	 * is never told will find out when the photo is missing on their phone.
+	 */
+	onRefused?: Refusal;
 }
 
 export class KnapSync {
@@ -49,6 +57,7 @@ export class KnapSync {
 	readonly flow: SignInFlow;
 	private client: KnapVaultClient | null = null;
 	private binding: VaultBinding | null = null;
+	private attachments: AttachmentBinding | null = null;
 
 	constructor(private readonly options: KnapSyncOptions) {
 		this.server = new KnapServer(options.serverUrl, options.fetchFn);
@@ -158,10 +167,32 @@ export class KnapSync {
 			this.options.webSocket,
 		);
 		this.binding = new VaultBinding(this.options.files, this.client);
+		this.attachments = new AttachmentBinding(
+			this.options.files,
+			this.client,
+			this.transportFor(stored.token, stored.cloudVaultId),
+			this.options.onRefused,
+		);
+		// Notes first. Both wait for the same tree to sync, and a vault whose
+		// notes are already arriving is the one somebody is looking at.
 		await this.binding.start();
+		await this.attachments.start();
+	}
+
+	/** The file routes, bound to one vault and one token. */
+	private transportFor(token: string, vaultId: string): AttachmentTransport {
+		const server = this.server;
+		return {
+			upload: (path, content) => server.uploadFile(token, vaultId, path, content),
+			download: (path) => server.downloadFile(token, vaultId, path),
+			remove: (path) => server.deleteFile(token, vaultId, path),
+			limits: () => server.limits(token),
+		};
 	}
 
 	stop(): void {
+		this.attachments?.stop();
+		this.attachments = null;
 		this.binding?.stop();
 		this.binding = null;
 		this.client?.destroy();

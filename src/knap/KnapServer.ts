@@ -7,6 +7,7 @@
  * - the sign-in exchange: a one-time code in, the plugin's token out
  * - the sign-out: the token handed back, so it stops opening anything
  * - which cloud vaults this account may open, and what it may do there
+ * - how large an attachment this deployment takes
  * - the address of a document's sync socket
  * - attachments, up and down, as plain bytes
  *
@@ -18,6 +19,8 @@
  * `fetch` is injected so tests hand in a fake and Obsidian hands in its
  * own; the module never touches a global.
  */
+
+import type { AttachmentLimits } from "./AttachmentBinding";
 
 export interface CloudVault {
 	id: string;
@@ -123,6 +126,31 @@ export class KnapServer {
 
 	// -- attachments -------------------------------------------------------
 
+	/**
+	 * The ceilings this deployment enforces (ADR-0075).
+	 *
+	 * Asked rather than compiled in, because they are the server's and the
+	 * two repositories ship separately: a number written down in both is a
+	 * number that goes stale in one of them, and neither repository's tests
+	 * can see that happen.
+	 */
+	async limits(token: string): Promise<AttachmentLimits> {
+		const response = await this.fetchFn(`${this.baseUrl}/api/limits`, {
+			headers: { Authorization: `Bearer ${token}` },
+		});
+		if (!response.ok) {
+			throw new KnapServerError("The server did not say what it accepts.", response.status);
+		}
+		const body = (await response.json()) as {
+			max_attachment_bytes: number;
+			max_vault_bytes: number;
+		};
+		return {
+			maxAttachmentBytes: body.max_attachment_bytes,
+			maxVaultBytes: body.max_vault_bytes,
+		};
+	}
+
 	async uploadFile(
 		token: string,
 		vaultId: string,
@@ -135,6 +163,21 @@ export class KnapServer {
 			body: content,
 		});
 		if (!response.ok) {
+			// Both ceilings answer here, and both are worth repeating to the
+			// person rather than flattening into "the upload did not land":
+			// one of them is about this file and the other is about the vault.
+			if (response.status === 413) {
+				throw new KnapServerError(
+					"This file is larger than the cloud vault takes. It stays on this device.",
+					413,
+				);
+			}
+			if (response.status === 507) {
+				throw new KnapServerError(
+					"The cloud vault is full. Remove some attachments from it, or use a second vault.",
+					507,
+				);
+			}
 			throw new KnapServerError("The upload did not land.", response.status);
 		}
 		return (await response.json()) as { sha256: string; size: number };
