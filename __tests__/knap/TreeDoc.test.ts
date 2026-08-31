@@ -68,9 +68,81 @@ describe("TreeDoc", () => {
 		expect(treeB.docIdFor("van-a.md")).toBe(idA);
 	});
 
+	it("a folder takes the notes under it out of the tree, and nothing else", () => {
+		const tree = new TreeDoc(new Y.Doc());
+		const een = tree.ensureNote("Map/een.md");
+		tree.ensureNote("Map/diep/twee.md");
+		tree.ensureNote("Mapje/anders.md");
+		tree.ensureNote("los.md");
+
+		const gone = tree.removeUnder("Map");
+
+		expect(gone).toContain(een);
+		expect(gone).toHaveLength(2);
+		expect([...tree.entries().keys()].sort()).toEqual(["Mapje/anders.md", "los.md"]);
+	});
+
+	it("there is no deleting the vault itself", () => {
+		const tree = new TreeDoc(new Y.Doc());
+		tree.ensureNote("los.md");
+		expect(tree.removeUnder("")).toEqual([]);
+		expect(tree.entries().size).toBe(1);
+	});
+
 	it("never lets a path leave the vault", () => {
 		const tree = new TreeDoc(new Y.Doc());
 		expect(() => tree.ensureNote("../buiten.md")).toThrow(/never leaves/);
 		expect(normalize("a\\b\\c.md")).toBe("a/b/c.md");
+	});
+
+	it("records an attachment without minting a document for it", () => {
+		const tree = new TreeDoc(new Y.Doc());
+		tree.setAttachment("Bijlagen/foto.png", { hash: "abc", size: 12 });
+
+		expect(tree.attachmentFor("Bijlagen/foto.png")).toEqual({ hash: "abc", size: 12 });
+		// The two maps are separate, and an attachment is in neither the note
+		// map nor anywhere a document id could come from.
+		expect(tree.docIdFor("Bijlagen/foto.png")).toBeUndefined();
+		expect(tree.entries().size).toBe(0);
+	});
+
+	it("moves an attachment and keeps what it knows about it", () => {
+		const tree = new TreeDoc(new Y.Doc());
+		tree.setAttachment("foto.png", { hash: "abc", size: 12 });
+		tree.moveAttachment("foto.png", "Bijlagen/foto.png");
+
+		expect(tree.attachmentFor("foto.png")).toBeUndefined();
+		expect(tree.attachmentFor("Bijlagen/foto.png")).toEqual({ hash: "abc", size: 12 });
+		expect(() => tree.moveAttachment("weg.png", "elders.png")).toThrow(/No attachment/);
+	});
+
+	it("reports a changed hash as both halves, so nothing deletes what just arrived", () => {
+		const tree = new TreeDoc(new Y.Doc());
+		const seen: { added: string[]; removed: string[] }[] = [];
+		const stop = tree.onAttachmentChange((change) =>
+			seen.push({ added: [...change.added.keys()], removed: [...change.removed.keys()] }),
+		);
+
+		tree.setAttachment("foto.png", { hash: "abc", size: 1 });
+		tree.setAttachment("foto.png", { hash: "def", size: 2 });
+		tree.removeAttachment("foto.png");
+		stop();
+		tree.setAttachment("stil.png", { hash: "x", size: 1 });
+
+		expect(seen).toEqual([
+			{ added: ["foto.png"], removed: [] },
+			{ added: ["foto.png"], removed: ["foto.png"] },
+			{ added: [], removed: ["foto.png"] },
+		]);
+	});
+
+	it("normalizes an attachment path the way it normalizes a note's", () => {
+		const tree = new TreeDoc(new Y.Doc());
+		tree.setAttachment("./Bijlagen/foto.png", { hash: "abc", size: 1 });
+
+		expect([...tree.attachments().keys()]).toEqual(["Bijlagen/foto.png"]);
+		expect(() => tree.setAttachment("../buiten.png", { hash: "a", size: 1 })).toThrow(
+			/never leaves/,
+		);
 	});
 });

@@ -21,12 +21,17 @@
  *   notes download, and a note that exists on both sides with different
  *   text keeps the cloud text while the local text survives as a conflict
  *   copy beside it. Nothing is ever silently lost.
+ * - A note deleted here is deleted in the cloud vault, and the other way
+ *   round, whether or not the plugin was running when it happened. That is
+ *   what the `SeenTree` is for: without a record of what this device last
+ *   agreed with, a missing file and a note that never arrived look the
+ *   same, and every restart undid both sides\' deletes.
  */
 
 import * as Y from "yjs";
 
 import { buildConflictCopyPath } from "../conflictCopyPath";
-import { TreeDoc, normalize } from "./TreeDoc";
+import { TreeDoc, isNote, normalize } from "./TreeDoc";
 
 export interface FileEvent {
 	type: "create" | "modify" | "delete" | "rename";
@@ -34,13 +39,25 @@ export interface FileEvent {
 	oldPath?: string;
 }
 
-/** What the binding needs from a vault's files. Obsidian adapts to this. */
+/**
+ * What the two bindings need from a vault's files. Obsidian adapts to this.
+ *
+ * Text and bytes are separate methods rather than one that guesses, because
+ * the two callers are separate engines: `VaultBinding` reads a note as a
+ * string it can splice, `AttachmentBinding` reads a PNG as bytes it can
+ * hash. `onChange` reports every file, notes and attachments alike, and each
+ * binding ignores the half that is not its own.
+ */
 export interface FileStore {
 	read(path: string): Promise<string | null>;
 	write(path: string, text: string): Promise<void>;
+	readBinary(path: string): Promise<ArrayBuffer | null>;
+	writeBinary(path: string, content: ArrayBuffer): Promise<void>;
 	remove(path: string): Promise<void>;
 	rename(from: string, to: string): Promise<void>;
 	listNotes(): Promise<string[]>;
+	/** Every file in the vault that is not a note. */
+	listAttachments(): Promise<string[]>;
 	onChange(callback: (event: FileEvent) => void): () => void;
 }
 
@@ -56,6 +73,25 @@ export interface VaultDocs {
 	 */
 	treeSynced(): Promise<void>;
 	note(docId: string): { doc: Y.Doc; synced: Promise<void> };
+}
+
+/**
+ * What this device last agreed with: path -> document id, as the tree read
+ * the moment the binding had finished applying it to the disk.
+ *
+ * It is the base of a three-way comparison, and it is the only thing that
+ * can tell a note somebody deleted here from a note that has not arrived
+ * yet. A device that has none behaves the way linking always has: nothing
+ * is deleted on either side, both sides merge.
+ *
+ * Per cloud vault, and local to the device. `forget` is what unlink and
+ * sign out call, so a later relink starts from no memory and keeps their
+ * promise that nothing is deleted anywhere.
+ */
+export interface SeenTree {
+	load(): Promise<Map<string, string>>;
+	save(entries: Map<string, string>): Promise<void>;
+	forget(): Promise<void>;
 }
 
 const CONTENT = "content";
@@ -91,11 +127,16 @@ export class VaultBinding {
 	private stopTreeEvents: (() => void) | null = null;
 	private noteObservers = new Map<string, () => void>();
 	private queue: Promise<void> = Promise.resolve();
+	/** Paths an open editor is holding, which this binding leaves alone. */
+	private held = new Set<string>();
+	/** Set whenever this device changed the tree, cleared when it is saved. */
+	private seenDirty = false;
 
 	constructor(
 		private readonly files: FileStore,
 		private readonly docs: VaultDocs,
 		private readonly conflictLabel = () => `conflict ${new Date().toISOString().slice(0, 10)}`,
+		private readonly seen: SeenTree | null = null,
 	) {}
 
 	/**
@@ -106,10 +147,17 @@ export class VaultBinding {
 	async start(): Promise<void> {
 		await this.enqueue(() => this.reconcileAll());
 		this.stopFileEvents = this.files.onChange((event) => {
+			// The store reports both kinds, and each binding takes its own.
+			// A delete is the exception and may not be filtered on the path:
+			// deleting a folder names the folder, not the notes in it, so a
+			// filter that let only `.md` through would drop the one event
+			// that takes those notes out of the tree.
+			if (!isNote(event.path) && event.type !== "delete") return;
 			void this.enqueue(() => this.onFileEvent(event));
 		});
 		this.stopTreeEvents = this.docs.tree().onChange((change) => {
 			void this.enqueue(async () => {
+				this.seenDirty = true;
 				for (const [path, docId] of change.added) {
 					await this.bindNote(path, docId);
 				}
@@ -147,9 +195,68 @@ export class VaultBinding {
 		return this.enqueue(async () => undefined);
 	}
 
+	/**
+	 * Stand down for one note, because an editor is bound to it directly.
+	 *
+	 * Two writers on one note is one too many. While a note is open,
+	 * `LiveNote` puts every keystroke into the document as it is typed and
+	 * every remote change into the editor, and Obsidian saves the file the
+	 * way it saves any file somebody is typing in. If this binding also
+	 * wrote that file it would overwrite the editor's unsaved buffer, and if
+	 * it also pushed the file's `modify` events it would splice a copy that
+	 * is a save behind, which deletes whatever arrived in the meantime.
+	 *
+	 * Returns the release, which is also the catch-up: the file may be a
+	 * couple of seconds behind the document when the editor lets go, and it
+	 * is written from the document once here rather than waiting for the
+	 * next change to that note.
+	 */
+	hold(path: string): () => void {
+		const clean = normalize(path);
+		this.held.add(clean);
+		let released = false;
+		return () => {
+			if (released) return;
+			released = true;
+			this.held.delete(clean);
+			void this.enqueue(() => this.writeFromDocument(clean));
+		};
+	}
+
+	private async writeFromDocument(path: string): Promise<void> {
+		const tree = this.docs.tree();
+		const docId = tree.docIdFor(path);
+		if (!docId) return;
+		const { doc } = this.docs.note(docId);
+		const text = textOf(doc.getText(CONTENT));
+		const at = tree.pathFor(docId) ?? path;
+		if ((await this.files.read(at)) !== text) {
+			await this.files.write(at, text);
+		}
+	}
+
 	private enqueue(work: () => Promise<void>): Promise<void> {
-		this.queue = this.queue.then(work, work);
+		// The record is written only where `work` returned: a unit that threw
+		// half way leaves the disk and the tree disagreeing, and remembering
+		// that as agreed is how the next start deletes what it failed to
+		// write. Work still runs on both settle paths, so one failure does
+		// not wedge the queue.
+		this.queue = this.queue.then(work, work).then(() => this.rememberTree());
 		return this.queue;
+	}
+
+	/** Write down the tree this device now agrees with. Failing is survivable. */
+	private async rememberTree(): Promise<void> {
+		if (!this.seenDirty || !this.seen) return;
+		this.seenDirty = false;
+		try {
+			await this.seen.save(this.docs.tree().entries());
+		} catch {
+			// A record that could not be written is a record that stays
+			// older than it is, and older is the safe direction: every
+			// deletion below needs the record to positively say so.
+			this.seenDirty = true;
+		}
 	}
 
 	// -- link time -----------------------------------------------------------
@@ -172,13 +279,36 @@ export class VaultBinding {
 		const tree = this.docs.tree();
 		const local = new Set((await this.files.listNotes()).map(normalize));
 		const remote = tree.entries();
+		const seen = (await this.seen?.load()) ?? new Map<string, string>();
+
+		// A vault whose files have not been indexed yet reads exactly like a
+		// vault somebody emptied, and only one of those two is worth acting
+		// on. The plugin starts the binding after the layout is ready for
+		// this reason; this is the second lock on the same door, because the
+		// cost of being wrong here is every note in the cloud vault.
+		const emptied = local.size === 0 && seen.size > 0;
 
 		for (const path of local) {
-			if (!remote.has(path)) {
+			if (remote.has(path)) continue;
+			if (seen.has(path)) {
+				// It was in the tree when this device last looked and it is
+				// not now: it was deleted in the cloud vault while this
+				// device was away. A delete is a delete, in both directions.
+				await this.files.remove(path);
+			} else {
 				await this.pushNote(path);
 			}
 		}
 		for (const [path, docId] of remote) {
+			if (!local.has(path) && !emptied && seen.get(path) === docId) {
+				// The same note, at the same path, as this device last had
+				// it on disk, and the file is gone. Somebody deleted it here
+				// while the plugin was not running. Without the record this
+				// downloaded the note back, every time, on every device.
+				tree.remove(path);
+				this.seenDirty = true;
+				continue;
+			}
 			await this.bindNote(path, docId);
 		}
 	}
@@ -191,6 +321,7 @@ export class VaultBinding {
 			const from = normalize(event.oldPath);
 			if (tree.docIdFor(from) !== undefined) {
 				tree.move(from, event.path);
+				this.seenDirty = true;
 				return;
 			}
 			await this.pushNote(event.path);
@@ -198,23 +329,40 @@ export class VaultBinding {
 		}
 		if (event.type === "delete") {
 			const path = normalize(event.path);
+			if (!path.endsWith(".md")) {
+				// A folder. Obsidian deletes the notes inside it, and the
+				// tree has to lose them too, or they come back down onto the
+				// disk they were just deleted from.
+				for (const docId of tree.removeUnder(path)) {
+					this.unobserveNote(docId);
+					this.seenDirty = true;
+				}
+				return;
+			}
 			const docId = tree.docIdFor(path);
-			tree.remove(path);
+			if (tree.remove(path)) this.seenDirty = true;
 			if (docId) this.unobserveNote(docId);
 			return;
 		}
+		// A note an editor is holding writes itself, keystroke by keystroke;
+		// the save event that arrives a second later says nothing newer.
+		if (this.held.has(normalize(event.path))) return;
 		// create and modify converge: bring the document to the file's text.
 		await this.pushNote(event.path);
 	}
 
 	private async pushNote(path: string): Promise<void> {
 		const clean = normalize(path);
-		if (!clean.endsWith(".md")) return;
+		// Belt and braces: the event stream is filtered already, but
+		// reconcileAll and the conflict-copy path both call in directly.
+		if (!isNote(clean)) return;
 		const text = await this.files.read(clean);
 		if (text === null) return; // gone again before we got to it
 
 		const tree = this.docs.tree();
+		const known = tree.docIdFor(clean);
 		const docId = tree.ensureNote(clean);
+		if (known === undefined) this.seenDirty = true;
 		const { doc, synced } = this.docs.note(docId);
 		await synced;
 		const content = doc.getText(CONTENT);
@@ -272,6 +420,8 @@ export class VaultBinding {
 		const observer = () => {
 			void this.enqueue(async () => {
 				const current = this.docs.tree().pathFor(docId) ?? path;
+				// An open editor already has this change and owns the file.
+				if (this.held.has(current)) return;
 				const text = textOf(content);
 				if ((await this.files.read(current)) !== text) {
 					await this.files.write(current, text);

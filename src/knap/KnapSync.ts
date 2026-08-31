@@ -14,12 +14,22 @@
  * settings row that says this vault syncs with something it can no longer
  * reach, and that is how a device ends up showing somebody else's folders.
  *
+ * Unlink and sign out also throw away what this device remembered of the
+ * cloud vault's tree. Both say on screen that nothing is deleted anywhere,
+ * and a kept record would make a later relink start by deleting whatever
+ * was removed here in between. No memory means no deletions, which is what
+ * linking has always done.
+ *
  * Persistence goes through two callbacks rather than a settings object, so
  * the host (Obsidian's data.json in production, a dict in tests) stays out
  * of the engine.
  */
 
-import type { FileStore } from "./VaultBinding";
+import type { AttachmentTransport, Refusal } from "./AttachmentBinding";
+import { AttachmentBinding } from "./AttachmentBinding";
+import type { LiveNoteHandle } from "./knapEditor";
+import { normalize } from "./TreeDoc";
+import type { FileStore, SeenTree } from "./VaultBinding";
 import { VaultBinding } from "./VaultBinding";
 import type { CloudVault, Fetch } from "./KnapServer";
 import { KnapServer } from "./KnapServer";
@@ -42,6 +52,14 @@ export interface KnapSyncOptions {
 	save: (value: KnapLink | null) => Promise<void>;
 	/** Injected in tests; Obsidian's platform WebSocket by default. */
 	webSocket?: WebSocketImpl;
+	/**
+	 * Told when an attachment cannot travel, so the host can put it on
+	 * screen. A file over the ceiling is the common case, and somebody who
+	 * is never told will find out when the photo is missing on their phone.
+	 */
+	onRefused?: Refusal;
+	/** Where this device remembers a cloud vault's tree, if anywhere. */
+	makeSeen?: (cloudVaultId: string) => SeenTree;
 }
 
 export class KnapSync {
@@ -49,6 +67,7 @@ export class KnapSync {
 	readonly flow: SignInFlow;
 	private client: KnapVaultClient | null = null;
 	private binding: VaultBinding | null = null;
+	private attachments: AttachmentBinding | null = null;
 
 	constructor(private readonly options: KnapSyncOptions) {
 		this.server = new KnapServer(options.serverUrl, options.fetchFn);
@@ -109,6 +128,7 @@ export class KnapSync {
 	/** End the link. Stops the syncing, deletes nothing on either side. */
 	async unlink(): Promise<void> {
 		this.stop();
+		await this.forgetSeen();
 		const stored = this.options.load();
 		if (stored) {
 			await this.options.save({ ...stored, cloudVaultId: "", cloudVaultName: "" });
@@ -128,6 +148,7 @@ export class KnapSync {
 	async signOut(): Promise<{ endedRemotely: boolean }> {
 		this.stop();
 		this.flow.cancel(new Error("Signed out before this sign-in finished."));
+		await this.forgetSeen();
 		const stored = this.options.load();
 		let endedRemotely = true;
 		if (stored?.token) {
@@ -157,11 +178,82 @@ export class KnapSync {
 			this.options.deviceName,
 			this.options.webSocket,
 		);
-		this.binding = new VaultBinding(this.options.files, this.client);
+		this.binding = new VaultBinding(
+			this.options.files,
+			this.client,
+			undefined,
+			this.options.makeSeen?.(stored.cloudVaultId) ?? null,
+		);
+		this.attachments = new AttachmentBinding(
+			this.options.files,
+			this.client,
+			this.transportFor(stored.token, stored.cloudVaultId),
+			this.options.onRefused,
+		);
+		// Notes first. Both wait for the same tree to sync, and a vault whose
+		// notes are already arriving is the one somebody is looking at.
 		await this.binding.start();
+		await this.attachments.start();
+	}
+
+	/** The file routes, bound to one vault and one token. */
+	private transportFor(token: string, vaultId: string): AttachmentTransport {
+		const server = this.server;
+		return {
+			upload: (path, content) => server.uploadFile(token, vaultId, path, content),
+			download: (path) => server.downloadFile(token, vaultId, path),
+			remove: (path) => server.deleteFile(token, vaultId, path),
+			limits: () => server.limits(token),
+		};
+	}
+
+	/**
+	 * The live note behind one vault path, for an editor to bind to.
+	 *
+	 * Null in every case where binding would be a guess: no link, a note the
+	 * cloud vault has never heard of, or a socket that has not finished its
+	 * first sync. That last one matters more than it looks. A document that
+	 * is still syncing is empty, and an editor bound to an empty document
+	 * reads it as a note nobody has typed in and offers the file's text to
+	 * fill it, so the note would arrive a moment later and be merged with a
+	 * copy of itself. The editor asks again on its next update, and by then
+	 * the answer is a real document.
+	 */
+	openNote(path: string): LiveNoteHandle | null {
+		const clean = normalize(path);
+		if (!this.client || !this.binding) return null;
+		const docId = this.client.tree().docIdFor(clean);
+		if (!docId) return null;
+		const entry = this.client.note(docId);
+		if (!entry.provider.synced) return null;
+		const release = this.binding.hold(clean);
+		return {
+			text: this.client.contentOf(entry),
+			awareness: entry.provider.awareness,
+			deviceName: this.options.deviceName,
+			release,
+		};
+	}
+
+	/**
+	 * Forget the tree this device remembered. Never fatal: the caller is
+	 * unlinking or signing out, and a record that outlives it costs a relink
+	 * that deletes nothing, which is the same thing the record not existing
+	 * would have done.
+	 */
+	private async forgetSeen(): Promise<void> {
+		const id = this.options.load()?.cloudVaultId;
+		if (!id || !this.options.makeSeen) return;
+		try {
+			await this.options.makeSeen(id).forget();
+		} catch {
+			// Nothing to say and nothing to do: see above.
+		}
 	}
 
 	stop(): void {
+		this.attachments?.stop();
+		this.attachments = null;
 		this.binding?.stop();
 		this.binding = null;
 		this.client?.destroy();

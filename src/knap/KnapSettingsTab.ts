@@ -94,7 +94,8 @@ export class KnapSettingsTab extends PluginSettingTab {
 			.setName("This vault")
 			.setDesc(
 				linked?.name
-					? `Syncs with the cloud vault ${linked.name}.`
+					? `Syncs with the cloud vault ${linked.name}. A note you delete here ` +
+						"goes from the cloud vault too, and a note deleted there goes from here."
 					: "Signed in, and not linked to a cloud vault yet.",
 			)
 			.addButton((button) =>

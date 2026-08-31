@@ -8,10 +8,15 @@
  * not have to tell them apart. And Obsidian's `create` events replay for
  * every existing file at vault load, so the adapter starts listening only
  * when told, after the link-time reconcile has the tree.
+ *
+ * One event is not a note and is passed on anyway: deleting a folder
+ * deletes the notes in it, and Obsidian's delete names the folder. The
+ * binding takes every note under that path out of the tree.
  */
 
-import { FileManager, normalizePath, TAbstractFile, TFile, Vault } from "obsidian";
+import { FileManager, normalizePath, TAbstractFile, TFile, TFolder, Vault } from "obsidian";
 
+import { isNote } from "./TreeDoc";
 import type { FileEvent, FileStore } from "./VaultBinding";
 
 export class ObsidianFileStore implements FileStore {
@@ -37,11 +42,31 @@ export class ObsidianFileStore implements FileStore {
 			await this.vault.modify(existing, text);
 			return;
 		}
+		await this.ensureParent(clean);
+		await this.vault.create(clean, text);
+	}
+
+	async readBinary(path: string): Promise<ArrayBuffer | null> {
+		const file = this.file(path);
+		return file ? await this.vault.readBinary(file) : null;
+	}
+
+	async writeBinary(path: string, content: ArrayBuffer): Promise<void> {
+		const clean = normalizePath(path);
+		const existing = this.file(clean);
+		if (existing) {
+			await this.vault.modifyBinary(existing, content);
+			return;
+		}
+		await this.ensureParent(clean);
+		await this.vault.createBinary(clean, content);
+	}
+
+	private async ensureParent(clean: string): Promise<void> {
 		const parent = clean.split("/").slice(0, -1).join("/");
 		if (parent && !this.vault.getAbstractFileByPath(parent)) {
 			await this.vault.createFolder(parent).catch(() => undefined);
 		}
-		await this.vault.create(clean, text);
 	}
 
 	async remove(path: string): Promise<void> {
@@ -63,19 +88,41 @@ export class ObsidianFileStore implements FileStore {
 	async listNotes(): Promise<string[]> {
 		return this.vault
 			.getFiles()
-			.filter((file) => file.extension === "md")
+			.filter((file) => isNote(file.path))
+			.map((file) => file.path);
+	}
+
+	/**
+	 * Everything that is not a note. Obsidian's own `getFiles` already
+	 * leaves out `.obsidian`, so the vault's settings and plugins do not
+	 * turn up here and never travel (ADR-0067).
+	 */
+	async listAttachments(): Promise<string[]> {
+		return this.vault
+			.getFiles()
+			.filter((file) => !isNote(file.path))
 			.map((file) => file.path);
 	}
 
 	onChange(callback: (event: FileEvent) => void): () => void {
+		// Both kinds of file are reported and each binding takes its own
+		// half. Filtering here is what kept every attachment in the vault
+		// invisible to the plugin for the whole of phase 2.
 		const toEvent = (type: FileEvent["type"]) => (file: TAbstractFile, oldPath?: string) => {
-			if (file instanceof TFile && file.extension === "md") {
+			if (file instanceof TFile) {
 				callback({ type, path: file.path, oldPath });
 			}
 		};
+		const onDelete = (file: TAbstractFile) => {
+			if (file instanceof TFolder) {
+				callback({ type: "delete", path: file.path });
+				return;
+			}
+			toEvent("delete")(file);
+		};
 		const created = this.vault.on("create", toEvent("create"));
 		const modified = this.vault.on("modify", toEvent("modify"));
-		const deleted = this.vault.on("delete", toEvent("delete"));
+		const deleted = this.vault.on("delete", onDelete);
 		const renamed = this.vault.on("rename", toEvent("rename"));
 		return () => {
 			this.vault.offref(created);
