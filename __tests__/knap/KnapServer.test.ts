@@ -41,6 +41,36 @@ describe("KnapServer", () => {
 		);
 	});
 
+	it("hands the token back on sign out, and takes a dead one for done", async () => {
+		const seen: string[] = [];
+		const { fetchFn, calls } = fakeFetch({
+			"/auth/plugin/signout": (init) => {
+				seen.push((init?.headers as Record<string, string>).Authorization);
+				return new Response(null, { status: 204 });
+			},
+		});
+		const server = new KnapServer("https://knap.test", fetchFn);
+
+		await server.signOut("knap_abc");
+		expect(calls[0].init?.method).toBe("POST");
+		expect(seen).toEqual(["Bearer knap_abc"]);
+
+		// A token the server already forgot is the outcome, not a failure.
+		const gone = fakeFetch({
+			"/auth/plugin/signout": () => new Response("{}", { status: 401 }),
+		});
+		await expect(new KnapServer("https://knap.test", gone.fetchFn).signOut("oud")).resolves
+			.toBeUndefined();
+	});
+
+	it("says the sign out did not land when the server breaks", async () => {
+		const { fetchFn } = fakeFetch({
+			"/auth/plugin/signout": () => new Response("{}", { status: 500 }),
+		});
+		const server = new KnapServer("https://knap.test", fetchFn);
+		await expect(server.signOut("knap_abc")).rejects.toThrow(/did not land/);
+	});
+
 	it("lists vaults in the plugin's shape", async () => {
 		const { fetchFn, calls } = fakeFetch({
 			"/api/vaults": () =>
