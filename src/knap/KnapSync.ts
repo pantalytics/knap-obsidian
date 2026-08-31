@@ -27,6 +27,8 @@
 
 import type { AttachmentTransport, Refusal } from "./AttachmentBinding";
 import { AttachmentBinding } from "./AttachmentBinding";
+import type { LiveNoteHandle } from "./knapEditor";
+import { normalize } from "./TreeDoc";
 import type { FileStore, SeenTree } from "./VaultBinding";
 import { VaultBinding } from "./VaultBinding";
 import type { CloudVault, Fetch } from "./KnapServer";
@@ -202,6 +204,34 @@ export class KnapSync {
 			download: (path) => server.downloadFile(token, vaultId, path),
 			remove: (path) => server.deleteFile(token, vaultId, path),
 			limits: () => server.limits(token),
+		};
+	}
+
+	/**
+	 * The live note behind one vault path, for an editor to bind to.
+	 *
+	 * Null in every case where binding would be a guess: no link, a note the
+	 * cloud vault has never heard of, or a socket that has not finished its
+	 * first sync. That last one matters more than it looks. A document that
+	 * is still syncing is empty, and an editor bound to an empty document
+	 * reads it as a note nobody has typed in and offers the file's text to
+	 * fill it, so the note would arrive a moment later and be merged with a
+	 * copy of itself. The editor asks again on its next update, and by then
+	 * the answer is a real document.
+	 */
+	openNote(path: string): LiveNoteHandle | null {
+		const clean = normalize(path);
+		if (!this.client || !this.binding) return null;
+		const docId = this.client.tree().docIdFor(clean);
+		if (!docId) return null;
+		const entry = this.client.note(docId);
+		if (!entry.provider.synced) return null;
+		const release = this.binding.hold(clean);
+		return {
+			text: this.client.contentOf(entry),
+			awareness: entry.provider.awareness,
+			deviceName: this.options.deviceName,
+			release,
 		};
 	}
 

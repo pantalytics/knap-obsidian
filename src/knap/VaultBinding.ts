@@ -127,6 +127,8 @@ export class VaultBinding {
 	private stopTreeEvents: (() => void) | null = null;
 	private noteObservers = new Map<string, () => void>();
 	private queue: Promise<void> = Promise.resolve();
+	/** Paths an open editor is holding, which this binding leaves alone. */
+	private held = new Set<string>();
 	/** Set whenever this device changed the tree, cleared when it is saved. */
 	private seenDirty = false;
 
@@ -191,6 +193,46 @@ export class VaultBinding {
 	/** Wait for everything queued so far; tests and shutdown use it. */
 	flush(): Promise<void> {
 		return this.enqueue(async () => undefined);
+	}
+
+	/**
+	 * Stand down for one note, because an editor is bound to it directly.
+	 *
+	 * Two writers on one note is one too many. While a note is open,
+	 * `LiveNote` puts every keystroke into the document as it is typed and
+	 * every remote change into the editor, and Obsidian saves the file the
+	 * way it saves any file somebody is typing in. If this binding also
+	 * wrote that file it would overwrite the editor's unsaved buffer, and if
+	 * it also pushed the file's `modify` events it would splice a copy that
+	 * is a save behind, which deletes whatever arrived in the meantime.
+	 *
+	 * Returns the release, which is also the catch-up: the file may be a
+	 * couple of seconds behind the document when the editor lets go, and it
+	 * is written from the document once here rather than waiting for the
+	 * next change to that note.
+	 */
+	hold(path: string): () => void {
+		const clean = normalize(path);
+		this.held.add(clean);
+		let released = false;
+		return () => {
+			if (released) return;
+			released = true;
+			this.held.delete(clean);
+			void this.enqueue(() => this.writeFromDocument(clean));
+		};
+	}
+
+	private async writeFromDocument(path: string): Promise<void> {
+		const tree = this.docs.tree();
+		const docId = tree.docIdFor(path);
+		if (!docId) return;
+		const { doc } = this.docs.note(docId);
+		const text = textOf(doc.getText(CONTENT));
+		const at = tree.pathFor(docId) ?? path;
+		if ((await this.files.read(at)) !== text) {
+			await this.files.write(at, text);
+		}
 	}
 
 	private enqueue(work: () => Promise<void>): Promise<void> {
@@ -302,6 +344,9 @@ export class VaultBinding {
 			if (docId) this.unobserveNote(docId);
 			return;
 		}
+		// A note an editor is holding writes itself, keystroke by keystroke;
+		// the save event that arrives a second later says nothing newer.
+		if (this.held.has(normalize(event.path))) return;
 		// create and modify converge: bring the document to the file's text.
 		await this.pushNote(event.path);
 	}
@@ -375,6 +420,8 @@ export class VaultBinding {
 		const observer = () => {
 			void this.enqueue(async () => {
 				const current = this.docs.tree().pathFor(docId) ?? path;
+				// An open editor already has this change and owns the file.
+				if (this.held.has(current)) return;
 				const text = textOf(content);
 				if ((await this.files.read(current)) !== text) {
 					await this.files.write(current, text);
