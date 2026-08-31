@@ -127,7 +127,7 @@ export class KnapServer {
 	// -- attachments -------------------------------------------------------
 
 	/**
-	 * The ceilings this deployment enforces (ADR-0075).
+	 * The ceilings this deployment enforces (ADR-0076).
 	 *
 	 * Asked rather than compiled in, because they are the server's and the
 	 * two repositories ship separately: a number written down in both is a
