@@ -47,6 +47,14 @@ export interface FileStore {
 /** What the binding needs from the wire. KnapVaultClient satisfies it. */
 export interface VaultDocs {
 	tree(): TreeDoc;
+	/**
+	 * Resolves once the tree has had its first sync with the server.
+	 *
+	 * Opening the tree's socket hands back a document immediately, and for a
+	 * moment that document is empty. Reconciling against it is how a note
+	 * that already exists in the cloud gets a second document minted for it.
+	 */
+	treeSynced(): Promise<void>;
 	note(docId: string): { doc: Y.Doc; synced: Promise<void> };
 }
 
@@ -90,7 +98,15 @@ export class VaultBinding {
 					// the added half above already wrote the new file, so the old
 					// path goes either way. Only a note that left the tree for
 					// good stops being watched.
-					await this.files.remove(path);
+					//
+					// A path in both halves is not a departure: it is the same
+					// note pointed at a different document. Removing the file
+					// there deletes a note nobody deleted, and the delete event
+					// that follows takes the path out of the tree on every
+					// device. Measured on production 2026-08-31.
+					if (!change.added.has(path)) {
+						await this.files.remove(path);
+					}
 					if (this.docs.tree().pathFor(docId) === undefined) {
 						this.unobserveNote(docId);
 					}
@@ -119,6 +135,11 @@ export class VaultBinding {
 	// -- link time -----------------------------------------------------------
 
 	private async reconcileAll(): Promise<void> {
+		// Wait for the tree before deciding anything is missing from it.
+		// Measured on production 2026-08-31: a device that reconciled against
+		// an empty tree minted a fresh document for a path that already had
+		// one, and the note ended up with two documents and no name.
+		await this.docs.treeSynced();
 		const tree = this.docs.tree();
 		const local = new Set((await this.files.listNotes()).map(normalize));
 		const remote = tree.entries();
