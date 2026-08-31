@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.13.6
+## 1.13.8
 - A bar in the corner of the window, under the count, while a vault is syncing. The count has been there since 1.12.6 and a count on its own is something a person has to read and then compare against the one they saw a minute ago, which is not what the corner of a window is for. It is the same two pixels the settings screen draws, off the same reading, so the mark in the corner and the Status row cannot disagree about one vault. It draws only against a real total, which is the sync queue on the device sending the notes and the cloud vault's file list on one that has just joined, so it never fills against a number that was guessed. It is absent rather than empty the rest of the time: an empty track beside a vault that is up to date reads as work nobody has started.
 - The corner reads itself once a second instead of once every four. A count that lags a few seconds is a count; a bar that stands still while somebody is watching a first sync reads as stuck. It costs close to nothing, because the one expensive number behind it, the file list this device is still missing, is already cached inside the folder for a second and a half.
 
