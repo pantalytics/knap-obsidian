@@ -222,3 +222,12 @@ export function normalize(path: string): string {
 export function isNote(path: string): boolean {
 	return path.toLowerCase().endsWith(".md");
 }
+
+/**
+ * A path Obsidian's own settings and plugins live under. The server refuses
+ * these outright, so anything that offered one would earn a 422 and a
+ * sentence on screen about a file the person never put there.
+ */
+export function isHidden(path: string): boolean {
+	return path.split("/").some((part) => part.startsWith("."));
+}

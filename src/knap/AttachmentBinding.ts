@@ -30,7 +30,7 @@
 import { buildConflictCopyPath } from "../conflictCopyPath";
 import { generateHash } from "../hashing";
 import type { AttachmentEntry, TreeDoc } from "./TreeDoc";
-import { isNote, normalize } from "./TreeDoc";
+import { isHidden, isNote, normalize } from "./TreeDoc";
 import type { FileEvent, FileStore } from "./VaultBinding";
 
 /** What the binding needs from the file routes. KnapServer satisfies it. */
@@ -100,6 +100,10 @@ export class AttachmentBinding {
 		await this.enqueue(() => this.reconcileAll());
 		this.stopFileEvents = this.files.onChange((event) => {
 			if (isNote(event.path)) return; // VaultBinding's half
+			// Obsidian's own settings and plugins are not the vault's
+			// contents, and the server refuses them anyway (ADR-0067). Quiet
+			// rather than refused: the person did not put these here.
+			if (isHidden(event.path)) return;
 			void this.enqueue(() => this.onFileEvent(event));
 		});
 		this.stopTreeEvents = this.docs.tree().onAttachmentChange((change) => {
@@ -151,7 +155,7 @@ export class AttachmentBinding {
 		const tree = this.docs.tree();
 		const recorded = tree.attachments();
 		for (const path of (await this.files.listAttachments()).map(normalize)) {
-			if (!recorded.has(path)) {
+			if (!recorded.has(path) && !isHidden(path)) {
 				await this.push(path);
 			}
 		}

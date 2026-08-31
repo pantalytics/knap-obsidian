@@ -221,6 +221,22 @@ describe("an attachment travels", () => {
 		alice.binding.stop();
 	});
 
+	it("leaves Obsidian's own settings where they are", async () => {
+		// The vault's config is not the vault's contents (ADR-0067), and the
+		// server refuses these paths. Quiet rather than refused: nobody put
+		// this file there on purpose.
+		const hub = new Hub();
+		const transport = new MemoryTransport();
+		const alice = await device(hub, transport);
+
+		await alice.files.writeBinary(".obsidian/workspace.json", bytes("{}"));
+		await settle(alice);
+
+		expect(transport.uploads).toBe(0);
+		expect(alice.refusals).toHaveLength(0);
+		alice.binding.stop();
+	});
+
 	it("leaves notes alone", async () => {
 		const hub = new Hub();
 		const transport = new MemoryTransport();
