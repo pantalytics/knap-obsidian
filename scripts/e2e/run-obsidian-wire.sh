@@ -197,6 +197,17 @@ run_scope() {
 
 REMOTE_LINE=$'\nDeze regel is van een ander apparaat.\n'
 
+# The plugin object existing is not the plugin being ready. The wait after the
+# restart above stops at `app.plugins.plugins['synced-vaults']`, which appears
+# as soon as onload starts; sharedFolders, tokenStore and folderSettings are
+# assigned partway through it, and every phase below reaches straight for all
+# three. So wait for what the phases actually use.
+wait_for "(() => {
+	const p = app.plugins.plugins['synced-vaults'];
+	return !!(p && p.sharedFolders && p.tokenStore && p.folderSettings);
+})()" "synced-vaults finishing its load" 60
+printf '\n'
+
 echo "relay, tls proxy and trust are up; driving Obsidian..."
 run_scope vault "00000000-0000-4000-8000-00000000f001"
 run_scope folder "00000000-0000-4000-8000-00000000f0a2"
