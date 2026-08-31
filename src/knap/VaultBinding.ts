@@ -60,6 +60,26 @@ export interface VaultDocs {
 
 const CONTENT = "content";
 
+/** How long to wait for the tree's first sync before giving up on a link. */
+const TREE_SYNC_TIMEOUT_MS = 30_000;
+
+/** Reject with `message` if `promise` has not settled in `ms`. */
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const timer = window.setTimeout(() => reject(new Error(message)), ms);
+		promise.then(
+			(value) => {
+				window.clearTimeout(timer);
+				resolve(value);
+			},
+			(error: unknown) => {
+				window.clearTimeout(timer);
+				reject(error instanceof Error ? error : new Error(String(error)));
+			},
+		);
+	});
+}
+
 /** Y.Text implements toString; the lint rule cannot see that through AbstractType. */
 function textOf(content: Y.Text): string {
 	// eslint-disable-next-line @typescript-eslint/no-base-to-string -- Y.Text has a real toString
@@ -139,7 +159,16 @@ export class VaultBinding {
 		// Measured on production 2026-08-31: a device that reconciled against
 		// an empty tree minted a fresh document for a path that already had
 		// one, and the note ended up with two documents and no name.
-		await this.docs.treeSynced();
+		//
+		// Bounded, because a socket that never syncs would otherwise leave
+		// the Link button waiting with nothing on screen. Giving up here is
+		// better than reconciling against a tree that never arrived: the
+		// caller gets a sentence it can show, and the next start tries again.
+		await withTimeout(
+			this.docs.treeSynced(),
+			TREE_SYNC_TIMEOUT_MS,
+			"Could not reach the server. Nothing was changed; try again.",
+		);
 		const tree = this.docs.tree();
 		const local = new Set((await this.files.listNotes()).map(normalize));
 		const remote = tree.entries();

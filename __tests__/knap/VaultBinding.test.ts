@@ -244,6 +244,25 @@ describe("VaultBinding", () => {
 		expect(hub.treeOf().has("Welkom.md")).toBe(true);
 	});
 
+	it("a tree that never arrives fails the link with a sentence, not a hang", async () => {
+		// The cost of waiting for the tree: a socket that never syncs would
+		// leave the Link button waiting with nothing on screen.
+		jest.useFakeTimers();
+		try {
+			const hub = new Hub();
+			hub.treeDelay = 10 * 60 * 1000; // longer than the binding waits
+			const files = new MemoryFiles();
+			const binding = new VaultBinding(files, hub.device(), () => "conflict");
+			const started = binding.start();
+			const caught = started.catch((error: Error) => error.message);
+			await jest.advanceTimersByTimeAsync(31_000);
+
+			await expect(caught).resolves.toContain("Could not reach the server");
+		} finally {
+			jest.useRealTimers();
+		}
+	});
+
 	it("a delete leaves the tree and the other device's disk", async () => {
 		const hub = new Hub();
 		const a = await device(hub, { "weg.md": "x" });
