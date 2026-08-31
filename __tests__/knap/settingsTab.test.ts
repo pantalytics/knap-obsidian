@@ -126,6 +126,8 @@ describe("the beta's settings screen", () => {
 	it("names the linked vault, and offers unlink beside it", () => {
 		const rows = tabFor({ signedIn: true, linked: { id: "v1", name: "Pantalytics_v03" } });
 		expect(rows.map((r) => r.desc).join(" ")).toContain("Pantalytics_v03");
+		// A person deleting a note is entitled to know it goes on both sides.
+		expect(rows.map((r) => r.desc).join(" ")).toContain("delete here");
 		expect(rows.flatMap((r) => r.buttons)).toContain("Unlink");
 		expect(rows.map((r) => r.desc).join(" ")).toContain("Nothing is deleted");
 	});

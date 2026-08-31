@@ -68,6 +68,27 @@ describe("TreeDoc", () => {
 		expect(treeB.docIdFor("van-a.md")).toBe(idA);
 	});
 
+	it("a folder takes the notes under it out of the tree, and nothing else", () => {
+		const tree = new TreeDoc(new Y.Doc());
+		const een = tree.ensureNote("Map/een.md");
+		tree.ensureNote("Map/diep/twee.md");
+		tree.ensureNote("Mapje/anders.md");
+		tree.ensureNote("los.md");
+
+		const gone = tree.removeUnder("Map");
+
+		expect(gone).toContain(een);
+		expect(gone).toHaveLength(2);
+		expect([...tree.entries().keys()].sort()).toEqual(["Mapje/anders.md", "los.md"]);
+	});
+
+	it("there is no deleting the vault itself", () => {
+		const tree = new TreeDoc(new Y.Doc());
+		tree.ensureNote("los.md");
+		expect(tree.removeUnder("")).toEqual([]);
+		expect(tree.entries().size).toBe(1);
+	});
+
 	it("never lets a path leave the vault", () => {
 		const tree = new TreeDoc(new Y.Doc());
 		expect(() => tree.ensureNote("../buiten.md")).toThrow(/never leaves/);
