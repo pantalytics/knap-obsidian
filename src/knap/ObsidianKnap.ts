@@ -18,6 +18,7 @@ import type { CloudVault } from "./KnapServer";
 import { KnapSync } from "./KnapSync";
 import type { KnapLink } from "./KnapSync";
 import { ObsidianFileStore } from "./ObsidianFileStore";
+import { ObsidianSeenTree } from "./ObsidianSeenTree";
 import { KnapSettingsTab, signOutNotice } from "./KnapSettingsTab";
 import { SIGNIN_ACTION } from "./SignInFlow";
 import { obsidianFetch } from "./obsidianFetch";
@@ -75,6 +76,12 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 		load: () => host.getKnapLink(),
 		save: (value) => host.saveKnapLink(value),
 		onRefused: (path, reason) => new Notice(`${path}: ${reason}`),
+		makeSeen: (cloudVaultId) =>
+			new ObsidianSeenTree(
+				host.app.vault.adapter,
+				`${host.app.vault.configDir}/plugins/${host.manifest.id}/knap-seen.json`,
+				cloudVaultId,
+			),
 	});
 
 	const signIn = () => sync.signIn((url) => window.open(url));
@@ -149,9 +156,18 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 		},
 	});
 
-	// A vault that was linked before this start comes back up on its own.
-	void sync.start().catch(() => {
-		new Notice("Knap could not reach your cloud vault. It will retry when you sign in again.");
+	// A vault that was linked before this start comes back up on its own,
+	// and not one moment before the layout is ready. The first thing the
+	// binding does is ask Obsidian which notes this vault holds, and a vault
+	// that has not finished loading answers that with too few. Since a note
+	// missing from disk is now read as a note somebody deleted, starting
+	// early would take the rest of the vault out of the cloud with it.
+	host.app.workspace.onLayoutReady(() => {
+		void sync.start().catch(() => {
+			new Notice(
+				"Knap could not reach your cloud vault. It will retry when you sign in again.",
+			);
+		});
 	});
 	return sync;
 }

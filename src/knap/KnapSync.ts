@@ -14,6 +14,12 @@
  * settings row that says this vault syncs with something it can no longer
  * reach, and that is how a device ends up showing somebody else's folders.
  *
+ * Unlink and sign out also throw away what this device remembered of the
+ * cloud vault's tree. Both say on screen that nothing is deleted anywhere,
+ * and a kept record would make a later relink start by deleting whatever
+ * was removed here in between. No memory means no deletions, which is what
+ * linking has always done.
+ *
  * Persistence goes through two callbacks rather than a settings object, so
  * the host (Obsidian's data.json in production, a dict in tests) stays out
  * of the engine.
@@ -21,7 +27,7 @@
 
 import type { AttachmentTransport, Refusal } from "./AttachmentBinding";
 import { AttachmentBinding } from "./AttachmentBinding";
-import type { FileStore } from "./VaultBinding";
+import type { FileStore, SeenTree } from "./VaultBinding";
 import { VaultBinding } from "./VaultBinding";
 import type { CloudVault, Fetch } from "./KnapServer";
 import { KnapServer } from "./KnapServer";
@@ -50,6 +56,8 @@ export interface KnapSyncOptions {
 	 * is never told will find out when the photo is missing on their phone.
 	 */
 	onRefused?: Refusal;
+	/** Where this device remembers a cloud vault's tree, if anywhere. */
+	makeSeen?: (cloudVaultId: string) => SeenTree;
 }
 
 export class KnapSync {
@@ -118,6 +126,7 @@ export class KnapSync {
 	/** End the link. Stops the syncing, deletes nothing on either side. */
 	async unlink(): Promise<void> {
 		this.stop();
+		await this.forgetSeen();
 		const stored = this.options.load();
 		if (stored) {
 			await this.options.save({ ...stored, cloudVaultId: "", cloudVaultName: "" });
@@ -137,6 +146,7 @@ export class KnapSync {
 	async signOut(): Promise<{ endedRemotely: boolean }> {
 		this.stop();
 		this.flow.cancel(new Error("Signed out before this sign-in finished."));
+		await this.forgetSeen();
 		const stored = this.options.load();
 		let endedRemotely = true;
 		if (stored?.token) {
@@ -166,7 +176,12 @@ export class KnapSync {
 			this.options.deviceName,
 			this.options.webSocket,
 		);
-		this.binding = new VaultBinding(this.options.files, this.client);
+		this.binding = new VaultBinding(
+			this.options.files,
+			this.client,
+			undefined,
+			this.options.makeSeen?.(stored.cloudVaultId) ?? null,
+		);
 		this.attachments = new AttachmentBinding(
 			this.options.files,
 			this.client,
@@ -188,6 +203,22 @@ export class KnapSync {
 			remove: (path) => server.deleteFile(token, vaultId, path),
 			limits: () => server.limits(token),
 		};
+	}
+
+	/**
+	 * Forget the tree this device remembered. Never fatal: the caller is
+	 * unlinking or signing out, and a record that outlives it costs a relink
+	 * that deletes nothing, which is the same thing the record not existing
+	 * would have done.
+	 */
+	private async forgetSeen(): Promise<void> {
+		const id = this.options.load()?.cloudVaultId;
+		if (!id || !this.options.makeSeen) return;
+		try {
+			await this.options.makeSeen(id).forget();
+		} catch {
+			// Nothing to say and nothing to do: see above.
+		}
 	}
 
 	stop(): void {

@@ -242,11 +242,23 @@ export class AttachmentBinding {
 		await this.removeQuietly(from);
 	}
 
-	/** A local delete: the entry goes, and the bytes follow it. */
+	/**
+	 * A local delete: the entry goes, and the bytes follow it.
+	 *
+	 * The path may be a folder rather than a file. Obsidian's delete names
+	 * the folder and not what was in it, so the attachments underneath have
+	 * to be found here or they stay in the map and come back down onto the
+	 * disk they were just deleted from.
+	 */
 	private async forget(path: string): Promise<void> {
 		const tree = this.docs.tree();
-		if (!tree.removeAttachment(path)) return; // never ours
-		await this.removeQuietly(path);
+		if (tree.removeAttachment(path)) {
+			await this.removeQuietly(path);
+			return;
+		}
+		for (const gone of tree.removeAttachmentsUnder(path)) {
+			await this.removeQuietly(gone);
+		}
 	}
 
 	// -- remote to local ------------------------------------------------------

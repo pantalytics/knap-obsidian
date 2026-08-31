@@ -268,6 +268,37 @@ describe("a delete and a rename", () => {
 		bob.binding.stop();
 	});
 
+	it("takes the photos in a deleted folder with it", async () => {
+		// Obsidian's delete names the folder, not what was in it. An
+		// attachment left in the map comes back down onto the disk it was
+		// just deleted from, which is the note-side bug #116 fixed, in the
+		// half that ships here.
+		const hub = new Hub();
+		const transport = new MemoryTransport();
+		const alice = await device(hub, transport);
+		const bob = await device(hub, transport);
+
+		await alice.files.writeBinary("Vakantie/een.png", bytes("first"));
+		await alice.files.writeBinary("Vakantie/twee.png", bytes("second"));
+		await alice.files.writeBinary("los.png", bytes("elsewhere"));
+		await settle(alice, bob);
+
+		// The folder goes, and the files under it go with it, exactly as
+		// Obsidian reports it: one delete naming the folder.
+		alice.files.blobs.delete("Vakantie/een.png");
+		alice.files.blobs.delete("Vakantie/twee.png");
+		alice.files.emit({ type: "delete", path: "Vakantie" });
+		await settle(alice, bob);
+
+		expect(transport.stored.has("Vakantie/een.png")).toBe(false);
+		expect(transport.stored.has("Vakantie/twee.png")).toBe(false);
+		expect(bob.files.blobs.has("Vakantie/een.png")).toBe(false);
+		// And nothing outside the folder is touched.
+		expect(textOf(bob.files.blobs.get("los.png") as ArrayBuffer)).toBe("elsewhere");
+		alice.binding.stop();
+		bob.binding.stop();
+	});
+
 	it("moves the bytes, because the server keys an attachment by its path", async () => {
 		const hub = new Hub();
 		const transport = new MemoryTransport();

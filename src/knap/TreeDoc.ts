@@ -154,6 +154,31 @@ export class TreeDoc {
 	}
 
 	/**
+	 * Every attachment under a folder, gone, in one transaction.
+	 *
+	 * `removeUnder`'s twin, and needed for the same reason: a folder full of
+	 * photos deletes as one event naming the folder, and attachments left in
+	 * the map come back down onto the disk they were just deleted from.
+	 * Returns the paths that left, so the caller can take their bytes off the
+	 * server too.
+	 */
+	removeAttachmentsUnder(folder: string): string[] {
+		const clean = normalize(folder);
+		if (!clean) return [];
+		const prefix = `${clean}/`;
+		const gone: string[] = [];
+		this.doc.transact(() => {
+			for (const path of [...this.attachmentMap.keys()]) {
+				if (path.startsWith(prefix)) {
+					this.attachmentMap.delete(path);
+					gone.push(path);
+				}
+			}
+		});
+		return gone;
+	}
+
+	/**
 	 * Watch the attachment map. An entry whose hash changed counts as both
 	 * removed and added, so a caller that downloads the added half and deletes
 	 * the removed half has to check for the path in both, exactly as it does
@@ -175,6 +200,32 @@ export class TreeDoc {
 		};
 		this.attachmentMap.observe(observer);
 		return () => this.attachmentMap.unobserve(observer);
+	}
+
+	/**
+	 * Every note under a folder leaves the tree with the folder, in one
+	 * transaction. Deleting a folder in Obsidian deletes the notes in it,
+	 * and the delete that arrives names the folder rather than each note,
+	 * so without this the notes would stay in the tree and come back down
+	 * onto the disk they were just deleted from.
+	 *
+	 * Returns the document ids that left, so the caller can stop watching
+	 * them. An empty prefix removes nothing: there is no deleting the vault.
+	 */
+	removeUnder(folder: string): string[] {
+		const clean = normalize(folder);
+		if (!clean) return [];
+		const prefix = `${clean}/`;
+		const gone: string[] = [];
+		this.doc.transact(() => {
+			for (const [path, docId] of [...this.files.entries()]) {
+				if (path.startsWith(prefix)) {
+					this.files.delete(path);
+					gone.push(docId);
+				}
+			}
+		});
+		return gone;
 	}
 
 	/**

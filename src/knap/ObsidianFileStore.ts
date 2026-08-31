@@ -8,9 +8,13 @@
  * not have to tell them apart. And Obsidian's `create` events replay for
  * every existing file at vault load, so the adapter starts listening only
  * when told, after the link-time reconcile has the tree.
+ *
+ * One event is not a note and is passed on anyway: deleting a folder
+ * deletes the notes in it, and Obsidian's delete names the folder. The
+ * binding takes every note under that path out of the tree.
  */
 
-import { FileManager, normalizePath, TAbstractFile, TFile, Vault } from "obsidian";
+import { FileManager, normalizePath, TAbstractFile, TFile, TFolder, Vault } from "obsidian";
 
 import { isNote } from "./TreeDoc";
 import type { FileEvent, FileStore } from "./VaultBinding";
@@ -109,9 +113,16 @@ export class ObsidianFileStore implements FileStore {
 				callback({ type, path: file.path, oldPath });
 			}
 		};
+		const onDelete = (file: TAbstractFile) => {
+			if (file instanceof TFolder) {
+				callback({ type: "delete", path: file.path });
+				return;
+			}
+			toEvent("delete")(file);
+		};
 		const created = this.vault.on("create", toEvent("create"));
 		const modified = this.vault.on("modify", toEvent("modify"));
-		const deleted = this.vault.on("delete", toEvent("delete"));
+		const deleted = this.vault.on("delete", onDelete);
 		const renamed = this.vault.on("rename", toEvent("rename"));
 		return () => {
 			this.vault.offref(created);
