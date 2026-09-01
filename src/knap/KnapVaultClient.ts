@@ -77,6 +77,11 @@ export interface PinnedNote extends NoteHandle {
  */
 export type WebSocketImpl = { new (url: string | URL, protocols?: string | string[]): unknown };
 
+/** Who are you: this credential opens nothing here any more. */
+export const CLOSE_UNAUTHENTICATED = 4401;
+/** Not your vault: the credential is fine, the membership has gone. */
+export const CLOSE_FORBIDDEN = 4403;
+
 interface PoolEntry {
 	doc: Y.Doc;
 	provider: WebsocketProvider;
@@ -117,6 +122,7 @@ export class KnapVaultClient {
 	/** Work waiting for a socket to come free. */
 	private waiting: (() => void)[] = [];
 	private closeWatchers: ((docId: string) => void)[] = [];
+	private refusedWith = 0;
 
 	constructor(
 		private readonly server: KnapServer,
@@ -124,7 +130,19 @@ export class KnapVaultClient {
 		private readonly token: string,
 		private readonly deviceName: string,
 		private readonly webSocket?: WebSocketImpl,
+		private readonly onRefused?: (code: number) => void,
 	) {}
+
+	/**
+	 * The close code the server refused us with, or 0 while we are welcome.
+	 *
+	 * Sticky on purpose. A refusal is a fact about this link rather than about
+	 * the socket that carried it, and the screen asks long after that socket
+	 * has gone.
+	 */
+	get refused(): number {
+		return this.refusedWith;
+	}
 
 	/** The vault's tree, connected. The first call opens the socket. */
 	tree(): TreeDoc {
@@ -265,6 +283,26 @@ export class KnapVaultClient {
 		this.wake();
 	}
 
+	/**
+	 * Stop knocking, and tell whoever is listening why.
+	 *
+	 * `destroy` does the whole teardown already: it bars new sockets, closes
+	 * the open ones, fails every wait for a first sync that is no longer
+	 * coming, and wakes whatever was queued for a turn in the pool. Without
+	 * that last part a device taken out of a vault mid-edit froze rather than
+	 * stopped, because the binding's queue is serial and was waiting on a sync
+	 * that had lost its socket.
+	 *
+	 * Once only: a vault with the tree and eight notes open produces nine of
+	 * these in the same instant.
+	 */
+	private refuse(code: number): void {
+		if (this.refusedWith) return;
+		this.refusedWith = code;
+		this.destroy();
+		this.onRefused?.(code);
+	}
+
 	// -- the pool ------------------------------------------------------------
 
 	private async acquire(docId: string): Promise<PoolEntry> {
@@ -363,6 +401,18 @@ export class KnapVaultClient {
 			disableBc: true,
 		});
 		provider.awareness.setLocalStateField("device", { name: this.deviceName });
+
+		// A refusal, not an outage. y-websocket treats every close the same and
+		// reconnects with backoff forever, which for somebody who was taken out
+		// of a vault is a device that goes on knocking and never says so. The
+		// close code is the only thing that tells the two apart, and nothing
+		// here read it until two people shared a vault.
+		provider.on("connection-close", (event: unknown) => {
+			const code = (event as { code?: number } | null)?.code ?? 0;
+			if (code === CLOSE_UNAUTHENTICATED || code === CLOSE_FORBIDDEN) {
+				this.refuse(code);
+			}
+		});
 
 		let failSynced: (error: Error) => void = () => undefined;
 		const synced = new Promise<void>((resolve, reject) => {

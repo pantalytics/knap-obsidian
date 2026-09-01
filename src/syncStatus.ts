@@ -85,6 +85,16 @@ export interface VaultState {
 	connected?: boolean;
 	/** Pieces of work that failed and stayed failed. */
 	stuck?: number;
+	/**
+	 * The server refused this device the vault: taken out of it, or the
+	 * vault is gone.
+	 *
+	 * Not a sixth word. The rule for adding one is that the reader's next
+	 * move has to be different, and this reader's move is the one Problem
+	 * already covers: go and do something, because waiting will not fix it.
+	 * What differs is the sentence beside the word, which the host says.
+	 */
+	lost?: boolean;
 }
 
 /**
@@ -95,10 +105,16 @@ export interface VaultState {
  * **Offline beats Problem**: a device with no connection has everything
  * stuck, and blaming the notes for what the tunnel did sends somebody
  * looking in the wrong place.
+ *
+ * **Lost beats Offline**, for the same reason inverted. A device that was
+ * taken out of a vault has no socket either, and it never will have one
+ * again: saying Offline would send somebody to check their wifi over a
+ * membership somebody else ended.
  */
 export function syncWord(state: VaultState): SyncWord {
 	if (!state.signedIn) return SIGNED_OUT;
 	if (state.paused) return PAUSED;
+	if (state.lost) return PROBLEM;
 	if (state.connected === false) return OFFLINE;
 	if ((state.stuck ?? 0) > 0) return PROBLEM;
 	if (state.syncing) return SYNCING;

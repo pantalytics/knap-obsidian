@@ -33,8 +33,13 @@ import { readCursors } from "./NoteCursors";
 export interface LiveNoteHandle {
 	text: Y.Text;
 	awareness: Awareness;
-	/** What this device calls itself, which is what a caret is labelled with. */
-	deviceName: string;
+	/**
+	 * What a caret in this note is labelled with: the person at this device,
+	 * falling back to the device's own name when the server has no address
+	 * for them. It said the device name and only the device name until two
+	 * people shared a vault and a caret named a machine.
+	 */
+	who: string;
 	/** Hand the note back to the file binding. */
 	release: () => void;
 }
@@ -163,7 +168,7 @@ class KnapEditorPlugin implements PluginValue {
 		if (!note) return;
 		this.path = path;
 		this.note = note;
-		this.live = new LiveNote(this.view, note.text, note.awareness, note.deviceName);
+		this.live = new LiveNote(this.view, note.text, note.awareness, note.who);
 		note.awareness.on("change", this.onAwareness);
 		this.refresh();
 	}

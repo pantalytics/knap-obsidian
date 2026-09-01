@@ -80,10 +80,10 @@ export class LiveNote {
 		private readonly view: EditorLike,
 		private readonly text: Y.Text,
 		private readonly awareness: Awareness,
-		private readonly deviceName: string,
+		private readonly who: string,
 	) {
 		this.adopt();
-		publishUser(this.awareness, this.deviceName);
+		publishUser(this.awareness, this.who);
 		this.observer = (event, transaction) => this.onDocumentChange(event, transaction);
 		this.text.observe(this.observer);
 	}

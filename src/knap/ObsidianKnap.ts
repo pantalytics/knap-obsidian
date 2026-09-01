@@ -163,6 +163,17 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 		load: () => host.getKnapLink(),
 		save: (value) => host.saveKnapLink(value),
 		onRefused: (path, reason) => new Notice(`${path}: ${reason}`),
+		// Somebody took this account out of the vault, or deleted it. Said
+		// once, and said plainly: the sentence has to answer "where did my
+		// notes go" before somebody goes looking for them, because the honest
+		// answer is that they did not go anywhere.
+		onLostVault: (vaultName) =>
+			new Notice(
+				`This vault has stopped syncing with ${vaultName}. Your notes are ` +
+					`all still here. Ask whoever looks after ${vaultName} to add you ` +
+					`again, or unlink in settings.`,
+				0,
+			),
 		makeSeen: (cloudVaultId) =>
 			new ObsidianSeenTree(
 				host.app.vault.adapter,
