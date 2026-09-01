@@ -9,6 +9,7 @@
 
 import {
 	KnapSettingsTab,
+	hasFold,
 	hasRetry,
 	signOutNotice,
 	statusFacts,
@@ -118,7 +119,7 @@ jest.mock("obsidian", () => {
 			public plugin: unknown,
 		) {}
 	}
-	return { Setting, PluginSettingTab, Notice: class {}, App: class {} };
+	return { Setting, PluginSettingTab, Notice: class {}, App: class {}, setIcon: () => {} };
 });
 
 interface FakeState {
@@ -291,7 +292,43 @@ describe("the bar", () => {
 		});
 		expect(find(container, "knap-status-word")?.text).toBe("Up to date");
 		expect(find(container, "knap-dot-ok")).toBeDefined();
-		expect(find(container, "knap-status-detail")?.text).toBe("Work notes · 1,202 notes");
+		expect(find(container, "knap-status-vault")?.text).toBe("Work notes");
+		expect(find(container, "knap-status-count")?.text).toBe("1,202 notes");
+	});
+
+	it("keeps the name and the count apart, because they shrink differently", () => {
+		// One string could only be cut from the end, which on a phone is the
+		// count: the half somebody opened the screen for (#125).
+		const { container } = drawFor({
+			signedIn: true,
+			linked: { id: "v1", name: "260812_RH_Obsidian_vault" },
+			status: { word: UP_TO_DATE, dot: "ok", vaultName: "260812_RH_Obsidian_vault", notes: 1 },
+		});
+		expect(find(container, "knap-status-count")?.text).toBe("1 note");
+	});
+
+	it("does not open at all when the fold would be empty", () => {
+		// Up to date carries no instruction, and with nothing stuck there is
+		// nothing behind the head. A head that opens onto an empty strip is
+		// worse than a head that does not open (#125).
+		const { container } = drawFor({
+			signedIn: true,
+			linked: { id: "v1", name: "Work notes" },
+			status: { word: UP_TO_DATE, dot: "ok", vaultName: "Work notes", notes: 1202 },
+		});
+		const head = find(container, "knap-status-head");
+		expect(head?.getAttribute("aria-expanded")).toBeNull();
+		expect(head?.listeners).toEqual([]);
+		expect(find(container, "knap-status-chevron")).toBeUndefined();
+	});
+
+	it("wears a chevron when it opens, because a phone has no hover to find it with", () => {
+		const { container } = drawFor({
+			signedIn: true,
+			linked: { id: "v1", name: "Work notes" },
+			status: { word: SYNCING, dot: "working", vaultName: "Work notes", notes: 3 },
+		});
+		expect(find(container, "knap-status-chevron")).toBeDefined();
 	});
 
 	it("starts folded, and opens when the head is pressed", () => {
@@ -339,19 +376,25 @@ describe("what the fold holds", () => {
 		expect(statusFacts({ ...baseStatus() } as never)).toEqual([]);
 	});
 
-	it("groups the note count the way the rest of the screen does", () => {
+	it("does not repeat the vault or the count the head already carries", () => {
+		// Three copies of one name on a phone screen was #125: in the head,
+		// behind the fold, and on the Cloud vault row underneath.
 		expect(
 			statusFacts({ ...baseStatus(), vaultName: "Work notes", notes: 1202 } as never),
-		).toEqual([
-			["Cloud vault", "Work notes"],
-			["Notes", "1,202"],
-		]);
+		).toEqual([]);
 	});
 
 	it("counts one stuck change as a change, not as changes", () => {
 		expect(statusFacts({ ...baseStatus(), problems: 1 } as never)).toEqual([
 			["Could not sync", "1 change"],
 		]);
+	});
+
+	it("folds nothing away on the happy path, and something under every other word", () => {
+		expect(hasFold({ ...baseStatus(), word: UP_TO_DATE, notes: 1202 } as never)).toBe(false);
+		expect(hasFold({ ...baseStatus(), word: UP_TO_DATE, problems: 2 } as never)).toBe(true);
+		expect(hasFold({ ...baseStatus(), word: SYNCING } as never)).toBe(true);
+		expect(hasFold({ ...baseStatus(), word: OFFLINE } as never)).toBe(true);
 	});
 
 	it("offers the button only for the two words a person can act on", () => {
