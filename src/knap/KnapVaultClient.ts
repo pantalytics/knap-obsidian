@@ -59,6 +59,23 @@ export class KnapVaultClient {
 		return this.openDoc(TREE_DOC_ID).synced;
 	}
 
+	/**
+	 * Whether this device can reach the vault right now.
+	 *
+	 * Read off the tree's socket rather than a flag of our own, because the
+	 * tree is open for as long as the link is and y-websocket already knows.
+	 * A second flag would be a second thing to keep true. Nothing open yet
+	 * counts as not connected: the status is asked before start() finishes.
+	 */
+	get connected(): boolean {
+		return this.open.get(TREE_DOC_ID)?.provider.wsconnected ?? false;
+	}
+
+	/** Whether the tree has finished its first exchange with the server. */
+	get settled(): boolean {
+		return this.open.get(TREE_DOC_ID)?.provider.synced ?? false;
+	}
+
 	/** A note's live document, by id. Reuses an open socket. */
 	note(docId: string): OpenDoc {
 		return this.openDoc(docId);

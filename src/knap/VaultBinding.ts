@@ -91,6 +91,7 @@ export class VaultBinding {
 	private stopTreeEvents: (() => void) | null = null;
 	private noteObservers = new Map<string, () => void>();
 	private queue: Promise<void> = Promise.resolve();
+	private failures = 0;
 
 	constructor(
 		private readonly files: FileStore,
@@ -147,8 +148,32 @@ export class VaultBinding {
 		return this.enqueue(async () => undefined);
 	}
 
+	/**
+	 * How many pieces of work failed since this binding started.
+	 *
+	 * The status bar needs to be able to say *Problem*, and the only place
+	 * that knows a push or a bind went wrong is the queue every one of them
+	 * runs through. Counting here rather than at each call site means a new
+	 * kind of work is counted the day it is added, without anybody
+	 * remembering to.
+	 */
+	get problems(): number {
+		return this.failures;
+	}
+
 	private enqueue(work: () => Promise<void>): Promise<void> {
-		this.queue = this.queue.then(work, work);
+		const counted = async () => {
+			try {
+				await work();
+			} catch (error) {
+				this.failures += 1;
+				// Rethrown, not swallowed: start() reports a link that could
+				// not come up, and the queue's own rejection handler below is
+				// what keeps one failure from stopping the next unit.
+				throw error;
+			}
+		};
+		this.queue = this.queue.then(counted, counted);
 		return this.queue;
 	}
 

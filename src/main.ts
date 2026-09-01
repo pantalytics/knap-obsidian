@@ -132,7 +132,9 @@ import {
 	type VaultSyncWork,
 } from "./syncNotices";
 import {
+	OFFLINE,
 	PAUSED,
+	PROBLEM,
 	SIGNED_OUT,
 	SYNCING,
 	UP_TO_DATE,
@@ -1090,7 +1092,9 @@ export default class Live extends Plugin {
 				[SYNCING]: "Your vault is syncing.",
 				[UP_TO_DATE]: "Your vault is up to date.",
 				[PAUSED]: "Sync is paused on this device.",
+				[OFFLINE]: "Knap is out of reach. Your notes are safe here.",
 				[SIGNED_OUT]: "Sign in to resume sync.",
+				[PROBLEM]: "Something could not sync. Open Knap in settings.",
 			};
 			new Notice(`Knap updated to ${current}. ${lines[reading.word]}`);
 		}, 3000);
@@ -1598,6 +1602,21 @@ export default class Live extends Plugin {
 	 * to date over 2,567 notes that had no bodies at all.
 	 */
 	public readVaultStatus(): VaultReading {
+		// The rebuilt client, when this build has one, is the whole truth
+		// about this vault: it holds the link, the socket and the queue.
+		// Reading it here rather than beside it is what keeps the corner of
+		// the window and the Knap screen from wording one vault two ways.
+		if (this.knapSync) {
+			const status = this.knapSync.status();
+			return {
+				word: status.word,
+				dot: status.dot,
+				done: status.notes,
+				total: 0,
+				counts: status.problems > 0 ? String(status.problems) : "",
+				progress: undefined,
+			};
+		}
 		const signedIn = this.loginManager?.isLoggedInToServer?.(KNAP_SERVER_ID) ?? false;
 		return vaultReading(
 			signedIn,

@@ -14,6 +14,8 @@
 
 import { Notice, Platform, Plugin, SuggestModal } from "obsidian";
 
+import { KNAP_PANEL_URL } from "../RelayOnPremConfig";
+
 import type { CloudVault } from "./KnapServer";
 import { KnapSync } from "./KnapSync";
 import type { KnapLink } from "./KnapSync";
@@ -30,29 +32,113 @@ export interface KnapHost extends Plugin {
 	saveKnapLink(value: KnapLink | null): Promise<void>;
 }
 
-class CloudVaultPickModal extends SuggestModal<CloudVault> {
+/**
+ * What the picker offers: the account's cloud vaults, and making one.
+ *
+ * Making one is in the list rather than beside it because it is the answer
+ * to the same question, and a person with no cloud vaults yet was previously
+ * told *No cloud vaults yet, make one in the Knap panel first* and left in
+ * Obsidian with nothing to press. It sits last, under everything real, so it
+ * is a way out rather than a competing choice.
+ */
+export type VaultChoice = { kind: "vault"; vault: CloudVault } | { kind: "new" };
+
+/** The one entry that is not a vault. Exported so tests can name it. */
+export const NEW_VAULT_CHOICE: VaultChoice = { kind: "new" };
+
+/**
+ * Filter the vaults by what was typed, and always end with the way out.
+ *
+ * The new-vault row survives every query on purpose. Somebody typing the name
+ * of a vault that does not exist yet is exactly the person who needs it, and a
+ * list that empties out under them answers with nothing at all.
+ */
+export function vaultChoices(vaults: CloudVault[], query: string): VaultChoice[] {
+	const needle = query.toLowerCase();
+	const matches = vaults.filter((vault) => vault.name.toLowerCase().includes(needle));
+	return [...matches.map((vault) => ({ kind: "vault" as const, vault })), NEW_VAULT_CHOICE];
+}
+
+/**
+ * What the box at the top says while the list is being fetched, and after.
+ *
+ * The state of the fetch goes in the placeholder rather than into the list,
+ * because a row that says *Asking Knap* is a row somebody can select. This
+ * way there is never an unselectable entry, and the list is only ever things
+ * that can be chosen.
+ */
+export function pickerPlaceholder(state: "loading" | "ready" | "failed"): string {
+	switch (state) {
+		case "loading":
+			return "Asking Knap...";
+		case "failed":
+			return "Could not reach Knap. Your notes are safe here.";
+		default:
+			return "Search cloud vaults...";
+	}
+}
+
+class CloudVaultPickModal extends SuggestModal<VaultChoice> {
+	private vaults: CloudVault[] = [];
+	private state: "loading" | "ready" | "failed" = "loading";
+
 	constructor(
 		host: KnapHost,
-		private readonly vaults: CloudVault[],
+		private readonly list: () => Promise<CloudVault[]>,
 		private readonly onPick: (vault: CloudVault) => void,
+		private readonly onMake: () => void,
 	) {
 		super(host.app);
-		this.setPlaceholder("Which cloud vault syncs with this one?");
+		this.setPlaceholder(pickerPlaceholder("loading"));
 	}
 
-	getSuggestions(query: string): CloudVault[] {
-		const needle = query.toLowerCase();
-		return this.vaults.filter((vault) => vault.name.toLowerCase().includes(needle));
+	/**
+	 * The list is fetched every time the picker opens, and that is the whole
+	 * answer to the gap between the two windows: somebody who has just made a
+	 * cloud vault in the browser closes this, opens it again, and it is there.
+	 * No refresh button, no polling, no message telling them to reopen it.
+	 */
+	onOpen(): void {
+		super.onOpen();
+		this.list().then(
+			(vaults) => {
+				this.vaults = vaults;
+				this.settle("ready");
+			},
+			() => this.settle("failed"),
+		);
 	}
 
-	renderSuggestion(vault: CloudVault, el: HTMLElement): void {
+	private settle(state: "loading" | "ready" | "failed"): void {
+		this.state = state;
+		this.setPlaceholder(pickerPlaceholder(state));
+		// Obsidian rebuilds the list from the input's own event, so this is
+		// how a suggest modal redraws without reaching into its internals.
+		this.inputEl.dispatchEvent(new Event("input"));
+	}
+
+	getSuggestions(query: string): VaultChoice[] {
+		return vaultChoices(this.state === "ready" ? this.vaults : [], query);
+	}
+
+	renderSuggestion(choice: VaultChoice, el: HTMLElement): void {
+		if (choice.kind === "new") {
+			el.addClass("knap-pick-new");
+			el.createDiv({ text: "New cloud vault" });
+			el.createDiv({ cls: "knap-pick-aside", text: "opens Knap in your browser" });
+			return;
+		}
 		// The name and nothing else. There is one kind of person in a vault,
 		// so there is no access level to qualify it with.
-		el.createDiv({ text: vault.name });
+		el.createDiv({ text: choice.vault.name });
 	}
 
-	onChooseSuggestion(vault: CloudVault): void {
-		this.onPick(vault);
+	onChooseSuggestion(choice: VaultChoice): void {
+		if (choice.kind === "new") {
+			this.onMake();
+			return;
+		}
+		this.onPick(choice.vault);
 	}
 }
 
@@ -78,25 +164,35 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 
 	const signIn = () => sync.signIn((url) => window.open(url));
 
+	/**
+	 * Open the picker, and let it do the asking.
+	 *
+	 * The fetch used to happen out here, which meant an account with no cloud
+	 * vaults and a laptop with no connection both ended as a notice in the
+	 * corner with nothing to press. Inside, the same two cases are a list with
+	 * a way out and a line in the search box.
+	 *
+	 * The promise settles when the person has finished with the picker one way
+	 * or another, including by closing it, so the screen redraws either way.
+	 */
 	const pickAndLink = () =>
-		sync.listVaults().then(
-			(vaults) =>
-				new Promise<void>((resolve, reject) => {
-					if (!vaults.length) {
-						reject(new Error("No cloud vaults yet. Make one in the Knap panel first."));
-						return;
-					}
-					new CloudVaultPickModal(host, vaults, (vault) => {
-						sync
-							.link(vault)
-							.then(() => {
-								new Notice(`Linked. This vault now syncs with ${vault.name}.`);
-								resolve();
-							})
-							.catch(reject);
-					}).open();
-				}),
-		);
+		new Promise<void>((resolve, reject) => {
+			new CloudVaultPickModal(
+				host,
+				() => sync.listVaults(),
+				(vault) => {
+					sync.link(vault).then(() => {
+						new Notice(`Linked. This vault now syncs with ${vault.name}.`);
+						resolve();
+					}, reject);
+				},
+				() => {
+					window.open(new URL("/vaults", KNAP_PANEL_URL).toString());
+					new Notice("Make one in your browser, then choose it here.");
+					resolve();
+				},
+			).open();
+		});
 
 	host.addSettingTab(new KnapSettingsTab(host, sync, { signIn, pickAndLink }, serverUrl));
 
@@ -117,14 +213,14 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 		name: "Sign in (beta)",
 		callback: () => {
 			signIn()
-				.then(() => new Notice("Signed in. Now link this vault to a cloud vault."))
+				.then(() => new Notice("Signed in. Now link this vault."))
 				.catch((error: Error) => new Notice(error.message));
 		},
 	});
 
 	host.addCommand({
 		id: "knap-beta-link-vault",
-		name: "Link this vault to a cloud vault (beta)",
+		name: "Link this vault (beta)",
 		callback: () => {
 			pickAndLink().catch((error: Error) => new Notice(error.message));
 		},

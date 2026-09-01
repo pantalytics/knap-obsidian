@@ -1,14 +1,16 @@
 /**
- * The four words, pinned.
+ * The words, pinned.
  *
- * The list lives in status.py in the admin repository and this side mirrors
- * it. These assertions are the same ones its tests make, deliberately: a
- * change on one side that does not land on the other fails here, which is the
- * only mechanism two repositories have for keeping one vocabulary.
+ * Pinned rather than merely used, because every screen reads this list and a
+ * word that quietly changes shape is a vault described two ways. Offline and
+ * Problem joined on 2026-09-01; the order they win in is the part worth
+ * testing, not the strings on their own.
  */
 
 import {
 	SYNC_WORDS,
+	OFFLINE,
+	PROBLEM,
 	SIGNED_OUT,
 	PAUSED,
 	SYNCING,
@@ -21,9 +23,16 @@ import {
 	syncWord,
 } from "../src/syncStatus";
 
-describe("the four words", () => {
-	test("there are four, and these are they", () => {
-		expect(SYNC_WORDS).toEqual(["Syncing", "Up to date", "Paused", "Signed out"]);
+describe("the words", () => {
+	test("these are they, in this order", () => {
+		expect(SYNC_WORDS).toEqual([
+			"Syncing",
+			"Up to date",
+			"Paused",
+			"Offline",
+			"Signed out",
+			"Problem",
+		]);
 	});
 
 	test("no account behind it is Signed out, whatever else is true", () => {
@@ -40,6 +49,44 @@ describe("the four words", () => {
 
 	test("nothing left to carry is Up to date", () => {
 		expect(syncWord({ signedIn: true, paused: false, syncing: false })).toBe(UP_TO_DATE);
+	});
+
+	test("no socket is Offline, and it beats the work that is stuck behind it", () => {
+		// A device in a tunnel has everything stuck. Calling that Problem
+		// sends somebody looking at their notes for what the tunnel did.
+		expect(
+			syncWord({
+				signedIn: true,
+				paused: false,
+				syncing: true,
+				connected: false,
+				stuck: 3,
+			}),
+		).toBe(OFFLINE);
+	});
+
+	test("connected and stuck is Problem, even while other notes move", () => {
+		expect(
+			syncWord({
+				signedIn: true,
+				paused: false,
+				syncing: true,
+				connected: true,
+				stuck: 1,
+			}),
+		).toBe(PROBLEM);
+	});
+
+	test("a caller that cannot tell about the socket is not treated as offline", () => {
+		// Left out, not false: a status that cries Offline because nobody
+		// asked is worse than one that says nothing.
+		expect(syncWord({ signedIn: true, paused: false, syncing: false })).toBe(UP_TO_DATE);
+	});
+
+	test("paused beats offline, because the person did it on purpose", () => {
+		expect(
+			syncWord({ signedIn: true, paused: true, syncing: false, connected: false }),
+		).toBe(PAUSED);
 	});
 
 	test("every word has a dot", () => {
@@ -80,6 +127,17 @@ describe("what differs between the screens, on purpose", () => {
 
 	test("up to date has nothing to instruct", () => {
 		expect(syncInstruction(UP_TO_DATE)).toBe("");
+	});
+
+	test("offline says the changes are safe, and problem says nothing was lost", () => {
+		expect(syncInstruction(OFFLINE).toLowerCase()).toContain("saved here");
+		expect(syncInstruction(PROBLEM).toLowerCase()).toContain("nothing was lost");
+	});
+
+	test("the two unhappy dots are shared, one per response", () => {
+		expect(syncDot(OFFLINE)).toBe(syncDot(PAUSED));
+		expect(syncDot(PROBLEM)).toBe(syncDot(SIGNED_OUT));
+		expect(syncDot(OFFLINE)).not.toBe(syncDot(PROBLEM));
 	});
 
 	test("no em-dashes in any of it", () => {
