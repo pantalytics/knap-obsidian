@@ -564,6 +564,33 @@
 	background: var(--background-modifier-hover);
 }
 
+/* The bar under the head, while a first fill is running.
+
+   Two pixels of fact, the same two the corner of the window draws, because a
+   person moves between the two in one sitting and a bar that changes shape
+   between them reads as two different measurements. It runs the whole width
+   here because this is the screen somebody watches on a phone, where there is
+   no corner of the window to watch instead. */
+.knap-status-track {
+	height: 2px;
+	background: var(--background-modifier-border);
+	overflow: hidden;
+}
+
+.knap-status-track > i {
+	display: block;
+	width: 0;
+	height: 100%;
+	background: var(--interactive-accent);
+	transition: width 240ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.knap-status-track > i {
+		transition: none;
+	}
+}
+
 .knap-status-word {
 	font-weight: var(--font-semibold);
 }

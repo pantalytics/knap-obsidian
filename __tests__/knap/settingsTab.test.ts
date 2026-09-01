@@ -34,6 +34,7 @@ interface FakeEl {
 	getAttribute(name: string): string | null;
 	addEventListener(name: string, run: () => void): void;
 	insertBefore(node: FakeEl, before: FakeEl): void;
+	empty(): void;
 }
 
 function el(cls = "", text = ""): FakeEl {
@@ -64,6 +65,11 @@ function el(cls = "", text = ""): FakeEl {
 			if (from >= 0) node.children.splice(from, 1);
 			const at = node.children.indexOf(before);
 			node.children.splice(at < 0 ? node.children.length : at, 0, child);
+		},
+		// Obsidian's own extension to HTMLElement. The status block is redrawn
+		// from scratch on every tick, so the fake has to be emptiable too.
+		empty: () => {
+			node.children.splice(0, node.children.length);
 		},
 	};
 	return node;
@@ -134,6 +140,8 @@ function baseStatus() {
 		vaultName: "",
 		notes: 0,
 		problems: 0,
+		done: 0,
+		total: 0,
 	};
 }
 
@@ -189,7 +197,7 @@ function drawWith(sync: ReturnType<typeof fakeSync>) {
 	);
 	tab.containerEl = container as never;
 	tab.display();
-	return { rows, container: container as unknown as FakeEl };
+	return { rows, container: container as unknown as FakeEl, tab };
 }
 
 function drawFor(state: FakeState) {
@@ -331,6 +339,110 @@ describe("the bar", () => {
 		find(container, "knap-status-retry")?.listeners.forEach((run) => run());
 		await Promise.resolve();
 		expect(sync.retried).toEqual(["retry"]);
+	});
+});
+
+/**
+ * The half of the screen a phone depends on. Obsidian has no status bar on
+ * mobile, so the count and the bar that live in the corner of a desktop
+ * window are not anywhere on a phone but here.
+ */
+describe("the bar, while a fill is running", () => {
+	const filling = {
+		signedIn: true,
+		linked: { id: "v1", name: "Work notes" },
+		status: {
+			word: SYNCING,
+			dot: "working",
+			vaultName: "Work notes",
+			notes: 290,
+			done: 290,
+			total: 2567,
+		},
+	};
+
+	it("says how far in notes, in the phrasing the corner of the window uses", () => {
+		const { container, tab } = drawFor(filling);
+		expect(find(container, "knap-status-detail")?.text).toBe("Work notes · 290 of 2,567");
+		tab.hide();
+	});
+
+	it("draws the track, filled to the whole percent", () => {
+		const { container, tab } = drawFor(filling);
+		const track = find(container, "knap-status-track");
+		expect(track).toBeDefined();
+		expect(track?.children[0]?.attrs.style).toBe("width: 11%");
+		tab.hide();
+	});
+
+	it("draws no track over a vault that is caught up", () => {
+		const { container, tab } = drawFor({
+			signedIn: true,
+			linked: { id: "v1", name: "Work notes" },
+			status: { word: UP_TO_DATE, dot: "ok", vaultName: "Work notes", notes: 2567 },
+		});
+		expect(find(container, "knap-status-track")).toBeUndefined();
+		tab.hide();
+	});
+
+	it("draws no track while there is nothing to count it against", () => {
+		// Between the link and the moment the pass knows how much there is.
+		// A bar against an unknown denominator is a spinner wearing a number.
+		const { container, tab } = drawFor({
+			signedIn: true,
+			linked: { id: "v1", name: "Work notes" },
+			status: { word: SYNCING, dot: "working", vaultName: "Work notes", total: 0 },
+		});
+		expect(find(container, "knap-status-track")).toBeUndefined();
+		tab.hide();
+	});
+});
+
+/**
+ * Drawn once, the screen froze on whatever was true the moment Settings was
+ * opened, which during a first fill is the one moment worth nothing.
+ */
+describe("the bar, a second later", () => {
+	it("repaints itself, and keeps the fold as it was left", () => {
+		jest.useFakeTimers();
+		try {
+			const moving = {
+				word: SYNCING as string,
+				dot: "working" as string,
+				vaultName: "Work notes",
+				notes: 0,
+				problems: 0,
+				done: 10,
+				total: 100,
+			};
+			const sync = {
+				signedIn: true,
+				linked: { cloudVaultId: "v1", cloudVaultName: "Work notes", token: "t" },
+				status: () => ({ ...moving }),
+				retry: async () => {},
+				unlink: async () => {},
+				signOut: async () => ({ endedRemotely: true }),
+			};
+			const { container, tab } = drawWith(sync as never);
+
+			find(container, "knap-status-head")?.listeners.forEach((run) => run());
+			expect(find(container, "knap-status-body")?.hidden).toBe(false);
+
+			moving.done = 90;
+			jest.advanceTimersByTime(1000);
+
+			expect(find(container, "knap-status-detail")?.text).toBe("Work notes · 90 of 100");
+			expect(find(container, "knap-status-body")?.hidden).toBe(false);
+
+			// And it stops when the screen is closed, rather than painting
+			// into a block Obsidian has already thrown away.
+			tab.hide();
+			moving.done = 95;
+			jest.advanceTimersByTime(1000);
+			expect(find(container, "knap-status-detail")?.text).toBe("Work notes · 90 of 100");
+		} finally {
+			jest.useRealTimers();
+		}
 	});
 });
 

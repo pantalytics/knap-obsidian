@@ -32,7 +32,15 @@
 
 import { Notice, type Plugin, PluginSettingTab, Setting } from "obsidian";
 
-import { OFFLINE, PROBLEM, SIGNED_OUT, syncInstruction } from "../syncStatus";
+import {
+	OFFLINE,
+	PROBLEM,
+	SIGNED_OUT,
+	SYNCING,
+	syncCounts,
+	syncInstruction,
+	syncProgress,
+} from "../syncStatus";
 import type { KnapStatus, KnapSync } from "./KnapSync";
 
 /**
@@ -90,6 +98,13 @@ export class KnapSettingsTab extends PluginSettingTab {
 	 * during onload, which took everything registered after that call with it,
 	 * the ribbon icon included.
 	 */
+	/** The status block, while this screen is on the display. */
+	private statusEl: HTMLElement | null = null;
+	/** Whether the fold is out. Kept here so a repaint does not close it. */
+	private open = false;
+	/** The repaint, while this screen is on the display. */
+	private ticking: number | null = null;
+
 	constructor(
 		plugin: Plugin,
 		private readonly sync: KnapSync,
@@ -101,6 +116,10 @@ export class KnapSettingsTab extends PluginSettingTab {
 
 	display(): void {
 		const { containerEl } = this;
+		// Every path below rebuilds the screen, and a tick left running would
+		// go on painting into the block the rebuild threw away.
+		this.stopTicking();
+		this.statusEl = null;
 		containerEl.empty();
 
 		// The server, once, quietly, where a plugin's own subtitle goes. It
@@ -192,17 +211,57 @@ export class KnapSettingsTab extends PluginSettingTab {
 	 * description and controls on the right, and this is none of those. It is
 	 * the first thing on the screen because it is what somebody came to find
 	 * out; the two rows under it are what they came to change, which is rarer.
+	 *
+	 * **It repaints itself once a second**, and on a phone that is the whole
+	 * point of the screen. Obsidian has no status bar on mobile, so the corner
+	 * of the window that carries the count and the bar on a desktop is not
+	 * there at all, and this is the only place a person can watch a first fill
+	 * happen. Drawn once, it froze on whatever was true the moment they opened
+	 * Settings, which during a fill is the one moment worth nothing.
 	 */
 	private drawStatus(containerEl: HTMLElement): void {
+		this.statusEl = containerEl.createDiv({ cls: "knap-status" });
+		this.paintStatus();
+		// The reading is a handful of numbers off objects this process already
+		// holds: no request, no file, nothing to cache. A second is what the
+		// corner of the window ticks at, and a bar that moves in different
+		// steps in two places reads as two different measurements.
+		this.ticking = window.setInterval(() => this.paintStatus(), 1000);
+	}
+
+	/** Stop repainting a screen nobody is looking at. */
+	hide(): void {
+		this.stopTicking();
+	}
+
+	private stopTicking(): void {
+		if (this.ticking !== null) {
+			window.clearInterval(this.ticking);
+			this.ticking = null;
+		}
+	}
+
+	/**
+	 * The block, from scratch, for one reading.
+	 *
+	 * Rebuilt rather than patched element by element, because the facts behind
+	 * the fold come and go with the word, and a paint that only updated the
+	 * ones already there would leave the last word's facts under the new one.
+	 * The fold's own state is the exception and lives on the tab, so a repaint
+	 * does not shut it while somebody is reading it.
+	 */
+	private paintStatus(): void {
+		const block = this.statusEl;
+		if (!block) return;
 		const status = this.sync.status();
-		const block = containerEl.createDiv({ cls: "knap-status" });
+		block.empty();
 
 		const body = block.createDiv({ cls: "knap-status-body" });
-		body.hidden = true;
+		body.hidden = !this.open;
 
 		const head = block.createEl("button", { cls: "knap-status-head" });
 		head.type = "button";
-		head.setAttribute("aria-expanded", "false");
+		head.setAttribute("aria-expanded", String(this.open));
 		head.createSpan({ cls: `knap-dot knap-dot-${status.dot}` });
 		head.createSpan({ cls: "knap-status-word", text: status.word });
 		const detail = detailLine(status);
@@ -210,13 +269,33 @@ export class KnapSettingsTab extends PluginSettingTab {
 			head.createSpan({ cls: "knap-status-detail", text: detail });
 		}
 		head.addEventListener("click", () => {
-			const open = head.getAttribute("aria-expanded") === "true";
-			head.setAttribute("aria-expanded", String(!open));
-			body.hidden = open;
+			this.open = !this.open;
+			head.setAttribute("aria-expanded", String(this.open));
+			body.hidden = !this.open;
 		});
 		// The head is written after the body so the click handler can close
 		// over it, and moved above it here, where the reader expects it.
 		block.insertBefore(head, body);
+
+		// The bar under the head, and only while there is a pass for it to be
+		// about. A track sitting empty over a caught-up vault is a job nobody
+		// has started, which is the opposite of what it means, so it is absent
+		// rather than empty the rest of the time.
+		const progress = isMoving(status)
+			? syncProgress(status.done, status.total)
+			: undefined;
+		if (progress !== undefined) {
+			const track = block.createDiv({ cls: "knap-status-track" });
+			// Nothing for a screen reader: the word and the count above it
+			// already say this, and a second voice for one fact is one
+			// interruption too many.
+			track.setAttribute("aria-hidden", "true");
+			const fill = track.createEl("i");
+			// A whole number, because it goes straight into a width in percent
+			// and a bar this thin has nothing below one percent to show.
+			fill.setAttribute("style", `width: ${Math.round(progress * 100)}%`);
+			block.insertBefore(track, body);
+		}
 
 		const instruction = syncInstruction(status.word);
 		if (instruction) {
@@ -243,14 +322,30 @@ export class KnapSettingsTab extends PluginSettingTab {
 	}
 }
 
-/** "Work notes, 312 notes", or as much of it as is true. */
+/**
+ * "Work notes · 290 of 2,567", or as much of it as is true.
+ *
+ * While a pass is running the count replaces the vault's size rather than
+ * sitting beside it. Two numbers on one line is a person working out which
+ * of them is going up, and the one that is moving is the one they came for.
+ */
 function detailLine(status: KnapStatus): string {
 	const parts: string[] = [];
 	if (status.vaultName) parts.push(status.vaultName);
-	if (status.notes > 0) {
+	if (isMoving(status)) {
+		parts.push(syncCounts(status.done, status.total));
+	} else if (status.notes > 0) {
 		parts.push(`${status.notes.toLocaleString("en-US")} note${status.notes === 1 ? "" : "s"}`);
 	}
 	return parts.join(" · ");
+}
+
+/**
+ * Whether there is a bar to draw, which is the one thing the count and the
+ * track have to agree about.
+ */
+export function isMoving(status: KnapStatus): boolean {
+	return status.word === SYNCING && status.total > 0;
 }
 
 /** The address without its scheme, because nobody reads https to a person. */

@@ -144,7 +144,9 @@ import {
 	SIGNED_OUT,
 	SYNCING,
 	UP_TO_DATE,
+	syncCounts,
 	syncInstruction,
+	syncProgress,
 	type SyncWord,
 } from "./syncStatus";
 import {
@@ -1621,13 +1623,26 @@ export default class Live extends Plugin {
 		// the window and the Knap screen from wording one vault two ways.
 		if (this.knapSync) {
 			const status = this.knapSync.status();
+			// The count and the bar only while a pass is running, which is the
+			// same rule `vaultReading` keeps below: a number beside Up to date
+			// invites the question of what the other one is. Until 2026-09-01
+			// this branch handed back no total at all, so the corner of the
+			// window drew no bar for the client that does the syncing, and a
+			// first fill of a few thousand notes showed one icon and nothing
+			// else. The failure count keeps the count slot when there is no
+			// pass, because Problem is the other thing worth a number.
+			const moving = status.word === SYNCING && status.total > 0;
 			return {
 				word: status.word,
 				dot: status.dot,
-				done: status.notes,
-				total: 0,
-				counts: status.problems > 0 ? String(status.problems) : "",
-				progress: undefined,
+				done: status.done,
+				total: status.total,
+				counts: moving
+					? syncCounts(status.done, status.total)
+					: status.problems > 0
+						? String(status.problems)
+						: "",
+				progress: moving ? syncProgress(status.done, status.total) : undefined,
 			};
 		}
 		const signedIn = this.loginManager?.isLoggedInToServer?.(KNAP_SERVER_ID) ?? false;

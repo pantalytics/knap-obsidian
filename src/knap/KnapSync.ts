@@ -62,6 +62,10 @@ export interface KnapStatus {
 	notes: number;
 	/** Pieces of work that failed and stayed failed. */
 	problems: number;
+	/** Notes carried so far by the pass that is running. Zero when none is. */
+	done: number;
+	/** Notes that pass has to carry, and the denominator of the bar. */
+	total: number;
 }
 
 export interface KnapSyncOptions {
@@ -119,14 +123,22 @@ export class KnapSync {
 	 * moving, nothing is going to, and green over it would say the notes
 	 * were safe somewhere they have never been.
 	 *
-	 * Syncing is "linked, connected, and the tree has not settled yet". Once
-	 * the tree has been through its first exchange there is nothing this side
-	 * is waiting for, and a spinner that never stops is worse than no spinner.
+	 * Syncing is "linked, and something is still moving". Until 2026-09-01 it
+	 * was "the tree has not settled yet", and that is one document: a phone
+	 * that linked to a vault of 2,567 notes said Up to date within seconds,
+	 * green, over a vault that was empty and would be filling for minutes.
+	 * It is #40 word for word, in the client that replaced the code #40 was
+	 * written against, so the fix is the same one: the tree is necessary and
+	 * nowhere near sufficient, and the binding's own pass has to agree.
 	 */
 	status(): KnapStatus {
 		const linked = this.linked;
 		const connected = this.client?.connected ?? false;
 		const problems = this.binding?.problems ?? 0;
+		// No binding is not "caught up", it is "nothing has started": start()
+		// builds one, so the gap is the moment between a link and its first
+		// pass, and the tree is unsettled through all of it.
+		const fill = this.binding?.progress ?? { busy: false, done: 0, total: 0 };
 		const word = syncWord({
 			signedIn: this.signedIn,
 			// Signed in with nowhere to sync to is not up to date, it is
@@ -137,7 +149,7 @@ export class KnapSync {
 			// to. The screen says Not linked in full; the corner of the
 			// window has one word to do it in.
 			paused: !linked,
-			syncing: Boolean(this.client) && !this.client?.settled,
+			syncing: Boolean(this.client) && (!this.client?.settled || fill.busy),
 			// Not linked is not offline: there is no socket because there is
 			// nothing to open one to, and saying Offline would send somebody
 			// to check their wifi over a vault they never linked.
@@ -150,6 +162,8 @@ export class KnapSync {
 			vaultName: linked?.cloudVaultName ?? "",
 			notes: this.client ? this.client.tree().entries().size : 0,
 			problems,
+			done: fill.done,
+			total: fill.total,
 		};
 	}
 
