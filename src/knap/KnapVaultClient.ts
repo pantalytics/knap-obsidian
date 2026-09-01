@@ -131,6 +131,13 @@ export class KnapVaultClient {
 		private readonly deviceName: string,
 		private readonly webSocket?: WebSocketImpl,
 		private readonly onRefused?: (code: number) => void,
+		/**
+		 * What this device counts in its local vault, so the server can put
+		 * "1773 of 2611 notes" on a screen instead of a done-state nobody
+		 * verified. Two integers and nothing else leaves this device. Null
+		 * while the count has not been taken; sockets opened then say nothing.
+		 */
+		private readonly localCounts?: () => { notes: number; attachments: number } | null,
 	) {}
 
 	/**
@@ -395,8 +402,14 @@ export class KnapVaultClient {
 		}
 
 		const doc = new Y.Doc();
+		const params: Record<string, string> = { token: this.token, device: this.deviceName };
+		const counts = this.localCounts?.();
+		if (counts) {
+			params.notes = String(counts.notes);
+			params.attachments = String(counts.attachments);
+		}
 		const provider = new WebsocketProvider(this.server.syncUrl(this.vaultId), docId, doc, {
-			params: { token: this.token, device: this.deviceName },
+			params,
 			WebSocketPolyfill: this.webSocket as typeof WebSocket | undefined,
 			disableBc: true,
 		});
