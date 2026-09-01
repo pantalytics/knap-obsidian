@@ -390,4 +390,37 @@ describe("the note socket pool", () => {
 
 		client.destroy();
 	});
+
+	it("says on every socket what the device counts, and says nothing when it has not counted", async () => {
+		// The fill of 2026-09-01: Mac at 2611 notes, server at 1773, phone at
+		// 1420, and a card reading "Up to date". The server can only put the
+		// gap on a screen if the device tells it the local total.
+		const network = new FakeNetwork();
+		const urls: string[] = [];
+		const Base = network.socket as { new (url: string | URL): object };
+		const recording = class extends Base {
+			constructor(url: string | URL) {
+				super(url);
+				urls.push(String(url));
+			}
+		};
+		const server = new KnapServer("https://knap.test", async () => new Response("{}"));
+
+		const counting = new KnapVaultClient(server, "v1", "knap_token", "Laptop", recording, undefined, () => ({
+			notes: 2611,
+			attachments: 349,
+		}));
+		counting.tree();
+		await counting.treeSynced();
+		expect(urls.pop()).toContain("notes=2611&attachments=349");
+		counting.destroy();
+
+		// No supplier, or a supplier with nothing yet: the parameters stay off
+		// the wire entirely rather than sending a zero nobody counted.
+		const silent = new KnapVaultClient(server, "v2", "knap_token", "Laptop", recording, undefined, () => null);
+		silent.tree();
+		await silent.treeSynced();
+		expect(urls.pop()).not.toContain("notes=");
+		silent.destroy();
+	});
 });

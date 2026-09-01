@@ -105,6 +105,8 @@ export class KnapSync {
 	private person = "";
 	/** Whether the server has refused this device the vault it linked. */
 	private lost = false;
+	/** What this vault holds on this disk, taken once per start. */
+	private counts: { notes: number; attachments: number } | null = null;
 
 	constructor(private readonly options: KnapSyncOptions) {
 		this.server = new KnapServer(options.serverUrl, options.fetchFn);
@@ -260,6 +262,15 @@ export class KnapSync {
 		// what they said before this existed.
 		this.person = await this.whoAmI(stored.token);
 		this.lost = false;
+		// What this vault holds on this disk, counted once per start. The
+		// number rides along on every socket so the server can say "1773 of
+		// 2611 notes" while a fill is behind, instead of a bare count that
+		// reads as complete. Stale within a session is fine: the local total
+		// barely moves, and every restart takes it fresh.
+		this.counts = {
+			notes: (await this.options.files.listNotes()).length,
+			attachments: (await this.options.files.listAttachments()).length,
+		};
 		this.client = new KnapVaultClient(
 			this.server,
 			stored.cloudVaultId,
@@ -267,6 +278,7 @@ export class KnapSync {
 			this.options.deviceName,
 			this.options.webSocket,
 			() => this.loseVault(stored.cloudVaultName),
+			() => this.counts,
 		);
 		this.binding = new VaultBinding(
 			this.options.files,
