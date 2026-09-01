@@ -124,6 +124,19 @@ export interface SignInActions {
 }
 
 export class KnapSettingsTab extends PluginSettingTab {
+	/** The plugin. The tick below is its to own, so an unload takes it. */
+	private readonly owner: Plugin;
+	/** Where the bar is drawn, so a tick can redraw it and nothing else. */
+	private statusEl: HTMLElement | null = null;
+	/** Whether the fold is open. A field, so a redraw does not close it. */
+	private open = false;
+	/** What the bar last said, so a tick that changes nothing draws nothing. */
+	private said = "";
+	/** Set while a retry is in flight, so the button can say it is going. */
+	private trying = false;
+	/** The tick, while this screen is on. */
+	private ticker: number | null = null;
+
 	/**
 	 * ``plugin`` is the real plugin, not a stand-in. Obsidian registers the tab
 	 * against it, and handing it an object that merely looks like one threw
@@ -137,11 +150,22 @@ export class KnapSettingsTab extends PluginSettingTab {
 		private readonly serverUrl: string,
 	) {
 		super(plugin.app, plugin);
+		this.owner = plugin;
+	}
+
+	/** The screen is closed: the tick stops with it. */
+	hide(): void {
+		this.stopTick();
 	}
 
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
+		// Redrawn from scratch, so whatever the bar was drawn into has gone
+		// and the tick has nothing to paint until this pass makes a new slot.
+		this.stopTick();
+		this.statusEl = null;
+		this.said = "";
 
 		// The server, once, quietly, where a plugin's own subtitle goes. It
 		// belongs on the screen because a beta build talks to somewhere other
@@ -177,7 +201,11 @@ export class KnapSettingsTab extends PluginSettingTab {
 		// syncing, so it settled on Up to date, over a vault that was going
 		// nowhere. That is #40's lie in a new place, and the row underneath
 		// already says Not linked, which is both truer and the way out.
-		if (linked) this.drawStatus(containerEl);
+		if (linked) {
+			this.statusEl = containerEl.createDiv({ cls: "knap-status-slot" });
+			this.paint();
+			this.startTick();
+		}
 
 		new Setting(containerEl)
 			.setName("Account")
@@ -226,6 +254,81 @@ export class KnapSettingsTab extends PluginSettingTab {
 	}
 
 	/**
+	 * The tick, at a second, which is what the corner of the window ticks at.
+	 *
+	 * The bar is a reading and not an event: the socket comes up and goes down
+	 * without telling anybody, and a screen drawn once when Settings opened
+	 * went on saying whatever was true at that instant. Somebody who opened
+	 * this screen while the link was still connecting was told *Offline* over
+	 * a vault that had been syncing for a minute, and the only way out of it
+	 * was to close Settings and come back.
+	 */
+	private startTick(): void {
+		if (this.ticker !== null) return;
+		const timer = window.setInterval(() => this.paint(), 1000);
+		this.ticker = timer;
+		// The plugin owns it, so an unload with Settings open takes it too.
+		this.owner.registerInterval(timer);
+	}
+
+	private stopTick(): void {
+		if (this.ticker === null) return;
+		window.clearInterval(this.ticker);
+		this.ticker = null;
+	}
+
+	/**
+	 * Draw the bar, if what it has to say has changed since the last pass.
+	 *
+	 * Gated on the words rather than drawn every second, for two reasons. A
+	 * redraw between a mouse going down and coming up eats the click on the
+	 * button underneath, which is the one control this bar has. And the fold
+	 * is a person's decision, so it is held here rather than in the DOM the
+	 * redraw throws away.
+	 */
+	paint(): void {
+		const slot = this.statusEl;
+		if (!slot) return;
+		const status = this.sync.status();
+		const said = JSON.stringify([status, this.trying]);
+		if (said === this.said) return;
+		this.said = said;
+		slot.empty();
+		this.drawStatus(slot, status);
+	}
+
+	/**
+	 * The button under Problem and Offline, and what it owes whoever pressed
+	 * it.
+	 *
+	 * A retry takes as long as the tree takes to sync, which is up to half a
+	 * minute before it gives up. Until this it said nothing for that whole
+	 * time and then swallowed the failure, so the one control on the bar
+	 * behaved exactly like a button that does nothing: press it, watch the
+	 * fold snap shut, read *Offline* again. It says it is going while it
+	 * goes, and says what went wrong when it does.
+	 */
+	private tryAgain(): void {
+		if (this.trying) return;
+		this.trying = true;
+		this.paint();
+		void this.sync.retry().then(
+			() => {
+				this.trying = false;
+				// Nothing is asserted here about how it went. A socket is not
+				// up the instant start() returns, and the tick says what is
+				// true a second later rather than this saying it early.
+				this.paint();
+			},
+			(error: Error) => {
+				this.trying = false;
+				new Notice(error.message);
+				this.paint();
+			},
+		);
+	}
+
+	/**
 	 * The bar: a dot, a word, and what it is about, with the rest folded away.
 	 *
 	 * Drawn by hand rather than as a Setting because a Setting is a name, a
@@ -244,13 +347,14 @@ export class KnapSettingsTab extends PluginSettingTab {
 	 * *1,368 notes* is the answer to what somebody opened the screen for. So the
 	 * name truncates and the count never does.
 	 */
-	private drawStatus(containerEl: HTMLElement): void {
-		const status = this.sync.status();
+	private drawStatus(containerEl: HTMLElement, status: KnapStatus): void {
 		const block = containerEl.createDiv({ cls: "knap-status" });
 		const folds = hasFold(status);
+		// A fold that is no longer there is not a fold somebody left open.
+		if (!folds) this.open = false;
 
 		const body = block.createDiv({ cls: "knap-status-body" });
-		body.hidden = true;
+		body.hidden = !this.open;
 
 		const head = folds
 			? block.createEl("button", { cls: "knap-status-head knap-status-opens" })
@@ -274,11 +378,11 @@ export class KnapSettingsTab extends PluginSettingTab {
 			// chevron is the only thing that says the bar opens (#125).
 			const chevron = head.createSpan({ cls: "knap-status-chevron" });
 			setIcon(chevron as HTMLElement, "chevron-down");
-			head.setAttribute("aria-expanded", "false");
+			head.setAttribute("aria-expanded", String(this.open));
 			head.addEventListener("click", () => {
-				const open = head.getAttribute("aria-expanded") === "true";
-				head.setAttribute("aria-expanded", String(!open));
-				body.hidden = open;
+				this.open = !this.open;
+				head.setAttribute("aria-expanded", String(this.open));
+				body.hidden = !this.open;
 			});
 		}
 		// The head is written after the body so the click handler can close
@@ -295,11 +399,13 @@ export class KnapSettingsTab extends PluginSettingTab {
 			row.createSpan({ cls: "knap-status-value", text: value });
 		}
 		if (hasRetry(status)) {
-			const retry = body.createEl("button", { cls: "knap-status-retry", text: "Try again" });
-			retry.type = "button";
-			retry.addEventListener("click", () => {
-				void this.sync.retry().then(() => this.display());
+			const retry = body.createEl("button", {
+				cls: "knap-status-retry",
+				text: this.trying ? "Trying..." : "Try again",
 			});
+			retry.type = "button";
+			retry.disabled = this.trying;
+			retry.addEventListener("click", () => this.tryAgain());
 		}
 	}
 }
