@@ -72,7 +72,7 @@ Verified against the live repo and the live catalog on 2026-08-11, not assumed.
 | Name does not read as a first-party Obsidian product | Knap. It is the product's own name and says nothing about Obsidian. CI checks for "Obsidian". |
 | `manifest.json` carries id, name, version, minAppVersion, description, author, `isDesktopOnly` | All set. `isDesktopOnly: false`, so the phone is a supported target and the scan will hold it to that. |
 | Semantic version, matching across manifest, package.json, versions.json, manifest-beta.json | CI fails the build when any two disagree. |
-| Release tagged bare semver, equal to `manifest.version` | 1.1.41 and 1.1.42 are published. `release.yml` refuses a `v` prefix and refuses a tag that differs from the manifest. 1.1.43 still needs tagging, see below. |
+| Release tagged bare semver, equal to `manifest.version` | Tags are bare semver and `cd.yml` stamps the manifest it publishes to match. **Since 2026-09-01 the version files in git deliberately lag the releases**, so this row needs the files brought back in step before submission. |
 | Release carries `main.js`, `manifest.json`, `styles.css` | All three are attached to 1.1.42, with build provenance attestation. |
 | Licence and attribution for forked code | `LICENSE` carries all three copyright lines, `NOTICE` records the fork point and every vendored dependency. |
 | Required disclosures in the README | Network use was already there. 1.1.43 adds that an account is required, that a relay can charge and where its billing screen lives, and that signing in through Google, GitHub, Microsoft or Discord loads that provider's page. |

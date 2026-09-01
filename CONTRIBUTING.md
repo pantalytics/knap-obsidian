@@ -47,35 +47,32 @@ A vault you do not mind breaking is the right vault for this.
 
 ## Versioning and releases
 
-The version lives in three files and CI fails if they disagree: `manifest.json`,
-`package.json` and `versions.json`, plus `manifest-beta.json` for the BRAT beta
-channel. `npm version` keeps them in step.
+A merge to `main` publishes a release. The CD workflow builds with the
+production server baked in, numbers it one patch above the highest release ever
+published, attests provenance and attaches `main.js`, `manifest.json` and
+`styles.css`. BRAT picks it up on its usual setting; nobody types a tag.
 
-A release happens when the version changes, and never otherwise. Merging does
-not release anything: most merges are not releases, and the ones that are say so
-in `manifest.json`.
+The version files in git (`manifest.json`, `package.json`, `versions.json`,
+`manifest-beta.json`) stay put: the bump lives only in the published assets.
+CI still fails if they disagree with each other. If the plugin is ever
+submitted to the community catalog they must be brought back in step with the
+releases first, see `docs/catalog-submission.md`.
 
-The usual way is the **Bump version and release** workflow, under Actions. Pick
-patch, minor or major, and it lints, type-checks, tests and builds first, writes
-the four version files, commits to the default branch and publishes the release.
-It needs no checkout, which is the point: a release can be cut from a phone.
+Rolling back is the CD workflow by hand: Actions, CD, Run workflow, paste an
+older sha. That commit becomes the newest release, one patch up.
 
-Bumping the version yourself works the same way. `npm version patch` writes all
-four files, and once that commit is on the default branch the release follows on
-its own.
+A build pointed at another server, staging or a laptop, is the **Beta build
+(Knap server)** workflow, which asks for the URL.
 
-Tags stay bare semver matching `manifest.json` exactly, so `1.2.5` and never
-`v1.2.5`. Obsidian looks for a release tagged the same as the manifest version,
-so a `v` prefix means the release is invisible to it. Pushing such a tag by hand
-still publishes, and so does running the **Release** workflow against an
-existing tag when a release needs rebuilding. Every route ends in the same job:
-build, attest provenance, attach `main.js`, `manifest.json` and `styles.css`.
+Tags stay bare semver, so `1.2.5` and never `v1.2.5`: Obsidian looks for a
+release tagged the same as the manifest version inside it, and a `v` prefix
+makes the release invisible to it.
 
 CI runs on every pull request and on the default branch, and the **CI gate**
 check is what passes or fails: lint, type-check, tests, a build, and the version
-files agreeing with each other and increasing. Setting the repository variable
-`CI_MODE` to `REPORT` makes everything except the version check informational,
-which is an escape hatch rather than the normal state.
+files agreeing with each other. Setting the repository variable `CI_MODE` to
+`REPORT` makes everything except the version check informational, which is an
+escape hatch rather than the normal state.
 
 ## Reporting Bugs
 
