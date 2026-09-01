@@ -218,6 +218,13 @@ word one vault two ways**, which is the whole reason it is read there and not
 computed beside the icon. The bar is absent rather than empty when nothing is
 moving: an empty track beside a finished vault reads as work that never started.
 
+**Clicking it opens the settings screen, and that is all it does.** There was a
+menu behind it with Sync vault and Sync this file above Settings. Sync is not a
+thing a person asks for here: it is running or it is not, and the corner already
+says which. A button that tells it to do what it does anyway asks somebody to
+make a decision and hands them no outcome for it, and the one time it would have
+mattered, a vault that is stuck, pressing it changes nothing either.
+
 ## Choosing a cloud vault
 
 A suggest modal, and the list is fetched every time it opens. That is the whole

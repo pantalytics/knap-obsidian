@@ -14,7 +14,6 @@ import {
 	moment,
 	addIcon,
 	setIcon,
-	Menu,
 	App,
 	type PluginManifest,
 } from "obsidian";
@@ -134,18 +133,12 @@ import {
 } from "./vaultStatus";
 import { STILL, settle, type Burst } from "./quiet";
 import {
-	planVaultSync,
-	vaultSyncResult,
-	type VaultSyncWork,
-} from "./syncNotices";
-import {
 	OFFLINE,
 	PAUSED,
 	PROBLEM,
 	SIGNED_OUT,
 	SYNCING,
 	UP_TO_DATE,
-	syncInstruction,
 	type SyncWord,
 } from "./syncStatus";
 import {
@@ -1406,9 +1399,10 @@ export default class Live extends Plugin {
 	 * The Knap item in the status bar.
 	 *
 	 * The icon carries the state, so the ordinary case is a green mark in the
-	 * corner and nothing to open. Behind it are two actions and the settings
-	 * screen, and nothing about folders: a vault is one share (ADR-0042), so
-	 * there is no list to manage from here.
+	 * corner and nothing to do. Clicking it opens the settings screen, and
+	 * that is the whole of it: there used to be a menu with Sync vault and
+	 * Sync this file above it, and a button that tells a sync layer to do what
+	 * it already does adds a decision without adding an outcome.
 	 *
 	 * While notes are moving the count sits next to the icon (#41), and the bar
 	 * sits after it. This is the machine doing the work, and somebody who has
@@ -1452,43 +1446,9 @@ export default class Live extends Plugin {
 		// inside the folder (`SharedFolder.INBOUND_TTL_MS`).
 		this.registerInterval(window.setInterval(paint, 1000));
 
-		statusBarItem.addEventListener("click", (event) => {
+		statusBarItem.addEventListener("click", () => {
 			paint();
-			const menu = new Menu();
-
-			// Sync All option
-			menu.addItem((item) => {
-				item
-					.setTitle("Sync vault")
-					.setIcon("refresh-cw")
-					.onClick(async () => {
-						await this.syncAllShares();
-					});
-			});
-
-			// Sync Current option
-			menu.addItem((item) => {
-				item
-					.setTitle("Sync this file")
-					.setIcon("file-sync")
-					.onClick(async () => {
-						await this.syncCurrentFile();
-					});
-			});
-
-			menu.addSeparator();
-
-			// Settings option
-			menu.addItem((item) => {
-				item
-					.setTitle("Settings")
-					.setIcon("settings")
-					.onClick(() => {
-						void this.openSettings("/relay-onprem");
-					});
-			});
-
-			menu.showAtMouseEvent(event);
+			void this.openSettings("/relay-onprem");
 		});
 	}
 
@@ -1723,123 +1683,12 @@ export default class Live extends Plugin {
 		}
 	}
 
-	/**
-	 * Sync vault: reconnect what this device holds, and push the
-	 * web-published shares upstream's feature keeps.
-	 *
-	 * The notices are in `syncNotices.ts` and the reason they are is worth
-	 * knowing before changing anything here. This said *Syncing all shares...*
-	 * on the way in and *No shares to sync* on the way out, both at once, over
-	 * a vault that was syncing. The opening notice was unconditional, so it
-	 * announced work nothing had counted yet, and what did the counting was a
-	 * listing fetched from the control plane. `getAllShares` turns a failed
-	 * listing into an empty one, so a refused token or a rate-limited minute
-	 * reads exactly like a vault with nothing in it.
-	 *
-	 * So the folders come from `sharedFolders`, which is what actually syncs
-	 * this vault and what the mark in the corner of the window already reads.
-	 * The listing is only asked about the web half, which it is the only
-	 * source for. Nothing is said until both have been counted.
-	 */
-	private async syncAllShares() {
-		// The menu is only built when the plugin is switched on, so no client
-		// here means nobody is signed in to build one with.
-		await this.ensureShareClientManager();
-		const held = this.sharedFolders?.items() ?? [];
-		// A folder switched off on this device is paused, and telling it to
-		// connect does nothing (`SharedFolder.connect`). Counting it as work
-		// is how a paused vault gets told it is syncing.
-		const folders = held.filter((folder) => folder.shouldConnect);
-
-		try {
-			const shares = this.shareClientManager
-				? await this.shareClientManager.getAllSharesFlat()
-				: [];
-			const webShares = shares.filter((s) => s.web_published);
-			const work: VaultSyncWork = {
-				connected: !!this.shareClientManager,
-				folders: folders.length,
-				pausedFolders: held.length - folders.length,
-				webShares: webShares.length,
-			};
-
-			const plan = planVaultSync(work);
-			new Notice(plan.notice);
-			if (!plan.start) return;
-
-			// 1. Reconnect the CRDT relay for every folder this device holds
-			for (const folder of folders) {
-				void folder.connect();
-			}
-
-			// 2. Sync web-published shares
-			// TR-25-followup (#1d244fb4): pushes content directly via
-			// shareClientManager, bypassing WebSyncManager's own syncFile()/
-			// syncFolderFile() — wrap in the same echo-guard those use so
-			// InboundSyncPoller/InboundFileDownloader don't race this manual
-			// push the way TR-25 fixed for the debounced auto-sync path.
-			const { withOutboundSyncGuard } = await import("./WebSyncManager");
-			let webSynced = 0;
-			await withOutboundSyncGuard(this.webSyncManager, async () => {
-				for (const share of webShares) {
-					try {
-						if (share.kind === "doc") {
-							const file = this.vault.getAbstractFileByPath(share.path);
-							if (file instanceof TFile) {
-								const content = await this.vault.read(file);
-								await this.shareClientManager!.updateShare(share.serverId, share.id, {
-									web_content: content,
-								});
-								webSynced++;
-							}
-						} else if (share.kind === "folder") {
-							const folderAbs = this.vault.getAbstractFileByPath(share.path);
-							if (folderAbs instanceof TFolder) {
-								// 1. Build recursive folder items and PATCH structure
-								const items = this.getFolderItemsRecursive(folderAbs);
-								await this.shareClientManager!.updateShare(share.serverId, share.id, {
-									web_folder_items: items,
-								});
-								// 2. POST content for each doc/canvas
-								if (share.web_slug) {
-									for (const item of items) {
-										if (item.type === "doc" || item.type === "canvas") {
-											try {
-												const filePath = `${share.path}/${item.path}`;
-												const f = this.vault.getAbstractFileByPath(filePath);
-												if (f instanceof TFile) {
-													const content = await this.vault.read(f);
-													await this.shareClientManager!.syncFolderFileContent(
-														share.serverId, share.web_slug, item.path, content
-													);
-													webSynced++;
-												}
-											} catch { /* skip individual file errors */ }
-										}
-									}
-								}
-							}
-						}
-					} catch (e: unknown) {
-						console.error(`Failed to sync ${share.path}:`, e);
-					}
-				}
-			});
-
-			new Notice(vaultSyncResult(work, webSynced));
-		} catch (error: unknown) {
-			new Notice(
-				`Knap could not sync this vault: ${error instanceof Error ? error.message : "Unknown error"}`,
-			);
-		}
-	}
-
 	private async _initialFullSync(shares: ShareWithServer[]): Promise<void> {
 		if (!this.shareClientManager) return;
 		this.log("Running initial full-sync for stale auto-sync shares", shares.length);
-		// TR-25-followup (#1d244fb4): same echo-guard as syncAllShares() —
-		// this pushes content directly, bypassing WebSyncManager's own
-		// syncFile()/syncFolderFile().
+		// TR-25-followup (#1d244fb4): pushes content directly, bypassing
+		// WebSyncManager's own syncFile()/syncFolderFile(), so it takes the
+		// same echo-guard those use.
 		const { withOutboundSyncGuard } = await import("./WebSyncManager");
 		await withOutboundSyncGuard(this.webSyncManager, async () => {
 			for (const share of shares) {
@@ -1887,66 +1736,6 @@ export default class Live extends Plugin {
 				}
 			}
 		});
-	}
-
-	/**
-	 * Sync the current active file if it's a web-published share (doc or inside folder share)
-	 */
-	private async syncCurrentFile() {
-		const activeFile = this.app.workspace.getActiveFile();
-		if (!activeFile) {
-			new Notice("No active file");
-			return;
-		}
-
-		// The same words the other item in this menu uses for the same state.
-		// "No share client available" named a thing nobody has heard of and
-		// left them nothing to do about it.
-		await this.ensureShareClientManager();
-		if (!this.shareClientManager) {
-			new Notice(`${SIGNED_OUT}. ${syncInstruction(SIGNED_OUT)}`);
-			return;
-		}
-
-		try {
-			const shares = await this.shareClientManager.getAllSharesFlat();
-
-			// TR-25-followup (#1d244fb4): same echo-guard as syncAllShares() —
-			// pushes content directly, bypassing WebSyncManager's own
-			// syncFile()/syncFolderFile().
-			const { withOutboundSyncGuard } = await import("./WebSyncManager");
-			await withOutboundSyncGuard(this.webSyncManager, async () => {
-				// Check direct doc share match
-				const docShare = shares.find(s => s.path === activeFile.path && s.web_published);
-				if (docShare) {
-					const content = await this.vault.read(activeFile);
-					await this.shareClientManager!.updateShare(docShare.serverId, docShare.id, {
-						web_content: content,
-					});
-					new Notice(`Synced ${activeFile.name} to web`);
-					return;
-				}
-
-				// Check if file is inside a folder share
-				const folderShare = shares.find(s =>
-					s.kind === "folder" && s.web_published && s.web_slug &&
-					activeFile.path.startsWith(s.path + "/")
-				);
-				if (folderShare && folderShare.web_slug) {
-					const content = await this.vault.read(activeFile);
-					const relativePath = activeFile.path.substring(folderShare.path.length + 1);
-					await this.shareClientManager!.syncFolderFileContent(
-						folderShare.serverId, folderShare.web_slug, relativePath, content
-					);
-					new Notice(`Synced ${activeFile.name} to web`);
-					return;
-				}
-
-				new Notice("Current file is not in a web-published share");
-			});
-		} catch (error: unknown) {
-			new Notice(`Sync failed: ${error instanceof Error ? error.message : "Unknown error"}`);
-		}
 	}
 
 	/**
