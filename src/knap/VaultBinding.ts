@@ -127,6 +127,7 @@ export class VaultBinding {
 	private stopTreeEvents: (() => void) | null = null;
 	private noteObservers = new Map<string, () => void>();
 	private queue: Promise<void> = Promise.resolve();
+	private failures = 0;
 	/** Paths an open editor is holding, which this binding leaves alone. */
 	private held = new Set<string>();
 	/** Set whenever this device changed the tree, cleared when it is saved. */
@@ -196,6 +197,19 @@ export class VaultBinding {
 	}
 
 	/**
+	 * How many pieces of work failed since this binding started.
+	 *
+	 * The status bar needs to be able to say *Problem*, and the only place
+	 * that knows a push or a bind went wrong is the queue every one of them
+	 * runs through. Counting here rather than at each call site means a new
+	 * kind of work is counted the day it is added, without anybody
+	 * remembering to.
+	 */
+	get problems(): number {
+		return this.failures;
+	}
+
+	/**
 	 * Stand down for one note, because an editor is bound to it directly.
 	 *
 	 * Two writers on one note is one too many. While a note is open,
@@ -236,12 +250,23 @@ export class VaultBinding {
 	}
 
 	private enqueue(work: () => Promise<void>): Promise<void> {
+		const counted = async () => {
+			try {
+				await work();
+			} catch (error) {
+				this.failures += 1;
+				// Rethrown, not swallowed. The rejection is what keeps
+				// rememberTree below off the failure path, and the queue's own
+				// handler is what keeps one failure from stopping the next unit.
+				throw error;
+			}
+		};
 		// The record is written only where `work` returned: a unit that threw
 		// half way leaves the disk and the tree disagreeing, and remembering
 		// that as agreed is how the next start deletes what it failed to
 		// write. Work still runs on both settle paths, so one failure does
 		// not wedge the queue.
-		this.queue = this.queue.then(work, work).then(() => this.rememberTree());
+		this.queue = this.queue.then(counted, counted).then(() => this.rememberTree());
 		return this.queue;
 	}
 

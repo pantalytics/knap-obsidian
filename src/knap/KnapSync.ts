@@ -25,6 +25,8 @@
  * of the engine.
  */
 
+import type { SyncDot, SyncWord } from "../syncStatus";
+import { syncDot, syncWord } from "../syncStatus";
 import type { AttachmentTransport, Refusal } from "./AttachmentBinding";
 import { AttachmentBinding } from "./AttachmentBinding";
 import type { LiveNoteHandle } from "./knapEditor";
@@ -41,6 +43,25 @@ export interface KnapLink {
 	token: string;
 	cloudVaultId: string;
 	cloudVaultName: string;
+}
+
+/**
+ * Everything the status bar reads, in one call.
+ *
+ * One reading rather than five getters, because the screen and the mark in
+ * the corner of the window must never disagree, and two callers asking four
+ * questions each is how they start to. Whatever it says was true at one
+ * instant.
+ */
+export interface KnapStatus {
+	word: SyncWord;
+	dot: SyncDot;
+	/** The cloud vault this local one is linked to, or "" when it is not. */
+	vaultName: string;
+	/** Notes the tree holds. Zero until the tree has been read. */
+	notes: number;
+	/** Pieces of work that failed and stayed failed. */
+	problems: number;
 }
 
 export interface KnapSyncOptions {
@@ -85,6 +106,40 @@ export class KnapSync {
 
 	get running(): boolean {
 		return this.binding !== null;
+	}
+
+	/**
+	 * What to put on the screen and in the corner of the window.
+	 *
+	 * Nothing here decides for itself whether things are healthy. It reads
+	 * the token, the link, the socket and the queue's failure count, and
+	 * hands them to `syncWord`, which owns the order those facts win in.
+	 *
+	 * Syncing is "linked, connected, and the tree has not settled yet". Once
+	 * the tree has been through its first exchange there is nothing this side
+	 * is waiting for, and a spinner that never stops is worse than no spinner.
+	 */
+	status(): KnapStatus {
+		const linked = this.linked;
+		const connected = this.client?.connected ?? false;
+		const problems = this.binding?.problems ?? 0;
+		const word = syncWord({
+			signedIn: this.signedIn,
+			paused: false,
+			syncing: Boolean(this.client) && !this.client?.settled,
+			// Not linked is not offline: there is no socket because there is
+			// nothing to open one to, and saying Offline would send somebody
+			// to check their wifi over a vault they never linked.
+			connected: linked ? connected : undefined,
+			stuck: problems,
+		});
+		return {
+			word,
+			dot: syncDot(word),
+			vaultName: linked?.cloudVaultName ?? "",
+			notes: this.client ? this.client.tree().entries().size : 0,
+			problems,
+		};
 	}
 
 	/** Sign in: browser out, deep link back, token kept. No link yet. */
@@ -249,6 +304,19 @@ export class KnapSync {
 		} catch {
 			// Nothing to say and nothing to do: see above.
 		}
+	}
+
+	/**
+	 * Take the link down and bring it straight back up.
+	 *
+	 * What the button under Problem and Offline does. The failure count lives
+	 * on the binding, so a fresh binding starts at zero, which is the honest
+	 * reading: the word goes back to whatever is true after the retry rather
+	 * than staying red on the strength of what already happened.
+	 */
+	async retry(): Promise<void> {
+		this.stop();
+		await this.start();
 	}
 
 	stop(): void {

@@ -3,10 +3,9 @@
 /**
  * What the corner of the window says this vault is doing.
  *
- * The four words are not chosen here. They come from `syncStatus.ts`, which
- * mirrors the admin repository's `status.py` string for string, and this file
+ * The words are not chosen here. They come from `syncStatus.ts`, and this file
  * only does the step in front of them: it turns the shared folders this plugin
- * holds into the three booleans `syncWord` reads. Doing it here rather than in
+ * holds into the booleans `syncWord` reads. Doing it here rather than in
  * the status bar is what keeps the icon and the Knap screen from
  * describing the same vault two different ways.
  *
@@ -27,9 +26,8 @@ import {
 
 /**
  * Every dot the status bar may be wearing. It is here rather than in
- * `syncStatus.ts` because that file mirrors `status.py` and this list is a
- * detail of painting an icon: what it is for is taking the previous dot off
- * before putting the next one on.
+ * `syncStatus.ts` because this list is a detail of painting an icon: what it
+ * is for is taking the previous dot off before putting the next one on.
  */
 export const SYNC_DOT_NAMES: readonly SyncDot[] = ["ok", "working", "wait", "error"];
 
