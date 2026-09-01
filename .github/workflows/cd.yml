@@ -1,61 +1,158 @@
+# A merge to main publishes the plugin.
+#
+# This is the plugin half of knap-mcp-admin's ADR-0075 ("a push to main deploys
+# the server"): the same event that puts a commit on main puts a release where
+# BRAT looks. Before 2026-09-01 the real channel was a hand-dispatched beta
+# workflow that asked for the server URL every time, while this file released
+# builds with the URL empty, which register nothing against the Knap server.
+# Every install since 1.13.5 came from that dispatch; nobody wanted the empty
+# build, so now there is one channel and it is this one.
+#
+# The server URL is baked in at build time from the repository variable
+# KNAP_SERVER_URL, because no screen offers a server field and never will
+# (ADR-0033: one server, and the plugin knows only that one).
+#
+# The version is one patch above the highest release ever published, read from
+# the releases rather than from manifest.json. The bump lives only in the
+# published assets; the version files in git stay put. That is the established
+# shape (BRAT reads the manifest out of the release it downloads), and its
+# price is named: the community catalog wants manifest.json on the default
+# branch to equal the release tag, so IF the plugin is ever submitted, the
+# version files must be brought back in step first (docs/catalog-submission.md).
+# Not in the catalog today, not marketed, so the simpler shape wins.
+#
+# Rolling back is this workflow by hand: Actions, CD, Run workflow, and paste
+# an older sha. That commit becomes the newest release, one patch up, and BRAT
+# followers move to it on their next check.
 name: CD
-# A release happens when the version changes, and never otherwise.
-#
-# The trigger is a version bump landing on the default branch, not a merge: most
-# merges are not releases, and the ones that are say so in manifest.json. CI
-# already refuses a bump where manifest.json, package.json, versions.json and
-# manifest-beta.json disagree, or where the version is not strictly greater than
-# the last release, so by the time a bump is on the default branch it is a
-# release-shaped commit.
-#
-# This file only decides whether to release. The building, attesting and
-# publishing all stay in release.yml, called below, so there is one description
-# of what a release is.
-# This has to name the default branch. A release trigger pointed at any other
-# branch does not fail, it just silently stops releasing.
+
 on:
   push:
+    # Every push, prose included, same argument as the server's deploy: a push
+    # that deliberately did not release would make "the latest release is
+    # main's tip" quietly false.
     branches: [main]
-    paths: ['manifest.json']
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'The commit to build and publish. Empty means the tip of main. An older sha is how you roll back.'
+        required: false
 
+# Never two releases at once: both would read the same "highest release" and
+# hand out the same version number. Queue instead.
 concurrency:
-  group: cd-${{ github.ref }}
+  group: cd
   cancel-in-progress: false
 
-jobs:
-  decide:
-    name: "Is this version already released?"
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.check.outputs.version }}
-      needed: ${{ steps.check.outputs.needed }}
-    steps:
-      - uses: actions/checkout@v7
-      - id: check
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VER=$(node -p "require('./manifest.json').version")
-          echo "version=$VER" >> "$GITHUB_OUTPUT"
-          # manifest.json changes for reasons other than a version bump, and a
-          # re-run of an old commit is a real thing. Either way the question is
-          # the same: does this version already exist as a release.
-          if gh release view "$VER" >/dev/null 2>&1; then
-            echo "needed=false" >> "$GITHUB_OUTPUT"
-            echo "$VER is already released. Nothing to do."
-          else
-            echo "needed=true" >> "$GITHUB_OUTPUT"
-            echo "$VER has no release yet. Cutting one."
-          fi
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
 
-  release:
-    name: "Release"
-    needs: decide
-    if: needs.decide.outputs.needed == 'true'
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
-    uses: ./.github/workflows/release.yml
-    with:
-      version: ${{ needs.decide.outputs.version }}
+jobs:
+  publish:
+    name: "Publish"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Fail here, loudly, rather than shipping a build whose switch stayed
+      # empty. An empty KNAP_SERVER_URL is exactly the build this file
+      # replaced: it looks fine and registers nothing.
+      - name: The one server this build talks to
+        env:
+          URL: ${{ vars.KNAP_SERVER_URL }}
+        run: |
+          [ -n "$URL" ] || { echo "::error::vars.KNAP_SERVER_URL is not set. Repo Settings, Variables, Actions."; exit 1; }
+          case "$URL" in
+            https://*) ;;
+            *) echo "::error::KNAP_SERVER_URL must be https. Got '$URL'"; exit 1;;
+          esac
+          case "$URL" in
+            */) echo "::error::KNAP_SERVER_URL must not end in a slash. Got '$URL'"; exit 1;;
+          esac
+          echo "Building against $URL"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+
+      # The same checks that gate a pull request, because a dispatch with an
+      # older sha skips the pull request entirely, and a release nobody can
+      # install is worse than no release.
+      - name: Lint, type-check and test
+        run: |
+          npm run lint
+          npx tsc --noEmit --skipLibCheck
+          npx jest --forceExit --passWithNoTests
+
+      - name: Build with the switch set
+        env:
+          KNAP_SERVER_URL: ${{ vars.KNAP_SERVER_URL }}
+        run: npm run build
+
+      - name: Prove the switch actually landed in the bundle
+        # A build where the define silently stayed empty is a build that looks
+        # fine and does nothing, which is the one failure worth catching here.
+        env:
+          URL: ${{ vars.KNAP_SERVER_URL }}
+        run: |
+          grep -qF "$URL" main.js || {
+            echo "::error::main.js does not carry $URL. The define did not take."
+            exit 1
+          }
+
+      # One patch above the highest version that has ever been released, so
+      # BRAT sees an update whatever it last installed. Read from the releases
+      # rather than from manifest.json, because the bump deliberately never
+      # lands in git and the file would hand out the same number twice.
+      - name: Work out the next version
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LATEST=$(gh release list --limit 100 --json tagName --jq '.[].tagName' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          LATEST=${LATEST:-$(node -p "require('./manifest.json').version")}
+          NEXT=$(node -p "const [a,b,c]='$LATEST'.split('.').map(Number); [a,b,c+1].join('.')")
+          echo "Latest released: $LATEST -> publishing $NEXT"
+          echo "tag=$NEXT" >> "$GITHUB_OUTPUT"
+
+      # BRAT reads the version out of the manifest it downloads, so it has to
+      # match the tag. Only in the published asset: the file in git is left
+      # exactly as it is.
+      - name: Stamp the version into the published manifest
+        run: |
+          node -e '
+            const fs = require("fs");
+            const m = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
+            m.version = process.argv[1];
+            fs.writeFileSync("manifest.json", JSON.stringify(m, null, "\t") + "\n");
+          ' "${{ steps.tag.outputs.tag }}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            main.js
+            styles.css
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: ${{ vars.KNAP_SERVER_URL }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          ASSETS="main.js manifest.json"
+          [ -f styles.css ] && ASSETS="$ASSETS styles.css"
+          # --target pins the tag to the commit that was checked out and
+          # built, which on a dispatch is not the tip of main.
+          gh release create "$TAG" $ASSETS \
+            --title "$TAG" \
+            --notes "Built from $(git rev-parse --short HEAD), pointing at $URL. BRAT picks this up on its usual setting." \
+            --target "$(git rev-parse HEAD)"
+          echo "### Published: \`$TAG\`" >> "$GITHUB_STEP_SUMMARY"

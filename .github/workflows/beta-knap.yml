@@ -2,9 +2,14 @@ name: Beta build (Knap server)
 # A plugin build that points at the rebuilt Knap server, for testing it on a
 # real laptop and a real phone (knap-mcp-admin, docs/plan.md phase 2).
 #
-# `KNAP_SERVER_URL` is an esbuild define that is empty in every ordinary build,
-# and empty means the rebuilt client registers nothing at all. This workflow is
-# the only thing that fills it in.
+# `KNAP_SERVER_URL` is an esbuild define, and empty means the rebuilt client
+# registers nothing at all. Since 2026-09-01 cd.yml fills it with the
+# production server on every merge to main; this workflow is how a build
+# points anywhere else, a staging server or a laptop.
+#
+# Mind the version race: this and cd.yml both publish "highest release plus
+# one", so a beta published here is overtaken by the next merge to main, which
+# is also how a test build retires.
 #
 # **It publishes an ordinary release, and bumps the patch version to do it.**
 # Pre-releases were the safer shape and they cost more than they bought: BRAT
