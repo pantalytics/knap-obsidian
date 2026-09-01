@@ -125,7 +125,12 @@ import { RelayOnPremShareClientManager, type ShareWithServer } from "./RelayOnPr
 // It was being pulled in with require() at three call sites instead.
 import { ShareManagementModal } from "./ui/ShareManagementModal";
 import { LocalStorage } from "./LocalStorage";
-import { SYNC_DOT_NAMES, vaultReading, type VaultReading } from "./vaultStatus";
+import {
+	SYNC_DOT_NAMES,
+	statusBarPaint,
+	vaultReading,
+	type VaultReading,
+} from "./vaultStatus";
 import {
 	planVaultSync,
 	vaultSyncResult,
@@ -1413,10 +1418,12 @@ export default class Live extends Plugin {
 	 * screen, and nothing about folders: a vault is one share (ADR-0042), so
 	 * there is no list to manage from here.
 	 *
-	 * While notes are moving the count sits next to the icon (#41). This is
-	 * the machine doing the work, and somebody who has just pointed Knap at a
-	 * few thousand notes should not have to open a web page to find out how
-	 * far it has got.
+	 * While notes are moving the count sits next to the icon (#41), and the bar
+	 * sits after it. This is the machine doing the work, and somebody who has
+	 * just pointed Knap at a few thousand notes should not have to open a web
+	 * page to find out how far it has got: the count says how far in notes and
+	 * the bar says how far at a glance, which is the one a person reads while
+	 * they are doing something else.
 	 */
 	private addRelayStatusBarItem() {
 		const statusBarItem = this.addStatusBarItem();
@@ -1425,15 +1432,30 @@ export default class Live extends Plugin {
 		const iconEl = statusBarItem.createSpan({ cls: "relay-status-icon" });
 		setIcon(iconEl, "synced-vaults");
 		const countEl = statusBarItem.createSpan({ cls: "relay-status-count" });
+		// The bar, and nothing for a screen reader to read: the tooltip on the
+		// item already says the word and the count, and a second voice for the
+		// same fact is one interruption too many in a corner somebody is not
+		// looking at.
+		const trackEl = statusBarItem.createSpan({ cls: "relay-status-track" });
+		trackEl.setAttribute("aria-hidden", "true");
+		const fillEl = trackEl.createEl("i");
 		statusBarItem.setAttribute("data-tooltip-position", "top");
 		statusBarItem.addClass("evc-cursor-pointer");
 
-		const paint = () => this.paintRelayStatus(statusBarItem, iconEl, countEl);
+		const paint = () =>
+			this.paintRelayStatus(statusBarItem, iconEl, countEl, trackEl, fillEl);
 		paint();
 		// Nothing here is a subscription: the share comes and goes and its
 		// provider changes state without telling anybody, so the corner reads
 		// it rather than waiting to be told. It is a handful of numbers a tick.
-		this.registerInterval(window.setInterval(paint, 4000));
+		//
+		// A second, which is what the settings screen ticks at, and for the
+		// same reason: a bar is the thing somebody watches during a first sync
+		// and one standing still reads as stuck. The tick does not cost what it
+		// looks like it costs, because the one expensive number behind it, the
+		// file list this device is missing, is cached for a second and a half
+		// inside the folder (`SharedFolder.INBOUND_TTL_MS`).
+		this.registerInterval(window.setInterval(paint, 1000));
 
 		statusBarItem.addEventListener("click", (event) => {
 			paint();
@@ -1654,17 +1676,22 @@ export default class Live extends Plugin {
 		statusBarItem: HTMLElement,
 		iconEl: HTMLElement,
 		countEl: HTMLElement,
+		trackEl: HTMLElement,
+		fillEl: HTMLElement,
 	) {
-		const reading = this.readVaultStatus();
+		const corner = statusBarPaint(this.readVaultStatus());
 		for (const dot of SYNC_DOT_NAMES) {
-			iconEl.toggleClass(`relay-status-${dot}`, dot === reading.dot);
+			iconEl.toggleClass(`relay-status-${dot}`, dot === corner.dot);
 		}
-		countEl.setText(reading.counts);
-		const word = reading.word.toLowerCase();
-		statusBarItem.setAttribute(
-			"aria-label",
-			reading.counts ? `Knap: ${word}, ${reading.counts}` : `Knap: ${word}`,
-		);
+		countEl.setText(corner.count);
+		// The bar goes when there is no denominator behind it, rather than
+		// sitting there empty: an empty track beside an up to date vault is a
+		// job nobody has started, which is the opposite of what it means.
+		trackEl.toggleClass("relay-status-track-on", corner.percent !== undefined);
+		if (corner.percent !== undefined) {
+			fillEl.style.width = `${corner.percent}%`;
+		}
+		statusBarItem.setAttribute("aria-label", corner.label);
 	}
 
 	/**

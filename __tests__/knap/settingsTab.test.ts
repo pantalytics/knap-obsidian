@@ -226,8 +226,16 @@ describe("the screen, signed in", () => {
 		// is what happens underneath either way.
 		const { rows } = drawFor({ signedIn: true, linked: { id: "v1", name: "Work notes" } });
 		const vault = rows.find((r) => r.name === "Cloud vault");
-		expect(vault?.desc).toBe("Work notes");
+		expect(vault?.desc).toContain("Work notes");
 		expect(vault?.buttons).toEqual(["Unlink"]);
+	});
+
+	it("still says a delete travels both ways, which the shortening did not touch", () => {
+		// #116 put this here, and a person deleting a note is entitled to know
+		// it goes on both sides. It is a warning rather than an explanation, so
+		// it stays on the row instead of moving behind the fold.
+		const { rows } = drawFor({ signedIn: true, linked: { id: "v1", name: "Work notes" } });
+		expect(rows.find((r) => r.name === "Cloud vault")?.desc).toContain("deletes it in the");
 	});
 
 	it("has no row for problems, in any state", () => {

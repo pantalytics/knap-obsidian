@@ -475,6 +475,51 @@
 	display: none;
 }
 
+/* The bar after the count, while notes are moving.
+
+   Two pixels of fact, the same two the settings screen draws, because a
+   person moves between the corner and that screen in one sitting and a bar
+   that changes shape between them reads as two different measurements. It is
+   short on purpose: the corner is read out of the side of the eye, and what
+   is wanted there is roughly how far along, not a number.
+
+   It is absent rather than empty the rest of the time. A track with no fill
+   next to an up to date vault reads as work that has not started. */
+.relay-onprem-statusbar .relay-status-track {
+	display: none;
+	width: 36px;
+	height: 2px;
+	margin-left: var(--size-2-2);
+	border-radius: 2px;
+	background: var(--background-modifier-border);
+	overflow: hidden;
+}
+
+.relay-onprem-statusbar .relay-status-track.relay-status-track-on {
+	/* Obsidian lays the status bar item out with flex on some versions and
+	   inline on others, so the row is told to keep this at its own size and
+	   in the middle either way. */
+	display: inline-block;
+	flex: 0 0 auto;
+	align-self: center;
+	vertical-align: middle;
+}
+
+.relay-onprem-statusbar .relay-status-track > i {
+	display: block;
+	width: 0;
+	height: 100%;
+	border-radius: 2px;
+	background: var(--interactive-accent);
+	transition: width 240ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.relay-onprem-statusbar .relay-status-track > i {
+		transition: none;
+	}
+}
+
 /* ---------------------------------------------------------------------------
    Knap's own screen: the server line, the status bar and the picker.
 

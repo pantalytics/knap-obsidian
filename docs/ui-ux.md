@@ -139,6 +139,21 @@ The states are **Syncing**, **Up to date**, **Paused**, **Signed out**. Only the
 last one differs between the screens on purpose: the fix lives here, so only this
 side gets the button.
 
+### The corner of the window
+
+The same reading, drawn small. The icon wears the dot, the count sits beside it,
+and a two pixel bar sits after that while there is a denominator to draw it
+against. The word itself is in the tooltip rather than on screen: the corner is
+read out of the side of the eye during a first sync, and what is wanted there is
+how far along, not a sentence.
+
+It is the same `vaultReading` the settings screen draws, through
+`statusBarPaint` in `vaultStatus.ts`, so the two cannot describe one vault
+differently. The corner reads it once a second for the same reason that screen
+does: a bar somebody is watching that stands still reads as stuck. The bar is
+absent rather than empty when there is nothing moving, because an empty track
+beside a finished vault reads as work that never started.
+
 ## The words
 
 Four of them, and no others. This is Knap's ADR-0038, and the admin repo's

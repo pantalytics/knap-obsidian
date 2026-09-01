@@ -9,6 +9,9 @@
  *
  * **Two rows and a bar, and each of the three earns its place**: the bar says
  * how it is going, Account is who, Cloud vault is what this vault syncs with.
+ * That last row keeps one sentence the shortening did not touch, because a
+ * delete travels both ways and somebody is entitled to know that before they
+ * press it rather than after (#116).
  * There is no server field (ADR-0033), no scope picker (ADR-0043), and no
  * second kind of member to set (ADR-0034). There is also no Change button:
  * linking somewhere else is Unlink and then Choose, which is what happens
@@ -142,7 +145,12 @@ export class KnapSettingsTab extends PluginSettingTab {
 		const linked = this.sync.linked;
 		const vault = new Setting(containerEl)
 			.setName("Cloud vault")
-			.setDesc(linked?.cloudVaultName || "Not linked.");
+			.setDesc(
+				linked
+					? `${linked.cloudVaultName}. Deleting a note here deletes it in the ` +
+						"cloud vault too, and the other way round."
+					: "Not linked.",
+			);
 
 		if (linked) {
 			vault.addButton((button) =>

@@ -13,6 +13,7 @@
 #   y-sweet on the host          the relay, plain ws on :8099
 #   a TLS proxy in the container 127.0.0.1:8443, forwards to the host
 #   a CA in the app's NSS store  so wss://localhost:8443 is trusted
+#   one restart of the app       because Chromium reads that store at startup
 #
 # The container's NSS store is the same one scripts/dev/obsidian/init/20-trust-ca.sh
 # in the admin repo already maintains, and certutil is there because of it.
@@ -91,8 +92,6 @@ GATEWAY="$(docker inspect "$CONTAINER" --format '{{range .NetworkSettings.Networ
 docker cp "$WORK/srv.pem" "$CONTAINER:/tmp/knap-tls.pem" >/dev/null
 docker cp "$WORK/ca.crt" "$CONTAINER:/tmp/knap-ca.crt" >/dev/null
 docker cp "$WORK/proxy.py" "$CONTAINER:/tmp/knap-tls-proxy.py" >/dev/null
-docker exec "$CONTAINER" sh -c \
-	"(nohup python3 /tmp/knap-tls-proxy.py /tmp/knap-tls.pem $TLS_PORT $GATEWAY $RELAY_PORT >/tmp/knap-tls.log 2>&1 &); sleep 2" >/dev/null
 
 # Chromium on Linux reads NSS, not the system store. On the agent box the
 # admin harness's init (scripts/dev/obsidian/init/20-trust-ca.sh) has already
@@ -112,6 +111,53 @@ docker exec "$CONTAINER" sh -c '
 	fi
 	certutil -d sql:/config/.pki/nssdb -A -t "C,," -n knap-e2e-ca -i /tmp/knap-ca.crt
 ' || { echo "could not trust the e2e CA in the app's NSS store" >&2; exit 2; }
+
+wait_for() {
+	local expression="$1" what="$2" budget="${3:-120}" waited=0
+	until [ "$("$HARNESS" eval "$expression" 2>/dev/null)" = "true" ]; do
+		printf '.'
+		sleep 3
+		waited=$((waited + 3))
+		if [ "$waited" -ge "$budget" ]; then
+			printf '\n'
+			echo "$what did not happen within ${waited}s" >&2
+			exit 2
+		fi
+	done
+}
+
+# And then the app has to be started again, because Chromium reads that store
+# when it starts and does not go back to it. Measured 2026-08-31, on a hosted
+# runner and on the agent box: with the CA installed into a running app every
+# connection is refused, `net::ERR_CERT_AUTHORITY_INVALID` off the window's
+# own Log domain, and the same socket opens on the first try once the app has
+# been restarted with that CA already in the store. The CA is generated per
+# run, so no ordering avoids this and no run can be lucky: it is why this job
+# was red on every branch, and why it read as a devtools timeout rather than
+# as a certificate problem.
+docker restart "$CONTAINER" >/dev/null
+printf 'restarting the app so it trusts the e2e CA'
+wait_for "typeof app === 'object' && !!app.vault" "the vault reopening"
+# Restricted mode comes back with the restart, and a vault in restricted mode
+# runs no plugins at all. Leaving it is not enough on its own either:
+# `setEnable(true)` writes back the set of plugins that are running, which in
+# a vault that has just refused to run any is none, so the plugin has to be
+# enabled again by name afterwards. Those are the same two calls the harness
+# makes when it installs a plugin, and the files are already in the vault.
+"$HARNESS" eval "(async () => {
+	await app.plugins.setEnable(true);
+	await app.plugins.loadManifests();
+	await app.plugins.enablePluginAndSave('synced-vaults');
+	document.querySelectorAll('.modal-close-button').forEach((b) => b.click());
+	return !!app.plugins.plugins['synced-vaults'];
+})()" >/dev/null
+wait_for "!!app.plugins.plugins['synced-vaults']" "the plugin loading again" 60
+printf '\n'
+
+# The proxy runs inside the container, so it starts after the restart rather
+# than before it.
+docker exec "$CONTAINER" sh -c \
+	"(nohup python3 /tmp/knap-tls-proxy.py /tmp/knap-tls.pem $TLS_PORT $GATEWAY $RELAY_PORT >/tmp/knap-tls.log 2>&1 &); sleep 2" >/dev/null
 
 # --- the same note, carried by each mode in turn ---------------------------- #
 # Whole vault is the default and one folder is the option, so both have to move
@@ -150,6 +196,17 @@ run_scope() {
 }
 
 REMOTE_LINE=$'\nDeze regel is van een ander apparaat.\n'
+
+# The plugin object existing is not the plugin being ready. The wait after the
+# restart above stops at `app.plugins.plugins['synced-vaults']`, which appears
+# as soon as onload starts; sharedFolders, tokenStore and folderSettings are
+# assigned partway through it, and every phase below reaches straight for all
+# three. So wait for what the phases actually use.
+wait_for "(() => {
+	const p = app.plugins.plugins['synced-vaults'];
+	return !!(p && p.sharedFolders && p.tokenStore && p.folderSettings);
+})()" "synced-vaults finishing its load" 60
+printf '\n'
 
 echo "relay, tls proxy and trust are up; driving Obsidian..."
 run_scope vault "00000000-0000-4000-8000-00000000f001"
@@ -193,6 +250,9 @@ for path in sys.argv[1:3]:
         "sharePath": setup.get("sharePath"),
         "bytesBefore": setup.get("bytesOnDisk"),
         "bytesAfter": len(land.get("onDisk", "")),
+        "msShare": push.get("msShare"),
+        "msDoc": push.get("msDoc"),
+        "msTotal": push.get("msTotal"),
     }
 
 print(json.dumps(summary))

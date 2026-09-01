@@ -14,6 +14,7 @@ import { TreeDoc } from "../../src/knap/TreeDoc";
 import {
 	FileEvent,
 	FileStore,
+	SeenTree,
 	VaultBinding,
 	VaultDocs,
 	splice,
@@ -43,8 +44,19 @@ class MemoryFiles implements FileStore {
 		this.map.set(to, text);
 		this.emit({ type: "rename", path: to, oldPath: from });
 	}
+	async readBinary(): Promise<ArrayBuffer | null> {
+		// The note half of the store. AttachmentBinding.test.ts has the
+		// store that carries bytes.
+		return null;
+	}
+	async writeBinary(): Promise<void> {
+		throw new Error("This store holds notes.");
+	}
 	async listNotes(): Promise<string[]> {
 		return [...this.map.keys()].filter((p) => p.endsWith(".md"));
+	}
+	async listAttachments(): Promise<string[]> {
+		return [...this.map.keys()].filter((p) => !p.endsWith(".md"));
 	}
 	onChange(callback: (event: FileEvent) => void): () => void {
 		this.listeners.push(callback);
@@ -54,6 +66,21 @@ class MemoryFiles implements FileStore {
 	}
 	emit(event: FileEvent): void {
 		for (const listener of [...this.listeners]) listener(event);
+	}
+}
+
+/** The tree this device last agreed with, surviving a restart in memory. */
+class MemorySeen implements SeenTree {
+	entries: Map<string, string> | null = null;
+
+	async load(): Promise<Map<string, string>> {
+		return new Map(this.entries ?? []);
+	}
+	async save(entries: Map<string, string>): Promise<void> {
+		this.entries = new Map(entries);
+	}
+	async forget(): Promise<void> {
+		this.entries = null;
 	}
 }
 
@@ -141,12 +168,22 @@ class Hub {
 	}
 }
 
-async function device(hub: Hub, seed: Record<string, string> = {}) {
+async function device(hub: Hub, seed: Record<string, string> = {}, seen: SeenTree | null = null) {
 	const files = new MemoryFiles();
 	for (const [path, text] of Object.entries(seed)) files.map.set(path, text);
-	const binding = new VaultBinding(files, hub.device(), () => "conflict");
+	const binding = new VaultBinding(files, hub.device(), () => "conflict", seen);
 	await binding.start();
 	return { files, binding };
+}
+
+/**
+ * The same device, started again: the same disk, the same record, and fresh
+ * documents, because a restart is exactly a set of sockets opening again.
+ */
+async function restart(hub: Hub, files: MemoryFiles, seen: SeenTree | null = null) {
+	const binding = new VaultBinding(files, hub.device(), () => "conflict", seen);
+	await binding.start();
+	return binding;
 }
 
 const settle = async (...bindings: VaultBinding[]) => {
@@ -275,6 +312,134 @@ describe("VaultBinding", () => {
 		expect(b.files.map.has("weg.md")).toBe(false);
 	});
 
+	it("deleting a folder takes the notes in it out of the tree", async () => {
+		// Obsidian's delete event for a folder names the folder and not the
+		// notes in it. Left at that, the notes stayed in the tree and came
+		// straight back down onto the disk they had just been deleted from.
+		const hub = new Hub();
+		const a = await device(hub, {
+			"Map/een.md": "x",
+			"Map/twee.md": "y",
+			"los.md": "z",
+		});
+		const b = await device(hub);
+		await settle(a.binding, b.binding);
+
+		a.files.map.delete("Map/een.md");
+		a.files.map.delete("Map/twee.md");
+		a.files.emit({ type: "delete", path: "Map" });
+		await settle(a.binding, b.binding);
+
+		expect(hub.treeOf().has("Map/een.md")).toBe(false);
+		expect(b.files.map.has("Map/twee.md")).toBe(false);
+		expect(b.files.map.get("los.md")).toBe("z");
+	});
+
+	it("a note deleted while the plugin was not running is deleted in the cloud vault", async () => {
+		// The delete somebody makes with Obsidian closed, or with the plugin
+		// off, or on a laptop that never got back online before it was shut.
+		// No event ever fires for it, so the only trace is a file that is not
+		// where the record says it was.
+		const hub = new Hub();
+		const seen = new MemorySeen();
+		const a = await device(hub, { "weg.md": "x", "blijft.md": "y" }, seen);
+		const b = await device(hub);
+		await settle(a.binding, b.binding);
+		expect(b.files.map.get("weg.md")).toBe("x");
+
+		a.binding.stop();
+		a.files.map.delete("weg.md");
+
+		const back = await restart(hub, a.files, seen);
+		await settle(back, b.binding);
+
+		expect(hub.treeOf().has("weg.md")).toBe(false);
+		expect(a.files.map.has("weg.md")).toBe(false);
+		expect(b.files.map.has("weg.md")).toBe(false);
+		expect(b.files.map.get("blijft.md")).toBe("y");
+	});
+
+	it("a note deleted in the cloud vault while the device was away goes from its disk", async () => {
+		// The same fact from the other end: this device kept the note, so on
+		// the next start it used to upload it again under a new document and
+		// undo somebody else's delete on every device.
+		const hub = new Hub();
+		const seen = new MemorySeen();
+		const a = await device(hub, { "weg.md": "x" }, seen);
+		const b = await device(hub);
+		await settle(a.binding, b.binding);
+
+		a.binding.stop();
+		await b.files.remove("weg.md");
+		await settle(b.binding);
+
+		const back = await restart(hub, a.files, seen);
+		await settle(back, b.binding);
+
+		expect(a.files.map.has("weg.md")).toBe(false);
+		expect(hub.treeOf().has("weg.md")).toBe(false);
+	});
+
+	it("a note that arrived while the device was away is still downloaded", async () => {
+		// The record may only speak about notes it has seen. Reading a note
+		// it has never heard of as a deletion is how this would eat the work
+		// of every other device.
+		const hub = new Hub();
+		const seen = new MemorySeen();
+		const a = await device(hub, { "eigen.md": "x" }, seen);
+		const b = await device(hub);
+		await settle(a.binding, b.binding);
+
+		a.binding.stop();
+		await b.files.write("nieuw.md", "van B");
+		await settle(b.binding);
+
+		const back = await restart(hub, a.files, seen);
+		await settle(back, b.binding);
+
+		expect(a.files.map.get("nieuw.md")).toBe("van B");
+		expect(a.files.map.get("eigen.md")).toBe("x");
+	});
+
+	it("a vault whose files have not loaded deletes nothing", async () => {
+		// A vault Obsidian is still opening answers "which notes are here"
+		// with too few, and a vault somebody emptied answers it with none.
+		// The two are the same answer, and only one of them is worth acting
+		// on, so the empty one is not acted on at all.
+		const hub = new Hub();
+		const seen = new MemorySeen();
+		const a = await device(hub, { "een.md": "x", "twee.md": "y" }, seen);
+		await settle(a.binding);
+		a.binding.stop();
+
+		const unloaded = new MemoryFiles();
+		const back = await restart(hub, unloaded, seen);
+		await settle(back);
+
+		expect(hub.treeOf().has("een.md")).toBe(true);
+		expect(hub.treeOf().has("twee.md")).toBe(true);
+		expect(unloaded.map.get("een.md")).toBe("x");
+	});
+
+	it("without a record a restart deletes nothing on either side", async () => {
+		// A device linking for the first time, and every device before this
+		// record existed: a missing file is a note that has not arrived yet,
+		// so it arrives. Nothing is deleted anywhere on the strength of a
+		// guess.
+		const hub = new Hub();
+		const a = await device(hub, { "weg.md": "x" });
+		await settle(a.binding);
+
+		a.binding.stop();
+		a.files.map.delete("weg.md");
+
+		const back = await restart(hub, a.files);
+		await settle(back);
+
+		expect(hub.treeOf().has("weg.md")).toBe(true);
+		expect(a.files.map.get("weg.md")).toBe("x");
+	});
+
 	it("a note arriving where an unsynced local file sits keeps both", async () => {
 		// Not link time: B is already linked and typing, and A makes a note of
 		// the same name on the other side of the world. The tree change reaches
@@ -320,6 +485,52 @@ describe("VaultBinding", () => {
 		await settle(a.binding, b.binding);
 		expect(a.files.writes).toBe(before.a);
 		expect(b.files.writes).toBe(before.b);
+	});
+
+	it("stands down for a note an editor is holding, and catches the file up after", async () => {
+		const hub = new Hub();
+		const a = await device(hub, { "open.md": "eerste regel\n" });
+		const b = await device(hub);
+		await settle(a.binding, b.binding);
+
+		// Obsidian opens the note here: from now on the editor writes this
+		// file, so a remote change may not be written over its buffer.
+		const release = a.binding.hold("open.md");
+		const docId = hub.device().tree().docIdFor("open.md");
+		expect(docId).toBeTruthy();
+
+		await b.files.write("open.md", "eerste regel\ntweede regel\n");
+		await settle(a.binding, b.binding);
+		expect(a.files.map.get("open.md")).toBe("eerste regel\n");
+
+		// The editor closes: the file is brought up to date once, here.
+		release();
+		await settle(a.binding);
+		expect(a.files.map.get("open.md")).toBe("eerste regel\ntweede regel\n");
+	});
+
+	it("ignores the save event of a held note, whose editor is already ahead", async () => {
+		const hub = new Hub();
+		const a = await device(hub, { "open.md": "een\ntwee\n" });
+		const b = await device(hub);
+		await settle(a.binding, b.binding);
+
+		const release = a.binding.hold("open.md");
+		// The other device adds a line while this editor holds the note.
+		await b.files.write("open.md", "een\ntwee\ndrie van B\n");
+		await settle(a.binding, b.binding);
+
+		// The file here is a save behind the buffer somebody is typing in,
+		// which is the ordinary state of an open note. Set rather than
+		// written, because a write is what Obsidian is doing, not us.
+		a.files.map.set("open.md", "een\ntwee\n");
+		// And now Obsidian saves. Without the stand-down this splices the
+		// other device's line back out of the document for everybody.
+		a.files.emit({ type: "modify", path: "open.md" });
+		await settle(a.binding, b.binding);
+		expect(b.files.map.get("open.md")).toBe("een\ntwee\ndrie van B\n");
+
+		release();
 	});
 
 	it("only markdown is bound; other files stay local", async () => {

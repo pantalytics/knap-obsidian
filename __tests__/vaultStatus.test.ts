@@ -18,6 +18,7 @@ import { PAUSED, SIGNED_OUT, SYNCING, UP_TO_DATE } from "../src/syncStatus";
 import {
 	SYNC_DOT_NAMES,
 	folderCaughtUp,
+	statusBarPaint,
 	vaultCounts,
 	vaultReading,
 	vaultSyncWord,
@@ -312,5 +313,52 @@ describe("a vault that is not syncing and is not about to be", () => {
 		const reading = vaultReading(true, [], true);
 		expect(reading.counts).toBe("");
 		expect(reading.progress).toBeUndefined();
+	});
+});
+
+describe("the corner of the window", () => {
+	// The bar is the half of the status somebody reads without looking at it,
+	// so what is pinned here is when it is drawn at all. A bar filling against
+	// an unknown total is a spinner wearing a percentage (syncStatus.ts), and
+	// an empty track beside a finished vault reads as work that never started.
+
+	test("a first sync draws the bar, the count and the word", () => {
+		const paint = statusBarPaint(
+			vaultReading(true, [{ ...synced, total: 1202, completed: 412 }]),
+		);
+		expect(paint.dot).toBe("working");
+		expect(paint.count).toBe("412 of 1,202");
+		expect(paint.label).toBe("Knap: syncing, 412 of 1,202");
+		expect(paint.percent).toBe(34);
+	});
+
+	test("a device downloading a vault it just joined draws one too", () => {
+		const paint = statusBarPaint(vaultReading(true, [justJoined]));
+		expect(paint.percent).toBe(0);
+		expect(paint.count).toBe("0 of 2,567");
+	});
+
+	test("a caught up vault has no bar and nothing to count", () => {
+		const paint = statusBarPaint(vaultReading(true, [synced]));
+		expect(paint.percent).toBeUndefined();
+		expect(paint.count).toBe("");
+		expect(paint.label).toBe("Knap: up to date");
+	});
+
+	test("signed out has no bar, whatever the folders were carrying", () => {
+		const paint = statusBarPaint(
+			vaultReading(false, [{ ...synced, total: 1202, completed: 412 }]),
+		);
+		expect(paint.percent).toBeUndefined();
+		expect(paint.label).toBe("Knap: signed out");
+	});
+
+	test("the percent never runs past the end of the track", () => {
+		// More done than there is to do is a queue that counted a note twice,
+		// and a fill wider than its track is what it would draw.
+		const paint = statusBarPaint(
+			vaultReading(true, [{ ...synced, total: 10, completed: 40, missing: 1 }]),
+		);
+		expect(paint.percent).toBe(100);
 	});
 });

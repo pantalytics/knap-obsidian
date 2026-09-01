@@ -12,14 +12,16 @@
  * here says server, relay or share to a person.
  */
 
-import { Notice, Platform, Plugin, SuggestModal } from "obsidian";
+import { Notice, Platform, Plugin, SuggestModal, editorInfoField } from "obsidian";
 
 import { KNAP_PANEL_URL } from "../RelayOnPremConfig";
 
 import type { CloudVault } from "./KnapServer";
+import { knapLiveEditing } from "./knapEditor";
 import { KnapSync } from "./KnapSync";
 import type { KnapLink } from "./KnapSync";
 import { ObsidianFileStore } from "./ObsidianFileStore";
+import { ObsidianSeenTree } from "./ObsidianSeenTree";
 import { KnapSettingsTab, signOutNotice } from "./KnapSettingsTab";
 import { SIGNIN_ACTION } from "./SignInFlow";
 import { obsidianFetch } from "./obsidianFetch";
@@ -160,6 +162,13 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 		files: new ObsidianFileStore(host.app.vault, host.app.fileManager),
 		load: () => host.getKnapLink(),
 		save: (value) => host.saveKnapLink(value),
+		onRefused: (path, reason) => new Notice(`${path}: ${reason}`),
+		makeSeen: (cloudVaultId) =>
+			new ObsidianSeenTree(
+				host.app.vault.adapter,
+				`${host.app.vault.configDir}/plugins/${host.manifest.id}/knap-seen.json`,
+				cloudVaultId,
+			),
 	});
 
 	const signIn = () => sync.signIn((url) => window.open(url));
@@ -195,6 +204,13 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 		});
 
 	host.addSettingTab(new KnapSettingsTab(host, sync, { signIn, pickAndLink }, serverUrl));
+
+	// Live editing and the cursors on it, for whichever note an editor is
+	// showing. Which file that is is Obsidian's answer to give, so it comes
+	// in as a function and the extension itself stays testable.
+	host.registerEditorExtension(
+		knapLiveEditing(sync, (state) => state.field(editorInfoField, false)?.file?.path ?? null),
+	);
 
 	host.registerObsidianProtocolHandler(SIGNIN_ACTION, (params) => {
 		const fed = sync.handleDeepLink(params as unknown as Record<string, string>);
@@ -244,9 +260,18 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 		},
 	});
 
-	// A vault that was linked before this start comes back up on its own.
-	void sync.start().catch(() => {
-		new Notice("Knap could not reach your cloud vault. It will retry when you sign in again.");
+	// A vault that was linked before this start comes back up on its own,
+	// and not one moment before the layout is ready. The first thing the
+	// binding does is ask Obsidian which notes this vault holds, and a vault
+	// that has not finished loading answers that with too few. Since a note
+	// missing from disk is now read as a note somebody deleted, starting
+	// early would take the rest of the vault out of the cloud with it.
+	host.app.workspace.onLayoutReady(() => {
+		void sync.start().catch(() => {
+			new Notice(
+				"Knap could not reach your cloud vault. It will retry when you sign in again.",
+			);
+		});
 	});
 	return sync;
 }
