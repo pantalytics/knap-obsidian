@@ -160,10 +160,21 @@ class Hub {
 			}
 			return entry;
 		};
+		// The real client hands a note's document out for the length of one
+		// piece of work and closes the socket again (KnapVaultClient's pool).
+		// This hub lends the same way, synced first, but keeps the documents:
+		// what a device does with a note it has finished with is the pool's
+		// business, and every rule in this file is about what the binding
+		// does while it has one.
 		return {
 			tree: () => (tree ??= new TreeDoc(open("tree").doc)),
 			treeSynced: () => open("tree").synced,
-			note: (docId: string) => open(docId),
+			withNote: async <T,>(docId: string, use: (note: { doc: Y.Doc }) => Promise<T>) => {
+				const entry = open(docId);
+				await entry.synced;
+				return use({ doc: entry.doc });
+			},
+			onNoteClosed: () => () => undefined,
 		};
 	}
 }

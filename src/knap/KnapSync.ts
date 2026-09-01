@@ -131,6 +131,10 @@ export class KnapSync {
 	 * the token, the link, the socket and the queue's failure count, and
 	 * hands them to `syncWord`, which owns the order those facts win in.
 	 *
+	 * A vault with no link is Paused rather than Up to date: nothing is
+	 * moving, nothing is going to, and green over it would say the notes
+	 * were safe somewhere they have never been.
+	 *
 	 * Syncing is "linked, connected, and the tree has not settled yet". Once
 	 * the tree has been through its first exchange there is nothing this side
 	 * is waiting for, and a spinner that never stops is worse than no spinner.
@@ -141,7 +145,14 @@ export class KnapSync {
 		const problems = this.binding?.problems ?? 0;
 		const word = syncWord({
 			signedIn: this.signedIn,
-			paused: false,
+			// Signed in with nowhere to sync to is not up to date, it is
+			// standing still: nothing is moving and nothing is going to
+			// until somebody picks a cloud vault. Green over that vault is
+			// the same lie #40 was about, and #42 already settled the word
+			// for a vault waiting to be told which cloud vault it belongs
+			// to. The screen says Not linked in full; the corner of the
+			// window has one word to do it in.
+			paused: !linked,
 			syncing: Boolean(this.client) && !this.client?.settled,
 			// Not linked is not offline: there is no socket because there is
 			// nothing to open one to, and saying Offline would send somebody
@@ -334,23 +345,39 @@ export class KnapSync {
 	 * fill it, so the note would arrive a moment later and be merged with a
 	 * copy of itself. The editor asks again on its next update, and by then
 	 * the answer is a real document.
+	 *
+	 * Pinning is what keeps the note out of the socket pool for as long as
+	 * the editor has it. A note that is already open in the pool, which is
+	 * what a note somebody opens during a fill usually is, is promoted where
+	 * it stands: same document, same socket, same sync, nothing repeated.
 	 */
 	openNote(path: string): LiveNoteHandle | null {
 		const clean = normalize(path);
 		if (!this.client || !this.binding) return null;
 		const docId = this.client.tree().docIdFor(clean);
 		if (!docId) return null;
-		const entry = this.client.note(docId);
-		if (!entry.provider.synced) return null;
-		const release = this.binding.hold(clean);
+		const note = this.client.pin(docId);
+		if (!note.provider.synced) {
+			// Handed straight back, so a note the editor did not take is a
+			// note the pool may still close.
+			note.release();
+			return null;
+		}
+		const unhold = this.binding.hold(clean);
 		return {
-			text: this.client.contentOf(entry),
-			awareness: entry.provider.awareness,
+			text: note.text,
+			awareness: note.provider.awareness,
 			// What the other people in this note see beside the caret. The
 			// device name is the fallback, not the answer: it reads fine on
 			// your own second laptop and names nobody to a colleague.
 			who: personLabel(this.person, this.options.deviceName),
-			release,
+			// The file is caught up from the document first, and only then
+			// does the note go back into the pool, where it stays open until
+			// the pool needs the socket for something else.
+			release: () => {
+				unhold();
+				note.release();
+			},
 		};
 	}
 
