@@ -28,6 +28,12 @@ export interface CloudVault {
 
 }
 
+/** Who the token belongs to. The address is empty when we have none. */
+export interface Person {
+	subject: string;
+	email: string;
+}
+
 /** The slice of a fetch Response this module reads. requestUrl adapts to it too. */
 export interface HttpAnswer {
 	ok: boolean;
@@ -97,6 +103,32 @@ export class KnapServer {
 		if (!response.ok && response.status !== 401) {
 			throw new KnapServerError("The sign-out did not land.", response.status);
 		}
+	}
+
+	/**
+	 * Who this token belongs to.
+	 *
+	 * The plugin has always known it holds a credential and never whose. On
+	 * one person's own devices that costs nothing; in a vault with two people
+	 * in it, it is the difference between a caret labelled `MacBook-Pro-2`
+	 * and one labelled with a person.
+	 *
+	 * An empty address is a real answer, not a failure: the server keeps one
+	 * address per account and it is empty for an account whose issuer said
+	 * nothing. Callers fall back to the device name rather than invent one.
+	 */
+	async me(token: string): Promise<Person> {
+		const response = await this.fetchFn(`${this.baseUrl}/api/me`, {
+			headers: { Authorization: `Bearer ${token}` },
+		});
+		if (response.status === 401) {
+			throw new KnapServerError("Not signed in any more. Sign in again.", 401);
+		}
+		if (!response.ok) {
+			throw new KnapServerError("The server did not answer.", response.status);
+		}
+		const body = (await response.json()) as { subject?: string; email?: string };
+		return { subject: body.subject ?? "", email: body.email ?? "" };
 	}
 
 	/** The cloud vaults this account may open. */

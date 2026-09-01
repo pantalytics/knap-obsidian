@@ -30,9 +30,9 @@
  * uninstalling the plugin, which leaves the token alive anyway.
  */
 
-import { Notice, type Plugin, PluginSettingTab, Setting } from "obsidian";
+import { Notice, type Plugin, PluginSettingTab, Setting, setIcon } from "obsidian";
 
-import { OFFLINE, PROBLEM, SIGNED_OUT, syncInstruction } from "../syncStatus";
+import { OFFLINE, PROBLEM, syncInstruction } from "../syncStatus";
 import type { KnapStatus, KnapSync } from "./KnapSync";
 
 /**
@@ -52,21 +52,27 @@ export function signOutNotice(endedRemotely: boolean): string {
  * Pure, and exported, because it is the half of the bar worth pinning in a
  * test: which facts appear depends on the word, and a fact that appears with
  * nothing to say is the sort of empty row this screen exists to be rid of.
+ *
+ * **The vault and its note count are not here**, because the head already
+ * carries them and the fold's whole justification is holding what the head
+ * does not. They were in both until #125, which is how one phone screen came
+ * to say the vault's name three times: in the head, behind the fold, and again
+ * on the Cloud vault row. On a desktop width those three sit far apart and the
+ * repetition is quiet. Stacked into one column on a phone they are within a
+ * thumb of each other.
  */
 export function statusFacts(status: KnapStatus): Array<[string, string]> {
 	const facts: Array<[string, string]> = [];
-	if (status.vaultName) {
-		facts.push(["Cloud vault", status.vaultName]);
-	}
-	if (status.notes > 0) {
-		facts.push(["Notes", status.notes.toLocaleString("en-US")]);
-	}
 	// The corner has room for two numbers and adds the two kinds of file
 	// together to get them. This is the screen with room to keep them apart,
 	// and attachments are worth keeping apart: one photo is a hundred notes'
 	// worth of bytes, so a single number sits still and then jumps (ADR-0088).
 	// The rows are named the way the tooltip says it, because somebody moves
 	// between the two in one sitting.
+	//
+	// These are not the repetition #125 took out. The head carries the vault
+	// and how many notes are in it; how many are still moving is a different
+	// fact and is nowhere else on the screen.
 	const going = pieces(status.up, status.files.up);
 	if (going) facts.push(["To the cloud vault", going]);
 	const coming = pieces(status.down, status.files.down);
@@ -90,6 +96,18 @@ function pieces(notes: number, files: number): string {
 
 function count(n: number): string {
 	return n.toLocaleString("en-US");
+}
+
+/**
+ * Whether the bar has anything folded away at all.
+ *
+ * On the happy path it does not: no instruction under *Up to date*, nothing
+ * stuck, nothing to retry. A head that opens onto an empty strip is worse than
+ * a head that does not open, so the bar only becomes a button when there is
+ * something under it.
+ */
+export function hasFold(status: KnapStatus): boolean {
+	return Boolean(syncInstruction(status.word)) || statusFacts(status).length > 0 || hasRetry(status);
 }
 
 /** Only the two words a person can do something about get a button here. */
@@ -214,28 +232,55 @@ export class KnapSettingsTab extends PluginSettingTab {
 	 * description and controls on the right, and this is none of those. It is
 	 * the first thing on the screen because it is what somebody came to find
 	 * out; the two rows under it are what they came to change, which is rarer.
+	 *
+	 * **The head is a button only when something is folded behind it** (#125).
+	 * Under *Up to date* there is no instruction, nothing stuck and nothing to
+	 * retry, so the head opens onto an empty strip, and a control that does
+	 * nothing is worse than no control.
+	 *
+	 * The detail is two spans rather than one string because they shrink
+	 * differently. On a phone the whole line is wider than the card, and the
+	 * count is the half worth keeping: a long vault name is a name, while
+	 * *1,368 notes* is the answer to what somebody opened the screen for. So the
+	 * name truncates and the count never does.
 	 */
 	private drawStatus(containerEl: HTMLElement): void {
 		const status = this.sync.status();
 		const block = containerEl.createDiv({ cls: "knap-status" });
+		const folds = hasFold(status);
 
 		const body = block.createDiv({ cls: "knap-status-body" });
 		body.hidden = true;
 
-		const head = block.createEl("button", { cls: "knap-status-head" });
-		head.type = "button";
-		head.setAttribute("aria-expanded", "false");
+		const head = folds
+			? block.createEl("button", { cls: "knap-status-head knap-status-opens" })
+			: block.createDiv({ cls: "knap-status-head" });
+		if (folds) (head as HTMLButtonElement).type = "button";
 		head.createSpan({ cls: `knap-dot knap-dot-${status.dot}` });
 		head.createSpan({ cls: "knap-status-word", text: status.word });
-		const detail = detailLine(status);
-		if (detail) {
-			head.createSpan({ cls: "knap-status-detail", text: detail });
+		const detail = head.createSpan({ cls: "knap-status-detail" });
+		if (status.vaultName) {
+			detail.createSpan({ cls: "knap-status-vault", text: status.vaultName });
 		}
-		head.addEventListener("click", () => {
-			const open = head.getAttribute("aria-expanded") === "true";
-			head.setAttribute("aria-expanded", String(!open));
-			body.hidden = open;
-		});
+		if (status.notes > 0) {
+			detail.createSpan({
+				cls: "knap-status-count",
+				text: `${status.notes.toLocaleString("en-US")} note${status.notes === 1 ? "" : "s"}`,
+			});
+		}
+
+		if (folds) {
+			// A touch screen has no hover to discover the fold with, so the
+			// chevron is the only thing that says the bar opens (#125).
+			const chevron = head.createSpan({ cls: "knap-status-chevron" });
+			setIcon(chevron as HTMLElement, "chevron-down");
+			head.setAttribute("aria-expanded", "false");
+			head.addEventListener("click", () => {
+				const open = head.getAttribute("aria-expanded") === "true";
+				head.setAttribute("aria-expanded", String(!open));
+				body.hidden = open;
+			});
+		}
 		// The head is written after the body so the click handler can close
 		// over it, and moved above it here, where the reader expects it.
 		block.insertBefore(head, body);
@@ -256,23 +301,7 @@ export class KnapSettingsTab extends PluginSettingTab {
 				void this.sync.retry().then(() => this.display());
 			});
 		}
-		if (status.word === SIGNED_OUT) {
-			// Unreachable from here, because a signed-out screen never draws
-			// the bar. Kept as the one place that would have to change if the
-			// bar ever appeared before the account did.
-			body.createDiv({ cls: "knap-status-say", text: "Sign in above to carry on." });
-		}
 	}
-}
-
-/** "Work notes, 312 notes", or as much of it as is true. */
-function detailLine(status: KnapStatus): string {
-	const parts: string[] = [];
-	if (status.vaultName) parts.push(status.vaultName);
-	if (status.notes > 0) {
-		parts.push(`${count(status.notes)} note${status.notes === 1 ? "" : "s"}`);
-	}
-	return parts.join(" · ");
 }
 
 /** The address without its scheme, because nobody reads https to a person. */

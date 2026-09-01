@@ -30,6 +30,7 @@ import { syncDot, syncWord } from "../syncStatus";
 import type { AttachmentTransport, Refusal } from "./AttachmentBinding";
 import { AttachmentBinding } from "./AttachmentBinding";
 import type { LiveNoteHandle } from "./knapEditor";
+import { conflictLabelFor, personLabel } from "./person";
 import { normalize } from "./TreeDoc";
 import type { FileStore, SeenTree } from "./VaultBinding";
 import { VaultBinding } from "./VaultBinding";
@@ -87,6 +88,17 @@ export interface KnapSyncOptions {
 	onRefused?: Refusal;
 	/** Where this device remembers a cloud vault's tree, if anywhere. */
 	makeSeen?: (cloudVaultId: string) => SeenTree;
+	/**
+	 * Told when the server refuses this device the vault it has linked:
+	 * somebody took this account out of it, or the vault was deleted.
+	 *
+	 * The link is not torn down for them. Nothing local is wrong, every note
+	 * is still on this disk, and a plugin that silently unlinked would turn
+	 * somebody else's administrative act into a change to this machine. The
+	 * sockets stop and the host says so; what to do about it is a person's
+	 * call.
+	 */
+	onLostVault?: (vaultName: string) => void;
 }
 
 export class KnapSync {
@@ -95,6 +107,10 @@ export class KnapSync {
 	private client: KnapVaultClient | null = null;
 	private binding: VaultBinding | null = null;
 	private attachments: AttachmentBinding | null = null;
+	/** This account's address, as the server has it. Empty until start. */
+	private person = "";
+	/** Whether the server has refused this device the vault it linked. */
+	private lost = false;
 
 	constructor(private readonly options: KnapSyncOptions) {
 		this.server = new KnapServer(options.serverUrl, options.fetchFn);
@@ -157,6 +173,7 @@ export class KnapSync {
 			// to check their wifi over a vault they never linked.
 			connected: linked ? connected : undefined,
 			stuck: problems,
+			lost: this.lost,
 		});
 		return {
 			word,
@@ -254,17 +271,24 @@ export class KnapSync {
 		if (!stored || this.binding) {
 			return;
 		}
+		// Who we are, for the caret and the conflict copies. Asked once per
+		// start rather than per label, and never fatal: an address we could
+		// not fetch leaves both falling back to the device name, which is
+		// what they said before this existed.
+		this.person = await this.whoAmI(stored.token);
+		this.lost = false;
 		this.client = new KnapVaultClient(
 			this.server,
 			stored.cloudVaultId,
 			stored.token,
 			this.options.deviceName,
 			this.options.webSocket,
+			() => this.loseVault(stored.cloudVaultName),
 		);
 		this.binding = new VaultBinding(
 			this.options.files,
 			this.client,
-			undefined,
+			() => conflictLabelFor(this.person, this.options.deviceName, new Date()),
 			this.options.makeSeen?.(stored.cloudVaultId) ?? null,
 		);
 		this.attachments = new AttachmentBinding(
@@ -272,11 +296,48 @@ export class KnapSync {
 			this.client,
 			this.transportFor(stored.token, stored.cloudVaultId),
 			this.options.onRefused,
+			() => conflictLabelFor(this.person, this.options.deviceName, new Date()),
 		);
 		// Notes first. Both wait for the same tree to sync, and a vault whose
 		// notes are already arriving is the one somebody is looking at.
 		await this.binding.start();
 		await this.attachments.start();
+	}
+
+	/**
+	 * This account's address, or "" when the server will not say.
+	 *
+	 * Swallowed on purpose. Both callers have a fallback that predates this
+	 * route, and a link that would not come up because a label could not be
+	 * fetched would be a worse plugin than one whose carets say
+	 * `MacBook-Pro-2`.
+	 */
+	private async whoAmI(token: string): Promise<string> {
+		try {
+			return (await this.server.me(token)).email;
+		} catch {
+			return "";
+		}
+	}
+
+	/**
+	 * The server has refused this device the vault: somebody took this
+	 * account out of it, or the vault is gone.
+	 *
+	 * The client has already stopped its sockets by the time this runs. What
+	 * is left is to stop the bindings, so no local edit queues up against a
+	 * vault this device can no longer reach, and to tell the host. The stored
+	 * link stays: every note is still on this disk, and unlinking on somebody
+	 * else's say-so is not this plugin's call to make.
+	 */
+	private loseVault(vaultName: string): void {
+		if (this.lost) return;
+		this.lost = true;
+		this.binding?.stop();
+		this.attachments?.stop();
+		this.binding = null;
+		this.attachments = null;
+		this.options.onLostVault?.(vaultName);
 	}
 
 	/** The file routes, bound to one vault and one token. */
@@ -323,7 +384,10 @@ export class KnapSync {
 		return {
 			text: note.text,
 			awareness: note.provider.awareness,
-			deviceName: this.options.deviceName,
+			// What the other people in this note see beside the caret. The
+			// device name is the fallback, not the answer: it reads fine on
+			// your own second laptop and names nobody to a colleague.
+			who: personLabel(this.person, this.options.deviceName),
 			// The file is caught up from the document first, and only then
 			// does the note go back into the pool, where it stays open until
 			// the pool needs the socket for something else.

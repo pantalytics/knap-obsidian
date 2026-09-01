@@ -77,6 +77,33 @@ describe("the words", () => {
 		).toBe(PROBLEM);
 	});
 
+	test("a vault this device was taken out of is Problem, not Offline", () => {
+		// It has no socket either, and it never will have one again. Offline
+		// would send somebody to check their wifi over a membership somebody
+		// else ended, and waiting will not bring it back.
+		expect(
+			syncWord({
+				signedIn: true,
+				paused: false,
+				syncing: false,
+				connected: false,
+				lost: true,
+			}),
+		).toBe(PROBLEM);
+	});
+
+	test("paused still beats lost, because the person did that one on purpose", () => {
+		expect(
+			syncWord({
+				signedIn: true,
+				paused: true,
+				syncing: false,
+				connected: false,
+				lost: true,
+			}),
+		).toBe(PAUSED);
+	});
+
 	test("a caller that cannot tell about the socket is not treated as offline", () => {
 		// Left out, not false: a status that cries Offline because nobody
 		// asked is worse than one that says nothing.
