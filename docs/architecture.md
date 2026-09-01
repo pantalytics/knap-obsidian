@@ -138,6 +138,14 @@ the reason is measured rather than tidy. Two local vaults on one account held
 each other's folder trees on 2026-08-14 because the answer lived in whichever
 row sat first in a settings array.
 
+**It settles when the cloud vault answers, not when the vault is full**
+(ADR-0086). The reconcile below is minutes of work on a phone with a few
+thousand notes, and none of it is a question of whether the link exists, so it
+runs behind the call and is counted on the binding: `Syncing` while it goes,
+`Problem` with a Try again if a unit stayed stuck. A second `link()` for the
+same cloud vault while the first is still coming up joins it rather than
+tearing it down, which is what a person pressing a button twice means.
+
 At link time nothing is guessed:
 
 | On disk | In the tree | What happens |

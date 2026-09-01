@@ -39,6 +39,7 @@ import * as Y from "yjs";
 
 import { buildConflictCopyPath } from "../conflictCopyPath";
 import { TreeDoc, isNote, normalize } from "./TreeDoc";
+import { withTimeout } from "./withTimeout";
 
 export interface FileEvent {
 	type: "create" | "modify" | "delete" | "rename";
@@ -136,23 +137,6 @@ const TREE_SYNC_TIMEOUT_MS = 30_000;
  * turn instead of opening the 256th socket Chromium never answers.
  */
 const FILL_WIDTH = 8;
-
-/** Reject with `message` if `promise` has not settled in `ms`. */
-function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
-	return new Promise<T>((resolve, reject) => {
-		const timer = window.setTimeout(() => reject(new Error(message)), ms);
-		promise.then(
-			(value) => {
-				window.clearTimeout(timer);
-				resolve(value);
-			},
-			(error: unknown) => {
-				window.clearTimeout(timer);
-				reject(error instanceof Error ? error : new Error(String(error)));
-			},
-		);
-	});
-}
 
 /** Y.Text implements toString; the lint rule cannot see that through AbstractType. */
 function textOf(content: Y.Text): string {

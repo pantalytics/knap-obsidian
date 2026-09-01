@@ -30,6 +30,7 @@ import { WebsocketProvider } from "y-websocket";
 
 import type { KnapServer } from "./KnapServer";
 import { TREE_DOC_ID, TreeDoc } from "./TreeDoc";
+import { withTimeout } from "./withTimeout";
 
 /**
  * How many notes may hold a socket at once, beside the tree and whatever an
@@ -90,23 +91,6 @@ interface PoolEntry {
 	leases: number;
 	/** Bumped on every borrow, so the smallest is the least recently used. */
 	used: number;
-}
-
-/** Reject with `message` if `promise` has not settled in `ms`. */
-function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
-	return new Promise<T>((resolve, reject) => {
-		const timer = window.setTimeout(() => reject(new Error(message)), ms);
-		promise.then(
-			(value) => {
-				window.clearTimeout(timer);
-				resolve(value);
-			},
-			(error: unknown) => {
-				window.clearTimeout(timer);
-				reject(error instanceof Error ? error : new Error(String(error)));
-			},
-		);
-	});
 }
 
 export class KnapVaultClient {
