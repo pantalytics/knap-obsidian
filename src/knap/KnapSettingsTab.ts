@@ -142,7 +142,7 @@ export class KnapSettingsTab extends PluginSettingTab {
 		const linked = this.sync.linked;
 		const vault = new Setting(containerEl)
 			.setName("Cloud vault")
-			.setDesc(linked?.cloudVaultName || "Not linked. This vault is not syncing.");
+			.setDesc(linked?.cloudVaultName || "Not linked.");
 
 		if (linked) {
 			vault.addButton((button) =>
