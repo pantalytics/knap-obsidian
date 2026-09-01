@@ -34,9 +34,26 @@ export interface OpenDoc {
  */
 export type WebSocketImpl = { new (url: string | URL, protocols?: string | string[]): unknown };
 
+/** Who are you: this credential opens nothing here any more. */
+export const CLOSE_UNAUTHENTICATED = 4401;
+/** Not your vault: the credential is fine, the membership has gone. */
+export const CLOSE_FORBIDDEN = 4403;
+
 export class KnapVaultClient {
 	private open = new Map<string, OpenDoc>();
 	private treeDoc: TreeDoc | null = null;
+
+	private refusedWith = 0;
+	/**
+	 * Callers waiting for a document's first sync.
+	 *
+	 * Held so a refusal can release them. Measured in
+	 * `two_people_one_vault/`: without this, a device taken out of a vault
+	 * mid-edit hangs rather than stops. The binding's queue was waiting on a
+	 * `synced` that no longer had a socket to arrive on, so the work never
+	 * finished and nothing after it ever ran.
+	 */
+	private waiting: (() => void)[] = [];
 
 	constructor(
 		private readonly server: KnapServer,
@@ -44,7 +61,19 @@ export class KnapVaultClient {
 		private readonly token: string,
 		private readonly deviceName: string,
 		private readonly webSocket?: WebSocketImpl,
+		private readonly onRefused?: (code: number) => void,
 	) {}
+
+	/**
+	 * The close code the server refused us with, or 0 while we are welcome.
+	 *
+	 * Sticky on purpose. A refusal is a fact about this link rather than
+	 * about this socket, and the screen asks for it long after the socket
+	 * that carried it has gone.
+	 */
+	get refused(): number {
+		return this.refusedWith;
+	}
 
 	/** The vault's tree, connected. The first call opens the socket. */
 	tree(): TreeDoc {
@@ -95,20 +124,59 @@ export class KnapVaultClient {
 			params: { token: this.token, device: this.deviceName },
 			WebSocketPolyfill: this.webSocket as typeof WebSocket | undefined,
 			disableBc: true,
+			// A refused client opens no more sockets. Every one of them would
+			// be refused too, and each is another reconnect loop against a
+			// vault this device is no longer in.
+			connect: !this.refusedWith,
 		});
 		provider.awareness.setLocalStateField("device", { name: this.deviceName });
 
+		// A refusal, not an outage. y-websocket treats every close the same
+		// and reconnects with backoff forever, which for a person who was
+		// taken out of a vault is a device that goes on knocking and never
+		// says so. The close code is the only thing that tells the two apart,
+		// and until now nothing here read it.
+		provider.on("connection-close", (event: unknown) => {
+			const code = (event as { code?: number } | null)?.code ?? 0;
+			if (code === CLOSE_UNAUTHENTICATED || code === CLOSE_FORBIDDEN) {
+				this.refuse(code);
+			}
+		});
+
 		const synced = new Promise<void>((resolve) => {
-			if (provider.synced) {
+			// Refused documents resolve rather than hang. Nothing is going to
+			// sync them, and a caller waiting for that would wait forever:
+			// the binding's queue is serial, so one such wait stops every
+			// piece of work behind it.
+			if (provider.synced || this.refusedWith) {
 				resolve();
 				return;
 			}
 			provider.once("synced", () => resolve());
+			this.waiting.push(resolve);
 		});
 
 		const entry: OpenDoc = { doc, provider, synced };
 		this.open.set(docId, entry);
 		return entry;
+	}
+
+	/**
+	 * Stop knocking, and tell whoever is listening why.
+	 *
+	 * Every socket goes, not just the one that was refused: the refusal is
+	 * about this account and this vault, so the others are about to be
+	 * refused too, and each one left open is another reconnect loop. Once
+	 * only, because a vault with six documents open produces six of these.
+	 */
+	private refuse(code: number): void {
+		if (this.refusedWith) return;
+		this.refusedWith = code;
+		this.destroy();
+		// Before the callback, so a host that reacts by stopping its bindings
+		// is not waiting behind a promise this refusal has already settled.
+		for (const release of this.waiting.splice(0)) release();
+		this.onRefused?.(code);
 	}
 
 	/** Close one document's socket, keeping the vault linked. */
