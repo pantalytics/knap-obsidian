@@ -121,6 +121,25 @@ export interface SeenTree {
 	forget(): Promise<void>;
 }
 
+/**
+ * Notes still to move, by direction, with edits deliberately absent.
+ *
+ * Three things move notes and only two of them can be counted (ADR-0088).
+ * `up` is notes this device holds that the cloud vault has not got yet, `down`
+ * is notes the cloud vault lists that have no file here. They are disjoint
+ * sets, which is what makes them addable: a note is missing from one side or
+ * the other, never both.
+ *
+ * An edit to a note both sides already have is the third thing, and it is not
+ * in here. It has no denominator, it is over in under a second, and a number
+ * beside the icon that goes 1, 0, 1, 0 while somebody types is what makes the
+ * corner of the window unreadable.
+ */
+export interface Backlog {
+	up: number;
+	down: number;
+}
+
 const CONTENT = "content";
 
 /** How long to wait for the tree's first sync before giving up on a link. */
@@ -167,6 +186,8 @@ export class VaultBinding {
 	private noteObservers = new Map<string, () => void>();
 	private queue: Promise<void> = Promise.resolve();
 	private failures = 0;
+	/** Work taken on and not finished, by direction. Never edits. */
+	private outstanding = { up: 0, down: 0 };
 	/** Paths an open editor is holding, which this binding leaves alone. */
 	private held = new Set<string>();
 	/** Set whenever this device changed the tree, cleared when it is saved. */
@@ -204,7 +225,15 @@ export class VaultBinding {
 			void this.enqueue(async () => {
 				this.seenDirty = true;
 				for (const [path, docId] of change.added) {
-					await this.bindNote(path, docId);
+					// A document this binding already watches is the echo of
+					// its own push coming back through the tree, not a note
+					// arriving from somewhere else, and putting it on the
+					// down gauge would count every upload twice.
+					if (this.noteObservers.has(docId)) {
+						await this.bindNote(path, docId);
+					} else {
+						await this.carry("down", () => this.bindNote(path, docId));
+					}
 				}
 				for (const [path, docId] of change.removed) {
 					// A move announces itself as removed+added under one id, and
@@ -252,6 +281,29 @@ export class VaultBinding {
 	 */
 	get problems(): number {
 		return this.failures;
+	}
+
+	/**
+	 * Notes still to move, by direction.
+	 *
+	 * Counted where the work is decided rather than where it runs: a fill
+	 * works eight notes at a time, so a gauge that went up as each one started
+	 * would say eight over a vault of three thousand. What is wanted is how
+	 * many are still to come, so the whole set is counted the moment it is
+	 * known and each note takes itself off as it lands.
+	 */
+	get backlog(): Backlog {
+		return { ...this.outstanding };
+	}
+
+	/** Run `work`, with this note on the gauge for as long as it takes. */
+	private async carry<T>(kind: "up" | "down", work: () => Promise<T>): Promise<T> {
+		this.outstanding[kind] += 1;
+		try {
+			return await work();
+		} finally {
+			this.outstanding[kind] -= 1;
+		}
 	}
 
 	/**
@@ -359,21 +411,20 @@ export class VaultBinding {
 		// cost of being wrong here is every note in the cloud vault.
 		const emptied = local.size === 0 && seen.size > 0;
 
-		// Both halves run several notes deep. The tree above is read first and
-		// in full, so what each note does is its own business and the width
-		// only decides how many are waiting for a socket at once.
-		await this.inWaves([...local], async (path) => {
-			if (remote.has(path)) return;
-			if (seen.has(path)) {
-				// It was in the tree when this device last looked and it is
-				// not now: it was deleted in the cloud vault while this
-				// device was away. A delete is a delete, in both directions.
-				await this.files.remove(path);
-			} else {
-				await this.pushNote(path);
-			}
-		});
-		await this.inWaves([...remote], async ([path, docId]) => {
+		// The work is sorted before any of it runs, because the gauge the
+		// corner of the window reads is how many notes are still to move, and
+		// the waves below only ever know about eight at a time.
+		const gone: string[] = [];
+		const up: string[] = [];
+		for (const path of local) {
+			if (remote.has(path)) continue;
+			// In the tree when this device last looked and not now: deleted in
+			// the cloud vault while this device was away. A delete is a delete,
+			// in both directions.
+			(seen.has(path) ? gone : up).push(path);
+		}
+		const bind: [string, string][] = [];
+		for (const [path, docId] of remote) {
 			if (!local.has(path) && !emptied && seen.get(path) === docId) {
 				// The same note, at the same path, as this device last had
 				// it on disk, and the file is gone. Somebody deleted it here
@@ -381,9 +432,34 @@ export class VaultBinding {
 				// downloaded the note back, every time, on every device.
 				tree.remove(path);
 				this.seenDirty = true;
-				return;
+				continue;
 			}
-			await this.bindNote(path, docId);
+			bind.push([path, docId]);
+		}
+		// A note the tree lists that is already on the disk is a bind, not a
+		// download: it opens the document and writes nothing. Counting those
+		// would put the whole vault on the gauge at every start.
+		const down = new Set(bind.filter(([path]) => !local.has(path)).map(([path]) => path));
+		this.outstanding.up += up.length;
+		this.outstanding.down += down.size;
+
+		// Each half runs several notes deep. The tree above is read first and
+		// in full, so what each note does is its own business and the width
+		// only decides how many are waiting for a socket at once.
+		await this.inWaves(gone, (path) => this.files.remove(path));
+		await this.inWaves(up, async (path) => {
+			try {
+				await this.pushNote(path);
+			} finally {
+				this.outstanding.up -= 1;
+			}
+		});
+		await this.inWaves(bind, async ([path, docId]) => {
+			try {
+				await this.bindNote(path, docId);
+			} finally {
+				if (down.has(path)) this.outstanding.down -= 1;
+			}
 		});
 	}
 
@@ -424,7 +500,7 @@ export class VaultBinding {
 				this.seenDirty = true;
 				return;
 			}
-			await this.pushNote(event.path);
+			await this.pushCounted(event.path);
 			return;
 		}
 		if (event.type === "delete") {
@@ -448,7 +524,19 @@ export class VaultBinding {
 		// the save event that arrives a second later says nothing newer.
 		if (this.held.has(normalize(event.path))) return;
 		// create and modify converge: bring the document to the file's text.
-		await this.pushNote(event.path);
+		await this.pushCounted(event.path);
+	}
+
+	/**
+	 * Push, and put it on the gauge only when it is a note going up for the
+	 * first time. A path the tree already knows is an edit, and an edit is
+	 * never counted (ADR-0088).
+	 */
+	private async pushCounted(path: string): Promise<void> {
+		if (this.docs.tree().docIdFor(normalize(path)) !== undefined) {
+			return this.pushNote(path);
+		}
+		return this.carry("up", () => this.pushNote(path));
 	}
 
 	private async pushNote(path: string): Promise<void> {

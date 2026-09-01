@@ -132,6 +132,7 @@ import {
 	vaultReading,
 	type VaultReading,
 } from "./vaultStatus";
+import { STILL, settle, type Burst } from "./quiet";
 import {
 	planVaultSync,
 	vaultSyncResult,
@@ -1416,6 +1417,9 @@ export default class Live extends Plugin {
 	 * the bar says how far at a glance, which is the one a person reads while
 	 * they are doing something else.
 	 */
+	/** What the corner is saying, which lags what the vault is doing. */
+	private corner: Burst = STILL;
+
 	private addRelayStatusBarItem() {
 		const statusBarItem = this.addStatusBarItem();
 		statusBarItem.addClass("relay-onprem-statusbar");
@@ -1621,6 +1625,9 @@ export default class Live extends Plugin {
 		// the window and the Knap screen from wording one vault two ways.
 		if (this.knapSync) {
 			const status = this.knapSync.status();
+			// The corner adds the two kinds of file together, because it has
+			// room for two numbers and not four; the settings screen behind
+			// it keeps notes and attachments apart (ADR-0088).
 			return {
 				word: status.word,
 				dot: status.dot,
@@ -1628,6 +1635,8 @@ export default class Live extends Plugin {
 				total: 0,
 				counts: status.problems > 0 ? String(status.problems) : "",
 				progress: undefined,
+				up: status.up + status.files.up,
+				down: status.down + status.files.down,
 			};
 		}
 		const signedIn = this.loginManager?.isLoggedInToServer?.(KNAP_SERVER_ID) ?? false;
@@ -1670,7 +1679,17 @@ export default class Live extends Plugin {
 		trackEl: HTMLElement,
 		fillEl: HTMLElement,
 	) {
-		const corner = statusBarPaint(this.readVaultStatus());
+		const reading = this.readVaultStatus();
+		// The corner lags the vault by two seconds at each end, so an ordinary
+		// save never reaches it. Everything a person has to act on goes up at
+		// once; only Syncing waits (ADR-0088).
+		this.corner = settle(
+			this.corner,
+			reading.word === SYNCING,
+			reading.up + reading.down,
+			Date.now(),
+		);
+		const corner = statusBarPaint(reading, this.corner);
 		for (const dot of SYNC_DOT_NAMES) {
 			iconEl.toggleClass(`relay-status-${dot}`, dot === corner.dot);
 		}

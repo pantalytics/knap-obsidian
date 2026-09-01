@@ -14,7 +14,15 @@
  * date. So the assertions below are mostly about what must NOT read green.
  */
 
-import { PAUSED, SIGNED_OUT, SYNCING, UP_TO_DATE } from "../src/syncStatus";
+import {
+	OFFLINE,
+	PAUSED,
+	PROBLEM,
+	SIGNED_OUT,
+	SYNCING,
+	UP_TO_DATE,
+	syncDot,
+} from "../src/syncStatus";
 import {
 	SYNC_DOT_NAMES,
 	folderCaughtUp,
@@ -24,6 +32,7 @@ import {
 	vaultSyncWord,
 	type FolderStatus,
 } from "../src/vaultStatus";
+import { RUNNING, STILL } from "../src/quiet";
 
 /** A folder with nothing outstanding: the only shape that may read green. */
 const synced: FolderStatus = {
@@ -325,6 +334,7 @@ describe("the corner of the window", () => {
 	test("a first sync draws the bar, the count and the word", () => {
 		const paint = statusBarPaint(
 			vaultReading(true, [{ ...synced, total: 1202, completed: 412 }]),
+			RUNNING,
 		);
 		expect(paint.dot).toBe("working");
 		expect(paint.count).toBe("412 of 1,202");
@@ -333,13 +343,13 @@ describe("the corner of the window", () => {
 	});
 
 	test("a device downloading a vault it just joined draws one too", () => {
-		const paint = statusBarPaint(vaultReading(true, [justJoined]));
+		const paint = statusBarPaint(vaultReading(true, [justJoined]), RUNNING);
 		expect(paint.percent).toBe(0);
 		expect(paint.count).toBe("0 of 2,567");
 	});
 
 	test("a caught up vault has no bar and nothing to count", () => {
-		const paint = statusBarPaint(vaultReading(true, [synced]));
+		const paint = statusBarPaint(vaultReading(true, [synced]), RUNNING);
 		expect(paint.percent).toBeUndefined();
 		expect(paint.count).toBe("");
 		expect(paint.label).toBe("Knap: up to date");
@@ -348,6 +358,7 @@ describe("the corner of the window", () => {
 	test("signed out has no bar, whatever the folders were carrying", () => {
 		const paint = statusBarPaint(
 			vaultReading(false, [{ ...synced, total: 1202, completed: 412 }]),
+			RUNNING,
 		);
 		expect(paint.percent).toBeUndefined();
 		expect(paint.label).toBe("Knap: signed out");
@@ -358,7 +369,53 @@ describe("the corner of the window", () => {
 		// and a fill wider than its track is what it would draw.
 		const paint = statusBarPaint(
 			vaultReading(true, [{ ...synced, total: 10, completed: 40, missing: 1 }]),
+			RUNNING,
 		);
 		expect(paint.percent).toBe(100);
+	});
+});
+
+describe("the corner, split by direction", () => {
+	const syncing = {
+		word: SYNCING,
+		dot: "working" as const,
+		done: 0,
+		total: 0,
+		counts: "",
+		progress: undefined,
+		up: 412,
+		down: 2567,
+	};
+
+	test("both numbers, and the tooltip says which is which", () => {
+		const paint = statusBarPaint(syncing, { moving: true, since: null, peak: 3000 });
+		expect(paint.count).toBe("\u2191 412 \u2193 2,567");
+		expect(paint.label).toBe("Knap: syncing, 412 to the cloud vault, 2,567 to this device");
+		// 3,000 to start with, 2,979 still to go.
+		expect(paint.percent).toBe(1);
+	});
+
+	test("a vault that is only sending says only that", () => {
+		const paint = statusBarPaint(
+			{ ...syncing, down: 0 },
+			{ moving: true, since: null, peak: 412 },
+		);
+		expect(paint.count).toBe("\u2191 412");
+	});
+
+	test("the corner says nothing until the delay is up", () => {
+		const paint = statusBarPaint(syncing, STILL);
+		expect(paint.dot).toBe("ok");
+		expect(paint.count).toBe("");
+		expect(paint.label).toBe("Knap: up to date");
+		expect(paint.percent).toBeUndefined();
+	});
+
+	test("the delay never holds back a word somebody has to act on", () => {
+		for (const word of [PROBLEM, OFFLINE, SIGNED_OUT] as const) {
+			const paint = statusBarPaint({ ...syncing, word, dot: syncDot(word) }, STILL);
+			expect(paint.dot).not.toBe("ok");
+			expect(paint.count).toBe("\u2191 412 \u2193 2,567");
+		}
 	});
 });

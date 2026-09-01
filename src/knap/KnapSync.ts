@@ -63,6 +63,12 @@ export interface KnapStatus {
 	notes: number;
 	/** Pieces of work that failed and stayed failed. */
 	problems: number;
+	/** Notes this device still has to send to the cloud vault. */
+	up: number;
+	/** Notes the cloud vault lists that are not on this device yet. */
+	down: number;
+	/** Attachments still to go up, and still to come down. */
+	files: { up: number; down: number };
 }
 
 export interface KnapSyncOptions {
@@ -145,6 +151,8 @@ export class KnapSync {
 		const linked = this.linked;
 		const connected = this.client?.connected ?? false;
 		const problems = this.binding?.problems ?? 0;
+		const backlog = this.binding?.backlog ?? { up: 0, down: 0 };
+		const files = this.attachments?.backlog ?? { up: 0, down: 0 };
 		const word = syncWord({
 			signedIn: this.signedIn,
 			// Signed in with nowhere to sync to is not up to date, it is
@@ -155,7 +163,13 @@ export class KnapSync {
 			// to. The screen says Not linked in full; the corner of the
 			// window has one word to do it in.
 			paused: !linked,
-			syncing: Boolean(this.client) && !this.client?.settled,
+			// The tree settling is the socket's half of it. The backlog is the
+			// notes' half, and it is the half that lasts: a tree settles in
+			// seconds over a vault whose bodies are hours away, and green over
+			// that is exactly the lie #40 was about.
+			syncing:
+				(Boolean(this.client) && !this.client?.settled) ||
+				backlog.up + backlog.down + files.up + files.down > 0,
 			// Not linked is not offline: there is no socket because there is
 			// nothing to open one to, and saying Offline would send somebody
 			// to check their wifi over a vault they never linked.
@@ -169,6 +183,9 @@ export class KnapSync {
 			vaultName: linked?.cloudVaultName ?? "",
 			notes: this.client ? this.client.tree().entries().size : 0,
 			problems,
+			up: backlog.up,
+			down: backlog.down,
+			files,
 		};
 	}
 
