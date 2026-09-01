@@ -38,8 +38,6 @@ either side of it rather than like a panel we built.
   │ ├──────────────────────────────────────────────────────────┤ │
   │ │ Leave Obsidian open until it finishes. It picks up       │ │
   │ │ where it left off if you close it.                       │ │
-  │ │ Cloud vault      Work notes                              │ │
-  │ │ Notes            312                                     │ │
   │ └──────────────────────────────────────────────────────────┘ │
   │                                                              │
   │ Account                                       [ Sign out ]   │
@@ -105,12 +103,53 @@ asks:
 | Behind the fold | When |
 |---|---|
 | The instruction for this word | Whenever the word carries one |
-| Cloud vault, Notes | When there is a link, and when notes have arrived |
 | Could not sync, *N* changes | When something failed and stayed failed |
 | **Try again** | Only under *Problem* and *Offline*, the two words a person can act on |
 
 Nothing deeper is kept here at all. What went wrong in detail is the server's;
 this device only ever tells it four content-free facts (ADR-0071).
+
+**The fold holds nothing the head already carries, and where it would hold
+nothing at all the head does not open.** Under *Up to date* there is no
+instruction and, with nothing stuck, no rows and no button, so the bar is a
+line rather than a control: a head that opens onto an empty strip is worse than
+a head that does not open. The vault and its note count used to be behind it as
+well as on it, which put the vault's name on one phone screen three times, in
+the head, behind the fold and again on the Cloud vault row (#125). A desktop
+width spreads those three far enough apart to hide it. Stacked into one column
+they are within a thumb of each other.
+
+**The chevron is not decoration.** A touch screen has no hover, so without it
+there is nothing on a phone saying the bar opens at all.
+
+### On a phone
+
+The bar was drawn for a width it does not always have, and #125 was the bill.
+Three rules keep it honest on a narrow window:
+
+- **The row shrinks rather than overflowing.** Without `min-width: 0` the flex
+  items refuse to give, the head runs past its own padding, and the card's
+  `overflow: hidden` cuts it. Measured at 390px, the cut is 9px at Obsidian's
+  smaller UI font and 44px at its larger one, and it is the note count that
+  goes: negative free space in a flex row packs the items left and spills the
+  tail. **The dot is never cut**, which #125 and the PR that closed it both
+  claimed off a screenshot before anybody measured it.
+  [`scripts/spikes/status_bar_on_a_phone/`](../scripts/spikes/status_bar_on_a_phone/README.md)
+  is where that was settled, and it fails against the stylesheet as it stood.
+- **The name gives way before the count.** They are two spans rather than one
+  string precisely so they can shrink differently. A vault name is a name, and
+  it is spelled out in full on the Cloud vault row a thumb below; *1,368 notes*
+  is what somebody opened the screen for.
+- **Hover only where there is a pointer.** On iOS `:hover` sticks after the tap
+  and the head sat shaded, reading as jammed down.
+
+Two things about the mobile screen are not ours to fix and are worth knowing
+anyway. Obsidian stacks `setting-item` into a column, so *Sign out* and *Unlink*
+render as full width pills: the two loudest controls on the screen are both
+undos, which is the reverse of the weight they have on a desktop. And the host
+line, muted grey under the sheet title with a back arrow above it, sits exactly
+where a browser puts an address. It stays, because a beta build talks somewhere
+other than a release does, but that is the frame it is read in.
 
 ## The words
 
@@ -275,7 +314,7 @@ believing they are gone.
 
 ## Changing any of this
 
-- The screen is `src/knap/KnapSettingsTab.ts`. `statusFacts` and `hasRetry` are
+- The screen is `src/knap/KnapSettingsTab.ts`. `statusFacts`, `hasFold` and `hasRetry` are
   exported and pure precisely so the branching is pinned in
   `__tests__/knap/settingsTab.test.ts` rather than asserted against a screen.
 - The words are `src/syncStatus.ts`, and adding one means the rule above.

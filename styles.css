@@ -556,24 +556,81 @@
 	border: none;
 	box-shadow: none;
 	text-align: left;
-	cursor: pointer;
 	color: var(--text-normal);
+	/* A phone is narrower than this row wants to be, and without this the
+	   flex items refuse to shrink, the row overflows its own padding and the
+	   card's `overflow: hidden` clips it at both ends: the dot off the left,
+	   the note count off the right (#125). */
+	min-width: 0;
 }
 
-.knap-status-head:hover {
-	background: var(--background-modifier-hover);
+.knap-status-opens {
+	cursor: pointer;
+}
+
+/* Only where there is a pointer to hover with. On a touch screen `:hover`
+   sticks after the tap, and the head sat shaded as if jammed down (#125). */
+@media (hover: hover) {
+	.knap-status-opens:hover {
+		background: var(--background-modifier-hover);
+	}
 }
 
 .knap-status-word {
 	font-weight: var(--font-semibold);
+	flex-shrink: 0;
 }
 
 /* Pushed to the far end rather than following the word, so the eye finds the
-   word in the same place whatever it is about. */
+   word in the same place whatever it is about. Where there is no far end, it
+   takes what is left and the two halves inside it shrink differently. */
 .knap-status-detail {
+	display: flex;
+	gap: var(--size-4-1);
 	margin-left: auto;
+	min-width: 0;
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
+}
+
+.knap-status-detail > * + *::before {
+	content: "·";
+	margin-right: var(--size-4-1);
+	color: var(--text-faint);
+}
+
+/* The name gives way first. It is a name, and it is spelled out in full on
+   the Cloud vault row a thumb below; the count is the answer somebody opened
+   the screen for, so it is the half that survives a narrow window. */
+.knap-status-vault {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 3em;
+}
+
+.knap-status-count {
+	flex-shrink: 0;
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+
+/* The only thing saying the bar opens. A touch screen has no hover to find
+   that out with, and the fold was undiscoverable without it (#125). */
+.knap-status-chevron {
+	display: flex;
+	flex-shrink: 0;
+	color: var(--text-faint);
+	transition: transform 100ms ease-in-out;
+}
+
+.knap-status-chevron svg {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+.knap-status-head[aria-expanded="true"] .knap-status-chevron {
+	transform: rotate(180deg);
 }
 
 .knap-status-body {
@@ -602,12 +659,14 @@
 	font-size: var(--font-ui-small);
 }
 
+/* An 8em gutter spent a third of a phone's width on a label (#125). The value
+   is pushed to the far end instead, which lines up at any width. */
 .knap-status-key {
 	color: var(--text-faint);
-	min-width: 8em;
 }
 
 .knap-status-value {
+	margin-left: auto;
 	color: var(--text-normal);
 	font-variant-numeric: tabular-nums;
 }
