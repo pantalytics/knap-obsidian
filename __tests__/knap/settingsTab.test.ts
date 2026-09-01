@@ -377,7 +377,7 @@ describe("the sign-out notice", () => {
 
 describe("the breakdown behind the fold", () => {
 	// The corner has room for two numbers and adds notes and attachments
-	// together to get them. This screen keeps them apart (ADR-0086).
+	// together to get them. This screen keeps them apart (ADR-0088).
 	it("names both directions and both kinds of file", () => {
 		expect(
 			statusFacts({

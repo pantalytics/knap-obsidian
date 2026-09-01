@@ -1627,7 +1627,7 @@ export default class Live extends Plugin {
 			const status = this.knapSync.status();
 			// The corner adds the two kinds of file together, because it has
 			// room for two numbers and not four; the settings screen behind
-			// it keeps notes and attachments apart (ADR-0086).
+			// it keeps notes and attachments apart (ADR-0088).
 			return {
 				word: status.word,
 				dot: status.dot,
@@ -1682,7 +1682,7 @@ export default class Live extends Plugin {
 		const reading = this.readVaultStatus();
 		// The corner lags the vault by two seconds at each end, so an ordinary
 		// save never reaches it. Everything a person has to act on goes up at
-		// once; only Syncing waits (ADR-0086).
+		// once; only Syncing waits (ADR-0088).
 		this.corner = settle(
 			this.corner,
 			reading.word === SYNCING,

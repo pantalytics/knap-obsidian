@@ -155,7 +155,7 @@ export class AttachmentBinding {
 	 * behave differently on a slow line: one photo is a hundred notes' worth
 	 * of bytes, so a single number would sit still for a minute and then jump.
 	 * The corner adds them anyway; the screen behind it is where the four
-	 * numbers are worth having separately (ADR-0086).
+	 * numbers are worth having separately (ADR-0088).
 	 */
 	get backlog(): Backlog {
 		return { ...this.outstanding };

@@ -10,7 +10,8 @@ The decisions live as ADRs in the admin repository, `knap-mcp-admin/docs/adr/`:
 **0030** sign-in, **0031** one control surface, **0033** one server, **0034**
 permissions, **0038** the words, **0043** a vault is one unit, **0045** the
 plugin is Knap, **0066** one local vault to one cloud vault, **0071** what a
-failure may say, **0086** what the corner counts. Where this page and an ADR disagree, the ADR wins.
+failure may say, **0088** what the corner counts. Where this page and an ADR
+disagree, the ADR wins.
 
 ## The rule
 
@@ -170,7 +171,7 @@ pushes its document, which used to flip the icon, grow a count and draw a bar,
 all inside a second, every time anybody typed. So nothing is said until the
 vault has been moving for two seconds, and Up to date is held for two seconds
 after it stops. **Problem, Offline and Signed out are never held back**: the
-delay is for the state a person waits out, not the ones they act on. ADR-0086.
+delay is for the state a person waits out, not the ones they act on. ADR-0088.
 
 It reads `readVaultStatus()` in `main.ts`, which returns the Knap client's own
 `status()` whenever there is one. **The corner and the settings screen cannot

@@ -64,7 +64,7 @@ export function statusFacts(status: KnapStatus): Array<[string, string]> {
 	// The corner has room for two numbers and adds the two kinds of file
 	// together to get them. This is the screen with room to keep them apart,
 	// and attachments are worth keeping apart: one photo is a hundred notes'
-	// worth of bytes, so a single number sits still and then jumps (ADR-0086).
+	// worth of bytes, so a single number sits still and then jumps (ADR-0088).
 	// The rows are named the way the tooltip says it, because somebody moves
 	// between the two in one sitting.
 	const going = pieces(status.up, status.files.up);

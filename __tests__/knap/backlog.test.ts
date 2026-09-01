@@ -6,7 +6,7 @@
  * are worth a number: notes still to reach the cloud vault, and notes still to
  * reach this device. An edit to a note both sides already have is the third,
  * and it never touches the gauge, because a number that goes 1, 0, 1, 0 while
- * somebody types is what made the old corner unreadable (ADR-0086).
+ * somebody types is what made the old corner unreadable (ADR-0088).
  */
 
 import * as Y from "yjs";

@@ -124,7 +124,7 @@ export interface SeenTree {
 /**
  * Notes still to move, by direction, with edits deliberately absent.
  *
- * Three things move notes and only two of them can be counted (ADR-0086).
+ * Three things move notes and only two of them can be counted (ADR-0088).
  * `up` is notes this device holds that the cloud vault has not got yet, `down`
  * is notes the cloud vault lists that have no file here. They are disjoint
  * sets, which is what makes them addable: a note is missing from one side or
@@ -530,7 +530,7 @@ export class VaultBinding {
 	/**
 	 * Push, and put it on the gauge only when it is a note going up for the
 	 * first time. A path the tree already knows is an edit, and an edit is
-	 * never counted (ADR-0086).
+	 * never counted (ADR-0088).
 	 */
 	private async pushCounted(path: string): Promise<void> {
 		if (this.docs.tree().docIdFor(normalize(path)) !== undefined) {

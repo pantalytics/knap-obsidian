@@ -3,7 +3,7 @@
  *
  * The bug this is here for is not a wrong number, it is a mark that moves all
  * day: saving a note pushed its document, which put the vault into Syncing,
- * which grew a count and a bar, all inside a second, every time (ADR-0086).
+ * which grew a count and a bar, all inside a second, every time (ADR-0088).
  */
 
 import {

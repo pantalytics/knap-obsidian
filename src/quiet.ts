@@ -4,7 +4,7 @@
  * How long the corner of the window waits before it says anything.
  *
  * Three things move notes and only one of them is worth a mark on screen for
- * as long as it lasts (ADR-0086). A first sync runs for minutes and somebody
+ * as long as it lasts (ADR-0088). A first sync runs for minutes and somebody
  * is watching it. An edit to a note both sides already have is over in under a
  * second, and it used to flip the icon, grow a count and draw a bar every time
  * a note was saved. A mark that moves all day is a mark the eye stops reading,
