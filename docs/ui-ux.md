@@ -64,6 +64,15 @@ is first because it is what somebody came to find out. **Account** is who.
 **Cloud vault** is what this vault syncs with. The two rows under the bar are
 what somebody came to change, which is rarer than wanting to know.
 
+**The bar waits for a link**, which is why it is absent from both the small
+screens above. How it is going is a question about a cloud vault, and before
+there is one every word is wrong for the state: nothing is syncing, so nothing
+is behind, so it settled on *Up to date* over notes that had never left the
+device. The row underneath says *Not linked*, which is truer and is also the way
+out of it. A vault with an account and no link reads **Paused** where it has to
+be said in one word, in the corner of the window: nothing is moving, and nothing
+is going to until somebody picks a cloud vault.
+
 The screen exists at all because the commands were the only way in, and a
 command palette is where somebody looks after they already know the thing is
 there. Asked to try the beta, the first thing a person does is open Settings and

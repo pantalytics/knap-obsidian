@@ -9,6 +9,8 @@
  *
  * **Two rows and a bar, and each of the three earns its place**: the bar says
  * how it is going, Account is who, Cloud vault is what this vault syncs with.
+ * The bar waits for a link, because how it is going is a question about a
+ * cloud vault and there is not one yet.
  * That last row keeps one sentence the shortening did not touch, because a
  * delete travels both ways and somebody is entitled to know that before they
  * press it rather than after (#116).
@@ -128,7 +130,14 @@ export class KnapSettingsTab extends PluginSettingTab {
 			return;
 		}
 
-		this.drawStatus(containerEl);
+		const linked = this.sync.linked;
+
+		// The bar only appears once there is a link. Before that it has no
+		// vault to be about, and the words are all wrong for it: nothing is
+		// syncing, so it settled on Up to date, over a vault that was going
+		// nowhere. That is #40's lie in a new place, and the row underneath
+		// already says Not linked, which is both truer and the way out.
+		if (linked) this.drawStatus(containerEl);
 
 		new Setting(containerEl)
 			.setName("Account")
@@ -142,7 +151,6 @@ export class KnapSettingsTab extends PluginSettingTab {
 				}),
 			);
 
-		const linked = this.sync.linked;
 		const vault = new Setting(containerEl)
 			.setName("Cloud vault")
 			.setDesc(
