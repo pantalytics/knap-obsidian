@@ -273,20 +273,36 @@ export class KnapSync {
 	 * fill it, so the note would arrive a moment later and be merged with a
 	 * copy of itself. The editor asks again on its next update, and by then
 	 * the answer is a real document.
+	 *
+	 * Pinning is what keeps the note out of the socket pool for as long as
+	 * the editor has it. A note that is already open in the pool, which is
+	 * what a note somebody opens during a fill usually is, is promoted where
+	 * it stands: same document, same socket, same sync, nothing repeated.
 	 */
 	openNote(path: string): LiveNoteHandle | null {
 		const clean = normalize(path);
 		if (!this.client || !this.binding) return null;
 		const docId = this.client.tree().docIdFor(clean);
 		if (!docId) return null;
-		const entry = this.client.note(docId);
-		if (!entry.provider.synced) return null;
-		const release = this.binding.hold(clean);
+		const note = this.client.pin(docId);
+		if (!note.provider.synced) {
+			// Handed straight back, so a note the editor did not take is a
+			// note the pool may still close.
+			note.release();
+			return null;
+		}
+		const unhold = this.binding.hold(clean);
 		return {
-			text: this.client.contentOf(entry),
-			awareness: entry.provider.awareness,
+			text: note.text,
+			awareness: note.provider.awareness,
 			deviceName: this.options.deviceName,
-			release,
+			// The file is caught up from the document first, and only then
+			// does the note go back into the pool, where it stays open until
+			// the pool needs the socket for something else.
+			release: () => {
+				unhold();
+				note.release();
+			},
 		};
 	}
 
