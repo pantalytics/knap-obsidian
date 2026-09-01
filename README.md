@@ -11,9 +11,10 @@ that was offline catches up when it reconnects.
 
 ## What it does
 
-- **The whole vault, and nothing to pick.** Sign in and everything syncs.
-  Making a folder makes it everywhere, moving it moves it everywhere, deleting
-  it deletes it everywhere, the way any other sync behaves.
+- **The whole vault, and nothing to pick.** Sign in, choose which cloud vault
+  this one belongs to, and everything syncs. Making a folder makes it
+  everywhere, moving it moves it everywhere, deleting it deletes it everywhere,
+  the way any other sync behaves.
 - **Two people, one note.** Edits merge as you type. No conflict copies, no
   last-writer-wins.
 - **Offline is normal.** Edit on a plane, reconnect, and Knap catches up.
@@ -74,9 +75,17 @@ code to paste, on a laptop or on a phone.
 That button is the only way in. There is nothing else to try and nothing behind
 it to choose.
 
-The whole vault starts syncing on its own. There is nothing to choose, because a
-vault is what syncs: to keep part of your notes off the cloud, keep them in a
-second vault.
+Then *Cloud vault → Choose*, and pick which cloud vault this one belongs to. One
+local vault is linked to one cloud vault, and linking replaces rather than adds,
+so a vault is never syncing with two places at once.
+
+After that the whole vault syncs, and there is nothing else to pick: a vault is
+what syncs. To keep part of your notes off the cloud, keep them in a second
+vault.
+
+*Unlink* stops the syncing and deletes nothing, on either side. *Sign out* ends
+this device's access and hands the credential back, so a laptop you pass on is
+not a way in forever.
 
 The plugin talks to Knap and nothing else, so there is no address to configure.
 If you want to run your own, [EVC Team Relay](https://github.com/entire-vc/evc-team-relay-obsidian-plugin)
@@ -101,16 +110,19 @@ through one.
 
 | Connection | Protocol | What for | When |
 |---|---|---|---|
-| Control plane | HTTPS | Sign-in, token refresh, listing and adding folders, inviting people | On sign-in, and when a folder changes |
-| Control plane | HTTPS | Issuing the short-lived token for a sync connection | Before opening a socket |
-| Sync server | WSS | The document sync itself | While a synced note is open, and while catching up |
-| Identity provider | HTTPS | The sign-in page itself | Only while you are signing in |
-| `obsidian://` callback | Obsidian URL scheme | Receiving the sign-in redirect | During sign-in only |
+| Knap | HTTPS | Trading the sign-in code for this device's credential, and handing it back at sign-out | Signing in and out |
+| Knap | HTTPS | Which cloud vaults your account can open, and how large a file the server takes | Opening the picker, and starting a link |
+| Knap | HTTPS | Attachment bytes, up and down | When an image or a PDF appears, changes or is opened on another device |
+| Knap | WSS | The document sync itself: the vault's file tree, and one connection per note in play | While the vault is linked |
+| Your browser | HTTPS | The sign-in page, at Knap and then at whichever identity provider Knap uses | Only while you are signing in |
+| `obsidian://` callback | Obsidian URL scheme | Receiving the sign-in handoff | During sign-in only |
 
-The identity provider row is worth being precise about. The plugin never
-contacts an identity provider on its own account, and it holds no client id and
-no secret for one. It opens the sign-in page Knap sent it to, and catches the
-redirect coming back.
+The identity provider row is worth being precise about. **The plugin never
+contacts an identity provider at all**, and it holds no client id and no secret
+for one. It opens a page at Knap in your browser, and what comes back through
+the `obsidian://` link is a one-time handoff code rather than a credential,
+because a deep-link URL survives in browser history. The credential itself is
+fetched over TLS, once.
 
 **No telemetry.** The plugin does not phone home, count anything, or send your
 notes anywhere except to Knap.
@@ -131,6 +143,12 @@ URIs exactly, which is why the callback arrives over `obsidian://` instead of a
 loopback port. Upstream serves anybody running their own server, which this fork
 no longer does: it talks to Knap and nothing else.
 
+The syncing itself is no longer upstream's either. Since August 2026 the sign-in,
+the link, the file tree and both directions of every edit are ours, in
+`src/knap/`, against a server we wrote. What is left of the fork is compiled in
+and does not run. [`docs/architecture.md`](docs/architecture.md) says which is
+which.
+
 ---
 
 ## Development
@@ -145,6 +163,12 @@ npm test
 
 [CONTRIBUTING.md](CONTRIBUTING.md) has the rest, including how to load a
 development build into a vault.
+
+Before changing anything, [`docs/architecture.md`](docs/architecture.md): the
+plugin carries two layers, only one of them ships, and knowing which file
+belongs to which is the thing most likely to send a change to the wrong place.
+[`docs/ui-ux.md`](docs/ui-ux.md) is the screen and the words, and
+[`docs/README.md`](docs/README.md) indexes both.
 
 ## Support
 

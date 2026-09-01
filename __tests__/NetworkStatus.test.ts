@@ -25,14 +25,14 @@ describe("NetworkStatus (TR-26: offline detection dead when url is empty)", () =
 
 	test("start() with a url polls on the interval", async () => {
 		mockRequestUrl.mockResolvedValue({ status: 200, json: { status: "ok" } });
-		const status = new NetworkStatus(timeProvider, "https://cp.example.com/v1/health", 1000);
+		const status = new NetworkStatus(timeProvider, "https://cp.example.com/healthz", 1000);
 		status.start();
 
 		timeProvider.setTime(timeProvider.getTime() + 1000);
 		await Promise.resolve();
 
 		expect(mockRequestUrl).toHaveBeenCalledWith(
-			expect.objectContaining({ url: "https://cp.example.com/v1/health" }),
+			expect.objectContaining({ url: "https://cp.example.com/healthz" }),
 		);
 	});
 
@@ -46,17 +46,17 @@ describe("NetworkStatus (TR-26: offline detection dead when url is empty)", () =
 		timeProvider.setTime(timeProvider.getTime() + 5000);
 		expect(mockRequestUrl).not.toHaveBeenCalled();
 
-		status.updateUrl("https://cp.example.com/v1/health");
+		status.updateUrl("https://cp.example.com/healthz");
 		timeProvider.setTime(timeProvider.getTime() + 1000);
 		await Promise.resolve();
 
 		expect(mockRequestUrl).toHaveBeenCalledWith(
-			expect.objectContaining({ url: "https://cp.example.com/v1/health" }),
+			expect.objectContaining({ url: "https://cp.example.com/healthz" }),
 		);
 	});
 
 	test("offline/online callbacks fire around a failed then recovered check", async () => {
-		const status = new NetworkStatus(timeProvider, "https://cp.example.com/v1/health", 1000);
+		const status = new NetworkStatus(timeProvider, "https://cp.example.com/healthz", 1000);
 		const onOffline = jest.fn();
 		const onOnline = jest.fn();
 		status.addEventListener("offline", onOffline);
@@ -82,7 +82,7 @@ describe("NetworkStatus (TR-26: offline detection dead when url is empty)", () =
 
 	test("stop() actually stops the polling, and start() can resume it", async () => {
 		mockRequestUrl.mockResolvedValue({ status: 200, json: { status: "ok" } });
-		const status = new NetworkStatus(timeProvider, "https://cp.example.com/v1/health", 1000);
+		const status = new NetworkStatus(timeProvider, "https://cp.example.com/healthz", 1000);
 		status.start();
 
 		timeProvider.setTime(timeProvider.getTime() + 1000);
@@ -102,9 +102,28 @@ describe("NetworkStatus (TR-26: offline detection dead when url is empty)", () =
 		expect(mockRequestUrl).toHaveBeenCalledTimes(2);
 	});
 
+	test("a 404 from the health route counts as offline", async () => {
+		// Why the path matters: the plugin polled /v1/health, the old control
+		// plane's route, and knap_server serves /healthz. Every answer was a
+		// 404, and a 404 lands here -- online goes false, the token store
+		// stops, folders disconnect, and the note on screen gets a banner.
+		mockRequestUrl.mockResolvedValue({ status: 404, json: undefined });
+		const status = new NetworkStatus(timeProvider, "https://cp.example.com/healthz", 1000);
+		const onOffline = jest.fn();
+		status.addEventListener("offline", onOffline);
+		status.start();
+
+		timeProvider.setTime(timeProvider.getTime() + 1000);
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(status.online).toBe(false);
+		expect(onOffline).toHaveBeenCalledTimes(1);
+	});
+
 	test("destroy() stops the timer, so a torn-down instance cannot keep firing", async () => {
 		mockRequestUrl.mockResolvedValue({ status: 200, json: { status: "ok" } });
-		const status = new NetworkStatus(timeProvider, "https://cp.example.com/v1/health", 1000);
+		const status = new NetworkStatus(timeProvider, "https://cp.example.com/healthz", 1000);
 		status.start();
 		status.destroy();
 

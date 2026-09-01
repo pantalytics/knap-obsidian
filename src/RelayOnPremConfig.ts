@@ -104,6 +104,30 @@ export function knapServer(lastUserEmail?: string): RelayOnPremServer {
 	};
 }
 
+/**
+ * Where the plugin asks whether the server is answering.
+ *
+ * `/healthz` is the route knap_server serves (knap_server/app.py), and the
+ * deploy waits on the same one. It was `/v1/health` until 2026-09-01, which
+ * was the old EVC control plane's path and does not exist here: measured
+ * against a real `create_app`, `/v1/health` answers 404 and `/healthz`
+ * answers 200. A 404 is not a status the poll treats gently -- anything but
+ * 200 means offline, so every device with a working connection went offline
+ * ten seconds after start, stopped its token store, disconnected every folder
+ * and put "You're offline" over the note somebody was reading.
+ *
+ * No version in the query string: that was for the old control plane's
+ * version gate, which this server does not have. The `Relay-Version` header
+ * NetworkStatus already sends is the same fact for anything that ever wants
+ * to read it.
+ */
+export function healthUrlForServer(server?: RelayOnPremServer): string {
+	if (!server?.controlPlaneUrl) {
+		return "";
+	}
+	return `${server.controlPlaneUrl.replace(/\/+$/, "")}/healthz`;
+}
+
 export const DEFAULT_RELAY_ONPREM_SETTINGS: RelayOnPremSettings = {
 	// Knap always uses relay-onprem mode (no System 3 cloud)
 	enabled: true,
