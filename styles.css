@@ -584,6 +584,13 @@
 	gap: var(--size-2-3);
 }
 
+/* `hidden` has to beat this rule's `display`, or the fold never folds: the
+   browser's own [hidden] rule loses to a class selector, and the bar came up
+   with its facts already out and an empty strip under any word that had none. */
+.knap-status-body[hidden] {
+	display: none;
+}
+
 .knap-status-say {
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);

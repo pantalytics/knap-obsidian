@@ -221,6 +221,19 @@ describe("the screen, signed in", () => {
 		expect(rows.find((r) => r.name === "Cloud vault")?.desc).toContain("Not linked");
 	});
 
+	it("draws no bar until there is a link, because it has no vault to be about", () => {
+		// The bar settled on Up to date over a vault that syncs with nothing,
+		// which is #40's lie in a new place. The Cloud vault row underneath
+		// says Not linked, and that is both truer and the way out.
+		const { container } = drawFor({ signedIn: true, linked: null });
+		expect(find(container, "knap-status")).toBeUndefined();
+	});
+
+	it("draws the bar once a cloud vault is linked", () => {
+		const { container } = drawFor({ signedIn: true, linked: { id: "v1", name: "Work notes" } });
+		expect(find(container, "knap-status")).toBeDefined();
+	});
+
 	it("names the linked vault and offers only unlink beside it", () => {
 		// No Change: linking somewhere else is Unlink and then Choose, which
 		// is what happens underneath either way.

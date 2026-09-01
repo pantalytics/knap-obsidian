@@ -115,6 +115,10 @@ export class KnapSync {
 	 * the token, the link, the socket and the queue's failure count, and
 	 * hands them to `syncWord`, which owns the order those facts win in.
 	 *
+	 * A vault with no link is Paused rather than Up to date: nothing is
+	 * moving, nothing is going to, and green over it would say the notes
+	 * were safe somewhere they have never been.
+	 *
 	 * Syncing is "linked, connected, and the tree has not settled yet". Once
 	 * the tree has been through its first exchange there is nothing this side
 	 * is waiting for, and a spinner that never stops is worse than no spinner.
@@ -125,7 +129,14 @@ export class KnapSync {
 		const problems = this.binding?.problems ?? 0;
 		const word = syncWord({
 			signedIn: this.signedIn,
-			paused: false,
+			// Signed in with nowhere to sync to is not up to date, it is
+			// standing still: nothing is moving and nothing is going to
+			// until somebody picks a cloud vault. Green over that vault is
+			// the same lie #40 was about, and #42 already settled the word
+			// for a vault waiting to be told which cloud vault it belongs
+			// to. The screen says Not linked in full; the corner of the
+			// window has one word to do it in.
+			paused: !linked,
 			syncing: Boolean(this.client) && !this.client?.settled,
 			// Not linked is not offline: there is no socket because there is
 			// nothing to open one to, and saying Offline would send somebody
