@@ -1,16 +1,27 @@
 /**
- * One linked cloud vault, live: the tree plus a socket per open document.
+ * One linked cloud vault, live: the tree, the notes an editor has open, and
+ * a small pool of sockets that every other note takes its turn in.
  *
- * A local vault is linked to at most one cloud vault (ADR-0066), so a
- * client holds exactly one of these. It keeps the tree document connected
- * for as long as it exists, because the tree is how creates, moves and
- * deletes travel; note documents connect when opened and hang around for
- * reuse. Every socket carries the same one token, and the server does the
- * whole authorisation story at the door.
+ * A local vault is linked to at most one cloud vault (ADR-0066), so a client
+ * holds exactly one of these. Two documents earn a socket of their own and
+ * keep it: the tree, because that is how creates, moves and deletes travel,
+ * and a note somebody has open in an editor, because a caret cannot live on
+ * a socket that comes and goes. Every other note borrows one.
  *
- * The WebSocket implementation is injected: Obsidian hands in the
- * platform's, tests hand in `ws`. y-websocket syncs same-process docs over
- * a BroadcastChannel behind the server's back, which phase 0 caught as a
+ * The pool is not tidiness. Chromium allows 255 websockets per renderer and
+ * then queues the 256th handshake in silence rather than failing it, and
+ * Obsidian is one renderer for every vault window on the machine. Measured
+ * on 2026-08-31: a vault of 2612 notes filled to 297 and stopped there, with
+ * 258 established connections that never moved again, and a second vault
+ * opened in the same Obsidian got its tree socket and nothing else, which
+ * reached the person as "could not reach server" over a sign-in that had
+ * worked (issue #115).
+ *
+ * The wire is untouched. This is which sockets exist and for how long.
+ *
+ * The WebSocket implementation is injected: Obsidian hands in the platform's,
+ * tests hand in `ws` or one of their own. y-websocket syncs same-process docs
+ * over a BroadcastChannel behind the server's back, which phase 0 caught as a
  * false pass, so it is off everywhere and the wire is the only path.
  */
 
@@ -20,11 +31,43 @@ import { WebsocketProvider } from "y-websocket";
 import type { KnapServer } from "./KnapServer";
 import { TREE_DOC_ID, TreeDoc } from "./TreeDoc";
 
-export interface OpenDoc {
+/**
+ * How many notes may hold a socket at once, beside the tree and whatever an
+ * editor has open.
+ *
+ * Low on purpose. The ceiling to stay under is 255 per renderer, and the
+ * things sharing it are not this vault's business: a second vault in the
+ * same Obsidian, a popout window, a phone that is stricter than any desktop
+ * browser. Eight leaves a linked vault costing about ten sockets while it
+ * fills, so a machine can hold a dozen of them and still be nowhere near the
+ * ceiling. It is also enough concurrency to matter: a fill runs eight notes
+ * deep instead of one, and the round trips overlap.
+ *
+ * Raising it buys a faster fill and spends the headroom that this whole
+ * change is about, so it stays a constant with a reason rather than a
+ * setting somebody can turn into the bug again.
+ */
+export const NOTE_SOCKET_CAP = 8;
+
+/** How long one note may take to sync before its turn is given up. */
+const NOTE_SYNC_TIMEOUT_MS = 20_000;
+
+/** How long to wait for what a note wrote to leave the socket. */
+const FLUSH_TIMEOUT_MS = 10_000;
+
+/** How often to look at what is still queued on the socket. */
+const FLUSH_POLL_MS = 20;
+
+/** One note's document while somebody is using it. */
+export interface NoteHandle {
 	doc: Y.Doc;
 	provider: WebsocketProvider;
-	/** Resolves once the first sync with the server has completed. */
-	synced: Promise<void>;
+}
+
+/** A note held open for an editor. `release` hands it back to the pool. */
+export interface PinnedNote extends NoteHandle {
+	text: Y.Text;
+	release: () => void;
 }
 
 /**
@@ -34,9 +77,46 @@ export interface OpenDoc {
  */
 export type WebSocketImpl = { new (url: string | URL, protocols?: string | string[]): unknown };
 
+interface PoolEntry {
+	doc: Y.Doc;
+	provider: WebsocketProvider;
+	/** Resolves once the first sync with the server has completed. */
+	synced: Promise<void>;
+	/** Ends that wait when the socket goes down before the sync arrives. */
+	failSynced: (error: Error) => void;
+	/** Editors holding this note. Above zero, the pool leaves it alone. */
+	pins: number;
+	/** Pieces of work borrowing it right now. */
+	leases: number;
+	/** Bumped on every borrow, so the smallest is the least recently used. */
+	used: number;
+}
+
+/** Reject with `message` if `promise` has not settled in `ms`. */
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const timer = window.setTimeout(() => reject(new Error(message)), ms);
+		promise.then(
+			(value) => {
+				window.clearTimeout(timer);
+				resolve(value);
+			},
+			(error: unknown) => {
+				window.clearTimeout(timer);
+				reject(error instanceof Error ? error : new Error(String(error)));
+			},
+		);
+	});
+}
+
 export class KnapVaultClient {
-	private open = new Map<string, OpenDoc>();
+	private open = new Map<string, PoolEntry>();
 	private treeDoc: TreeDoc | null = null;
+	private clock = 0;
+	private destroyed = false;
+	/** Work waiting for a socket to come free. */
+	private waiting: (() => void)[] = [];
+	private closeWatchers: ((docId: string) => void)[] = [];
 
 	constructor(
 		private readonly server: KnapServer,
@@ -49,14 +129,14 @@ export class KnapVaultClient {
 	/** The vault's tree, connected. The first call opens the socket. */
 	tree(): TreeDoc {
 		if (!this.treeDoc) {
-			this.treeDoc = new TreeDoc(this.openDoc(TREE_DOC_ID).doc);
+			this.treeDoc = new TreeDoc(this.entryFor(TREE_DOC_ID).doc);
 		}
 		return this.treeDoc;
 	}
 
 	/** Resolves once the tree has had its first sync with the server. */
 	treeSynced(): Promise<void> {
-		return this.openDoc(TREE_DOC_ID).synced;
+		return this.entryFor(TREE_DOC_ID).synced;
 	}
 
 	/**
@@ -76,19 +156,205 @@ export class KnapVaultClient {
 		return this.open.get(TREE_DOC_ID)?.provider.synced ?? false;
 	}
 
-	/** A note's live document, by id. Reuses an open socket. */
-	note(docId: string): OpenDoc {
-		return this.openDoc(docId);
+	/** How many sockets this vault is holding, the tree included. */
+	get socketCount(): number {
+		return this.open.size;
 	}
 
-	/** The note's text as the shared Text the server reads. */
-	contentOf(entry: OpenDoc): Y.Text {
-		return entry.doc.getText("content");
+	/**
+	 * Borrow one note's document for the length of `use`.
+	 *
+	 * What the caller gets is a document that has finished its first sync,
+	 * on a socket that stays up until `use` has returned and everything it
+	 * wrote has left this process. Waits for a turn when the pool is full,
+	 * and gives up on a note that cannot sync rather than waiting on it
+	 * forever, because a note that hangs used to take every note behind it
+	 * down with it.
+	 */
+	async withNote<T>(docId: string, use: (note: NoteHandle) => Promise<T>): Promise<T> {
+		const entry = await this.acquire(docId);
+		try {
+			await withTimeout(
+				entry.synced,
+				NOTE_SYNC_TIMEOUT_MS,
+				"This note did not sync in time. It will be tried again.",
+			);
+			const result = await use({ doc: entry.doc, provider: entry.provider });
+			await this.flushed(entry);
+			return result;
+		} finally {
+			entry.leases -= 1;
+			entry.used = ++this.clock;
+			this.wake();
+		}
 	}
 
-	private openDoc(docId: string): OpenDoc {
+	/**
+	 * Hold a note open for an editor, above the pool and outside its count.
+	 *
+	 * An editor never queues behind a fill: it says which note it is showing
+	 * and gets it. A note the pool already has open is promoted rather than
+	 * reopened, which is the point. The document, the socket and the sync
+	 * that has already happened are the ones it was using a moment ago, so
+	 * nothing re-syncs and no text goes through a second first exchange.
+	 *
+	 * `release` gives it back to the pool, where it stays open until the
+	 * pool needs the socket for something else.
+	 */
+	pin(docId: string): PinnedNote {
+		const entry = this.entryFor(docId);
+		entry.pins += 1;
+		entry.used = ++this.clock;
+		let released = false;
+		return {
+			doc: entry.doc,
+			provider: entry.provider,
+			text: entry.doc.getText("content"),
+			release: () => {
+				if (released) return;
+				released = true;
+				entry.pins -= 1;
+				entry.used = ++this.clock;
+				// One pin fewer is one pooled socket more, and somebody may
+				// be waiting for exactly that.
+				this.wake();
+			},
+		};
+	}
+
+	/**
+	 * Told when a note's socket goes down, so whoever was watching that
+	 * document can let go of it. The pool closes notes on its own schedule,
+	 * and an observer on a document nobody is syncing any more is a callback
+	 * that will never fire and a document that cannot be collected.
+	 */
+	onNoteClosed(callback: (docId: string) => void): () => void {
+		this.closeWatchers.push(callback);
+		return () => {
+			this.closeWatchers = this.closeWatchers.filter((watcher) => watcher !== callback);
+		};
+	}
+
+	/** Close one document's socket, keeping the vault linked. */
+	close(docId: string): void {
+		const entry = this.open.get(docId);
+		if (!entry) return;
+		this.open.delete(docId);
+		if (docId === TREE_DOC_ID) {
+			this.treeDoc = null;
+		}
+		entry.provider.destroy();
+		// Anybody still waiting for this document's first sync is waiting for
+		// something that has stopped being on its way.
+		entry.failSynced(new Error("This note's connection closed before it synced."));
+		// Watchers first, so whoever was following this document lets go of a
+		// document that is still whole, and then the document itself.
+		for (const watcher of [...this.closeWatchers]) watcher(docId);
+		entry.doc.destroy();
+	}
+
+	/** Unlink or shutdown: every socket down, nothing deleted anywhere. */
+	destroy(): void {
+		// Set before the closing, because work that was already in flight is
+		// not cancelled by any of this and would otherwise be handed a fresh
+		// socket to a vault this device has just unlinked from.
+		this.destroyed = true;
+		for (const docId of [...this.open.keys()]) {
+			this.close(docId);
+		}
+		this.wake();
+	}
+
+	// -- the pool ------------------------------------------------------------
+
+	private async acquire(docId: string): Promise<PoolEntry> {
+		for (;;) {
+			const existing = this.open.get(docId);
+			if (existing) {
+				existing.leases += 1;
+				existing.used = ++this.clock;
+				return existing;
+			}
+			if (this.makeRoom()) {
+				const entry = this.entryFor(docId);
+				entry.leases += 1;
+				entry.used = ++this.clock;
+				return entry;
+			}
+			await this.slot();
+		}
+	}
+
+	/**
+	 * Whether a note may open a socket now, closing the one that has gone
+	 * unused longest if it may not.
+	 *
+	 * Only pooled notes are counted: the tree and the notes an editor is
+	 * holding are not the pool's to close, and they are what the cap is kept
+	 * low for in the first place.
+	 */
+	private makeRoom(): boolean {
+		const pooled = [...this.open.entries()].filter(
+			([docId, entry]) => docId !== TREE_DOC_ID && entry.pins === 0,
+		);
+		if (pooled.length < NOTE_SOCKET_CAP) return true;
+		let oldest: [string, PoolEntry] | null = null;
+		for (const candidate of pooled) {
+			if (candidate[1].leases > 0) continue;
+			if (!oldest || candidate[1].used < oldest[1].used) oldest = candidate;
+		}
+		if (!oldest) return false;
+		this.close(oldest[0]);
+		return true;
+	}
+
+	/** A turn, when one comes free. */
+	private slot(): Promise<void> {
+		return new Promise<void>((resolve) => this.waiting.push(resolve));
+	}
+
+	private wake(): void {
+		const waiting = this.waiting;
+		this.waiting = [];
+		for (const resolve of waiting) resolve();
+	}
+
+	/**
+	 * Wait for what this note wrote to leave the process before its socket
+	 * can be closed.
+	 *
+	 * y-websocket sends every local update the moment it is made, so the
+	 * only thing between a splice and the server is the socket's own send
+	 * buffer. A close with bytes still in it is an update nobody will ever
+	 * see again, because the document goes with it.
+	 *
+	 * A socket that went down while the note was being written has not sent
+	 * anything, and saying so is the honest outcome: the caller counts it as
+	 * a failure, the file stays on the disk it came from, and the next
+	 * reconciliation pushes it again.
+	 */
+	private async flushed(entry: PoolEntry): Promise<void> {
+		const deadline = Date.now() + FLUSH_TIMEOUT_MS;
+		for (;;) {
+			const socket = entry.provider.ws;
+			if (!entry.provider.wsconnected || !socket) {
+				throw new Error("The connection dropped before this note was sent.");
+			}
+			if (!socket.bufferedAmount) return;
+			if (Date.now() > deadline) {
+				throw new Error("This note could not be sent in time. It will be tried again.");
+			}
+			await new Promise<void>((resolve) => window.setTimeout(resolve, FLUSH_POLL_MS));
+		}
+	}
+
+	/** The open entry for a document, opening the socket if there is none. */
+	private entryFor(docId: string): PoolEntry {
 		const existing = this.open.get(docId);
 		if (existing) return existing;
+		if (this.destroyed) {
+			throw new Error("This vault is not linked any more.");
+		}
 
 		const doc = new Y.Doc();
 		const provider = new WebsocketProvider(this.server.syncUrl(this.vaultId), docId, doc, {
@@ -98,34 +364,34 @@ export class KnapVaultClient {
 		});
 		provider.awareness.setLocalStateField("device", { name: this.deviceName });
 
-		const synced = new Promise<void>((resolve) => {
+		let failSynced: (error: Error) => void = () => undefined;
+		const synced = new Promise<void>((resolve, reject) => {
+			failSynced = reject;
 			if (provider.synced) {
 				resolve();
 				return;
 			}
 			provider.once("synced", () => resolve());
 		});
+		// A first sync that will now never come is worth saying out loud to
+		// whoever is waiting on it, and worth saying to nobody at all when
+		// nobody is: an unhandled rejection in Obsidian's console is a bug
+		// report about a vault somebody unlinked on purpose.
+		void synced.catch(() => undefined);
 
-		const entry: OpenDoc = { doc, provider, synced };
+		// The tree is pinned for the life of the link: it is how every create,
+		// move and delete travels, and a pool that could close it would take
+		// the vault's index down to make room for one note.
+		const entry: PoolEntry = {
+			doc,
+			provider,
+			synced,
+			failSynced,
+			pins: docId === TREE_DOC_ID ? 1 : 0,
+			leases: 0,
+			used: ++this.clock,
+		};
 		this.open.set(docId, entry);
 		return entry;
-	}
-
-	/** Close one document's socket, keeping the vault linked. */
-	close(docId: string): void {
-		const entry = this.open.get(docId);
-		if (!entry) return;
-		this.open.delete(docId);
-		if (this.treeDoc && docId === TREE_DOC_ID) {
-			this.treeDoc = null;
-		}
-		entry.provider.destroy();
-	}
-
-	/** Unlink or shutdown: every socket down, nothing deleted anywhere. */
-	destroy(): void {
-		for (const docId of [...this.open.keys()]) {
-			this.close(docId);
-		}
 	}
 }

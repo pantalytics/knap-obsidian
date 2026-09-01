@@ -21,6 +21,13 @@
  *   notes download, and a note that exists on both sides with different
  *   text keeps the cloud text while the local text survives as a conflict
  *   copy beside it. Nothing is ever silently lost.
+ * - A note's document is borrowed and handed back, never held. Only the tree
+ *   and the notes an editor has open keep a socket of their own, and every
+ *   other note takes its turn in a small pool, because a browser has 255
+ *   sockets and a vault has thousands of notes (issue #115). The cost is
+ *   real and worth writing down: a note nobody has open here stops hearing
+ *   somebody else's edit the moment it arrives, and catches up the next time
+ *   this binding reconciles or the next time anything touches that note.
  * - A note deleted here is deleted in the cloud vault, and the other way
  *   round, whether or not the plugin was running when it happened. That is
  *   what the `SeenTree` is for: without a record of what this device last
@@ -61,6 +68,11 @@ export interface FileStore {
 	onChange(callback: (event: FileEvent) => void): () => void;
 }
 
+/** One note's document, for as long as somebody is holding it. */
+export interface NoteDoc {
+	doc: Y.Doc;
+}
+
 /** What the binding needs from the wire. KnapVaultClient satisfies it. */
 export interface VaultDocs {
 	tree(): TreeDoc;
@@ -72,7 +84,22 @@ export interface VaultDocs {
 	 * that already exists in the cloud gets a second document minted for it.
 	 */
 	treeSynced(): Promise<void>;
-	note(docId: string): { doc: Y.Doc; synced: Promise<void> };
+	/**
+	 * Borrow one note's document for the length of `use`.
+	 *
+	 * A borrow rather than a getter, because a note's socket is not this
+	 * binding's to keep: there are 255 of them per Obsidian and thousands of
+	 * notes in a vault (issue #115). What the caller is promised is a
+	 * document that has synced before `use` runs and a socket that stays up
+	 * until everything `use` wrote has left the process. Whoever hands one
+	 * over decides when it closes after that.
+	 */
+	withNote<T>(docId: string, use: (note: NoteDoc) => Promise<T>): Promise<T>;
+	/**
+	 * Told when a note's document goes down, so this binding can stop
+	 * watching a document that will never change again.
+	 */
+	onNoteClosed(callback: (docId: string) => void): () => void;
 }
 
 /**
@@ -98,6 +125,17 @@ const CONTENT = "content";
 
 /** How long to wait for the tree's first sync before giving up on a link. */
 const TREE_SYNC_TIMEOUT_MS = 30_000;
+
+/**
+ * How many notes a fill works on at once.
+ *
+ * One at a time is one round trip at a time, and a vault of a few thousand
+ * notes would still be arriving tomorrow. This is a queue width and not a
+ * socket count: how many sockets exist is the client's business, and it caps
+ * them at the same number, so a note that finds the pool full waits for a
+ * turn instead of opening the 256th socket Chromium never answers.
+ */
+const FILL_WIDTH = 8;
 
 /** Reject with `message` if `promise` has not settled in `ms`. */
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
@@ -125,6 +163,7 @@ function textOf(content: Y.Text): string {
 export class VaultBinding {
 	private stopFileEvents: (() => void) | null = null;
 	private stopTreeEvents: (() => void) | null = null;
+	private stopNoteCloses: (() => void) | null = null;
 	private noteObservers = new Map<string, () => void>();
 	private queue: Promise<void> = Promise.resolve();
 	private failures = 0;
@@ -146,6 +185,11 @@ export class VaultBinding {
 	 * interleave two half-finished reconciliations.
 	 */
 	async start(): Promise<void> {
+		// Before anything opens a document: a note whose socket the client
+		// closed is a note this binding may not go on watching, and the entry
+		// has to go too, or the next borrow of that note finds itself already
+		// watched and nothing observes the document that replaced it.
+		this.stopNoteCloses = this.docs.onNoteClosed((docId) => this.unobserveNote(docId));
 		await this.enqueue(() => this.reconcileAll());
 		this.stopFileEvents = this.files.onChange((event) => {
 			// The store reports both kinds, and each binding takes its own.
@@ -187,6 +231,7 @@ export class VaultBinding {
 	stop(): void {
 		this.stopFileEvents?.();
 		this.stopTreeEvents?.();
+		this.stopNoteCloses?.();
 		for (const stop of this.noteObservers.values()) stop();
 		this.noteObservers.clear();
 	}
@@ -241,12 +286,13 @@ export class VaultBinding {
 		const tree = this.docs.tree();
 		const docId = tree.docIdFor(path);
 		if (!docId) return;
-		const { doc } = this.docs.note(docId);
-		const text = textOf(doc.getText(CONTENT));
-		const at = tree.pathFor(docId) ?? path;
-		if ((await this.files.read(at)) !== text) {
-			await this.files.write(at, text);
-		}
+		await this.docs.withNote(docId, async ({ doc }) => {
+			const text = textOf(doc.getText(CONTENT));
+			const at = tree.pathFor(docId) ?? path;
+			if ((await this.files.read(at)) !== text) {
+				await this.files.write(at, text);
+			}
+		});
 	}
 
 	private enqueue(work: () => Promise<void>): Promise<void> {
@@ -313,8 +359,11 @@ export class VaultBinding {
 		// cost of being wrong here is every note in the cloud vault.
 		const emptied = local.size === 0 && seen.size > 0;
 
-		for (const path of local) {
-			if (remote.has(path)) continue;
+		// Both halves run several notes deep. The tree above is read first and
+		// in full, so what each note does is its own business and the width
+		// only decides how many are waiting for a socket at once.
+		await this.inWaves([...local], async (path) => {
+			if (remote.has(path)) return;
 			if (seen.has(path)) {
 				// It was in the tree when this device last looked and it is
 				// not now: it was deleted in the cloud vault while this
@@ -323,8 +372,8 @@ export class VaultBinding {
 			} else {
 				await this.pushNote(path);
 			}
-		}
-		for (const [path, docId] of remote) {
+		});
+		await this.inWaves([...remote], async ([path, docId]) => {
 			if (!local.has(path) && !emptied && seen.get(path) === docId) {
 				// The same note, at the same path, as this device last had
 				// it on disk, and the file is gone. Somebody deleted it here
@@ -332,10 +381,36 @@ export class VaultBinding {
 				// downloaded the note back, every time, on every device.
 				tree.remove(path);
 				this.seenDirty = true;
-				continue;
+				return;
 			}
 			await this.bindNote(path, docId);
-		}
+		});
+	}
+
+	/**
+	 * Run `work` over `items`, a few at a time, counting what fails instead
+	 * of stopping.
+	 *
+	 * One note that cannot be reached is one note, not a link that failed.
+	 * The file it came from is still on the disk, the next start tries it
+	 * again, and the count is what puts Problem on the screen in the
+	 * meantime. A fill of a few thousand notes that gave up on the first
+	 * refusal is how somebody ends up restarting Obsidian to make progress.
+	 */
+	private async inWaves<T>(items: T[], work: (item: T) => Promise<void>): Promise<void> {
+		let next = 0;
+		const worker = async (): Promise<void> => {
+			while (next < items.length) {
+				const item = items[next++];
+				try {
+					await work(item);
+				} catch {
+					this.failures += 1;
+				}
+			}
+		};
+		const width = Math.max(1, Math.min(FILL_WIDTH, items.length));
+		await Promise.all(Array.from({ length: width }, () => worker()));
 	}
 
 	// -- local to remote ------------------------------------------------------
@@ -388,13 +463,13 @@ export class VaultBinding {
 		const known = tree.docIdFor(clean);
 		const docId = tree.ensureNote(clean);
 		if (known === undefined) this.seenDirty = true;
-		const { doc, synced } = this.docs.note(docId);
-		await synced;
-		const content = doc.getText(CONTENT);
-		if (textOf(content) !== text) {
-			splice(content, textOf(content), text, doc);
-		}
-		this.observeNote(clean, docId);
+		await this.docs.withNote(docId, async ({ doc }) => {
+			const content = doc.getText(CONTENT);
+			if (textOf(content) !== text) {
+				splice(content, textOf(content), text, doc);
+			}
+			this.observeNote(clean, docId, content);
+		});
 	}
 
 	// -- remote to local ------------------------------------------------------
@@ -410,44 +485,56 @@ export class VaultBinding {
 	 * the one thing this binding promises never to do.
 	 */
 	private async bindNote(path: string, docId: string): Promise<void> {
-		const { doc, synced } = this.docs.note(docId);
-		await synced;
-		const content = doc.getText(CONTENT);
-		const docText = textOf(content);
-		const fileText = await this.files.read(path);
+		const copy = await this.docs.withNote(docId, async ({ doc }) => {
+			const content = doc.getText(CONTENT);
+			const docText = textOf(content);
+			const fileText = await this.files.read(path);
+			let conflict: string | null = null;
 
-		if (fileText === null) {
-			await this.files.write(path, docText);
-		} else if (fileText !== docText) {
-			if (docText === "") {
-				// A minted note nobody typed in yet: the local text is the
-				// note. A note somebody deliberately emptied looks exactly the
-				// same from here and nothing can tell them apart, so this goes
-				// the way that cannot lose anything.
-				splice(content, "", fileText, doc);
-			} else {
-				// Both sides wrote. The cloud text wins the path; the local
-				// text survives beside it, named for what happened, and pushed
-				// explicitly because this can run before the event stream is on.
-				const copy = buildConflictCopyPath(path, this.conflictLabel());
-				await this.files.write(copy, fileText);
-				await this.pushNote(copy);
+			if (fileText === null) {
 				await this.files.write(path, docText);
+			} else if (fileText !== docText) {
+				if (docText === "") {
+					// A minted note nobody typed in yet: the local text is the
+					// note. A note somebody deliberately emptied looks exactly
+					// the same from here and nothing can tell them apart, so
+					// this goes the way that cannot lose anything.
+					splice(content, "", fileText, doc);
+				} else {
+					// Both sides wrote. The cloud text wins the path; the local
+					// text survives beside it, named for what happened.
+					conflict = buildConflictCopyPath(path, this.conflictLabel());
+					await this.files.write(conflict, fileText);
+					await this.files.write(path, docText);
+				}
 			}
-		}
-		this.observeNote(path, docId);
+			this.observeNote(path, docId, content);
+			return conflict;
+		});
+		// The copy is a note of its own and needs a document of its own, so it
+		// is pushed after this note has handed its socket back rather than
+		// from inside: a borrow that waits on a second borrow is how a pool
+		// this small deadlocks. Explicitly, because this can run before the
+		// event stream is on.
+		if (copy) await this.pushNote(copy);
 	}
 
-	private observeNote(path: string, docId: string): void {
+	/**
+	 * Follow one note's document for as long as it stays open.
+	 *
+	 * The text is read the moment the change arrives rather than when the
+	 * write comes up in the queue, because by then the document may have been
+	 * handed back and closed. What was observed is what gets written, and a
+	 * second change writes again, so the last one still wins.
+	 */
+	private observeNote(path: string, docId: string, content: Y.Text): void {
 		if (this.noteObservers.has(docId)) return;
-		const { doc } = this.docs.note(docId);
-		const content = doc.getText(CONTENT);
 		const observer = () => {
+			const text = textOf(content);
 			void this.enqueue(async () => {
 				const current = this.docs.tree().pathFor(docId) ?? path;
 				// An open editor already has this change and owns the file.
 				if (this.held.has(current)) return;
-				const text = textOf(content);
 				if ((await this.files.read(current)) !== text) {
 					await this.files.write(current, text);
 				}
