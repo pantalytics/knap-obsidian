@@ -57,7 +57,36 @@ either side of it rather than like a panel we built.
   │ opens your browser and     │     └────────────────────────────┘
   │ comes back here.           │
   └────────────────────────────┘
+
+  a vault has been chosen, and the link is coming up:
+  ┌──────────────────────────────────────────────────┐
+  │ ◠ Syncing                          Work notes  ▾ │  ← the dot turns
+  │                                                  │
+  │ Cloud vault                      [ Linking... ]  │  ← and does not press
+  │ Linking to Work notes. This can take a moment.   │
+  └──────────────────────────────────────────────────┘
 ```
+
+### While a link is being made
+
+**Cloud vault has three states, and the third one is where this screen was
+worst.** A vault is chosen, the socket is on its way up, and on a phone that is
+several seconds in which nothing used to move: the row said *Not linked* and
+the bar said *Up to date*, because the page redrew only where it had just
+pressed something. Somebody who chose again took the first attempt down half
+way and got *This vault is not linked any more.* over a link they had asked for
+(ADR-0086).
+
+So the row names the vault it is linking to, its button says **Linking...** and
+does not press, and the dot in the bar turns for as long as anything is moving.
+A link is made when the cloud vault answers rather than when every note has
+travelled, so the rest of it is reported by the bar: *Syncing* with the count
+climbing, then *Up to date*, or *Problem* with **Try again** if something stuck.
+
+The page watches while it is open rather than redrawing where it was pressed.
+Everything it reports now finishes on its own, and a climbing number is written
+in place once a second, because announcing every note of a few thousand would
+redraw the page a few thousand times and shut a fold somebody had opened.
 
 Each of the three parts earns its place. **The bar** says how it is going, and
 is first because it is what somebody came to find out. **Account** is who.
@@ -181,6 +210,11 @@ that does not exist yet is exactly the person who needs it.
 Each row is the vault's name and nothing else. There is one kind of person in a
 vault, so there is no access level to qualify it with.
 
+Choosing one closes the picker, and the wait that follows belongs to the screen
+behind it: the settings page carries the linking state above. Closing the
+picker without choosing anything is an answer too, and it settles rather than
+leaving a page that never looks again.
+
 ## The commands
 
 Four, all still labelled *(beta)*, which is a name that has outlived its
@@ -205,7 +239,9 @@ happened and what is now true.
 | After | It says |
 |---|---|
 | Signing in | Signed in. Now link this vault. |
-| Linking | Linked. This vault now syncs with *name*. |
+| Linking | Linked. This vault now syncs with *name*. Said when the cloud vault answers, which is when the link exists; the notes are still on their way and the bar says so |
+| A link that could not be made | Could not reach the cloud vault. Your notes are safe here. The link is kept, because linking replaces whatever was there, and Try again is on the bar |
+| Choosing a second cloud vault while the first is still coming up | Still linking to *name*. Wait for that to finish. |
 | Unlinking | Unlinked. Nothing was deleted, anywhere. |
 | Signing out | Signed out. Nothing was deleted, anywhere. |
 | Signing out with no connection | Signed out here only. Knap could not be reached, so it may still count this device as signed in. |
@@ -269,6 +305,10 @@ believing they are gone.
 - The screen is `src/knap/KnapSettingsTab.ts`. `statusFacts` and `hasRetry` are
   exported and pure precisely so the branching is pinned in
   `__tests__/knap/settingsTab.test.ts` rather than asserted against a screen.
+- What the screen reads while a link is being made is `KnapSync.linking` and
+  `KnapSync.onChange`, and what those promise is pinned in
+  `__tests__/knap/linking.test.ts` against a fake network that can be made to
+  take a connection and then say nothing.
 - The words are `src/syncStatus.ts`, and adding one means the rule above.
 - The picker is `ObsidianKnap.ts`; `vaultChoices` and `pickerPlaceholder` are
   exported for the same reason.

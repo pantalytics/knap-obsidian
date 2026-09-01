@@ -13,9 +13,15 @@ import {
 	signOutNotice,
 	statusFacts,
 } from "../../src/knap/KnapSettingsTab";
-import { OFFLINE, PROBLEM, SYNCING, UP_TO_DATE } from "../../src/syncStatus";
+import { OFFLINE, PROBLEM, SIGNED_OUT, SYNCING, UP_TO_DATE } from "../../src/syncStatus";
 
-type Row = { name: string; desc: string; buttons: string[]; press?: () => void };
+type Row = {
+	name: string;
+	desc: string;
+	buttons: string[];
+	disabled: boolean;
+	press?: () => void;
+};
 
 /** Whatever the screen built by hand, flattened to what it says and does. */
 interface FakeEl {
@@ -34,6 +40,7 @@ interface FakeEl {
 	getAttribute(name: string): string | null;
 	addEventListener(name: string, run: () => void): void;
 	insertBefore(node: FakeEl, before: FakeEl): void;
+	setText(text: string): void;
 }
 
 function el(cls = "", text = ""): FakeEl {
@@ -59,6 +66,9 @@ function el(cls = "", text = ""): FakeEl {
 		},
 		getAttribute: (name) => node.attrs[name] ?? null,
 		addEventListener: (_name, run) => node.listeners.push(run),
+		setText: (text) => {
+			node.text = text;
+		},
 		insertBefore: (child, before) => {
 			const from = node.children.indexOf(child);
 			if (from >= 0) node.children.splice(from, 1);
@@ -80,7 +90,7 @@ function find(root: FakeEl, cls: string): FakeEl | undefined {
 
 jest.mock("obsidian", () => {
 	class Setting {
-		private row: Row = { name: "", desc: "", buttons: [] };
+		private row: Row = { name: "", desc: "", buttons: [], disabled: false };
 		constructor(container: { rows?: Row[] }) {
 			container.rows?.push(this.row);
 		}
@@ -102,6 +112,10 @@ jest.mock("obsidian", () => {
 					return button;
 				},
 				setCta: () => button,
+				setDisabled: (off: boolean) => {
+					this.row.disabled = off;
+					return button;
+				},
 				onClick: (run: () => void) => {
 					this.row.press = run;
 					return button;
@@ -124,6 +138,8 @@ jest.mock("obsidian", () => {
 interface FakeState {
 	signedIn: boolean;
 	linked: null | { id: string; name: string };
+	/** The cloud vault a link is being made to right now, as the tab reads it. */
+	linking?: string;
 	status?: Partial<ReturnType<typeof baseStatus>>;
 }
 
@@ -142,10 +158,21 @@ function fakeSync(state: FakeState) {
 	let signedIn = state.signedIn;
 	let linked = state.linked;
 	const retried: string[] = [];
+	const watchers = new Set<() => void>();
 	return {
 		retried,
+		watchers,
 		get signedIn() {
 			return signedIn;
+		},
+		get linking() {
+			return state.linking ?? "";
+		},
+		onChange: (watcher: () => void) => {
+			watchers.add(watcher);
+			return () => {
+				watchers.delete(watcher);
+			};
 		},
 		get linked() {
 			return linked
@@ -154,11 +181,19 @@ function fakeSync(state: FakeState) {
 		},
 		status: () => ({
 			...baseStatus(),
+			// The one thing this stand-in decides for itself, because the page
+			// reads the word to tell a redraw from a number that moved.
+			word: signedIn ? UP_TO_DATE : SIGNED_OUT,
 			vaultName: linked?.name ?? "",
 			...(state.status ?? {}),
 		}),
 		retry: async () => {
 			retried.push("retry");
+		},
+		/** What the picker does, as far as this screen can tell. */
+		link: (vault: { id: string; name: string }) => {
+			linked = vault;
+			state.linking = "";
 		},
 		unlink: async () => {
 			linked = null;
@@ -170,6 +205,15 @@ function fakeSync(state: FakeState) {
 		},
 	};
 }
+
+/** Pages that are still open, so each test closes what it drew. */
+const open: KnapSettingsTab[] = [];
+
+afterEach(() => {
+	// The page keeps a subscription and a beat while it is on screen, and a
+	// test that leaves one behind leaves a timer running in the worker.
+	while (open.length) open.pop()?.hide();
+});
 
 function drawWith(sync: ReturnType<typeof fakeSync>) {
 	const rows: Row[] = [];
@@ -189,7 +233,8 @@ function drawWith(sync: ReturnType<typeof fakeSync>) {
 	);
 	tab.containerEl = container as never;
 	tab.display();
-	return { rows, container: container as unknown as FakeEl };
+	open.push(tab);
+	return { rows, tab, container: container as unknown as FakeEl };
 }
 
 function drawFor(state: FakeState) {
@@ -266,6 +311,101 @@ describe("the screen, signed in", () => {
 
 		expect(rows.flatMap((r) => r.buttons)).toEqual(["Sign in"]);
 		expect(rows.map((r) => r.desc).join(" ")).not.toContain("Work notes");
+	});
+});
+
+describe("the screen, while a link is being made", () => {
+	it("says which cloud vault it is linking to, and offers nothing to press", () => {
+		// The state this screen was worst at. A person chose a vault, the page
+		// went on saying Not linked, and pressing it again took the first
+		// attempt down half way (ADR-0086).
+		const { rows } = drawFor({
+			signedIn: true,
+			linked: null,
+			linking: "Work notes",
+			status: { word: SYNCING, dot: "working", vaultName: "Work notes" },
+		});
+		const vault = rows.find((r) => r.name === "Cloud vault");
+		expect(vault?.desc).toContain("Linking to Work notes");
+		expect(vault?.buttons).toEqual(["Linking..."]);
+		expect(vault?.disabled).toBe(true);
+	});
+
+	it("turns the dot, which is the whole point of it on a phone", () => {
+		const { container } = drawFor({
+			signedIn: true,
+			linked: null,
+			linking: "Work notes",
+			status: { word: SYNCING, dot: "working", vaultName: "Work notes" },
+		});
+		// The turning is CSS on this class, so what a test can pin is that the
+		// bar wears it while the link is on its way up.
+		expect(find(container, "knap-dot-working")).toBeDefined();
+	});
+});
+
+describe("the page keeps looking", () => {
+	it("redraws itself when the sync says something changed", () => {
+		const sync = fakeSync({ signedIn: true, linked: null, linking: "Work notes" });
+		const { rows } = drawWith(sync);
+		expect(rows.find((r) => r.name === "Cloud vault")?.buttons).toEqual(["Linking..."]);
+
+		// The link came up while the page was open, which is the case the
+		// press that started it cannot redraw for.
+		sync.link({ id: "v1", name: "Work notes" });
+		sync.watchers.forEach((watcher) => watcher());
+
+		const vault = rows.find((r) => r.name === "Cloud vault");
+		expect(vault?.desc).toContain("Work notes");
+		expect(vault?.buttons).toEqual(["Unlink"]);
+	});
+
+	it("stops looking once the page is gone", () => {
+		const sync = fakeSync({ signedIn: true, linked: null });
+		const { tab } = drawWith(sync);
+		expect(sync.watchers.size).toBe(1);
+		tab.hide();
+		expect(sync.watchers.size).toBe(0);
+	});
+
+	it("leaves a page with no bar on it alone", () => {
+		// Signed out there is no bar to write a number into, and a beat that
+		// compared against a word this page never drew would redraw it once a
+		// second for as long as somebody left the tab open.
+		jest.useFakeTimers();
+		try {
+			const { container } = drawFor({ signedIn: false, linked: null });
+			const lines = () =>
+				flatten(container).filter((node) => node.cls.split(" ").includes("knap-server"));
+			expect(lines()).toHaveLength(1);
+			jest.advanceTimersByTime(5_000);
+			expect(lines()).toHaveLength(1);
+		} finally {
+			jest.useRealTimers();
+		}
+	});
+
+	it("writes a climbing count in place, leaving an opened fold open", () => {
+		jest.useFakeTimers();
+		try {
+			const state: FakeState = {
+				signedIn: true,
+				linked: { id: "v1", name: "Work notes" },
+				status: { word: SYNCING, dot: "working", vaultName: "Work notes", notes: 12 },
+			};
+			const { container } = drawWith(fakeSync(state));
+			find(container, "knap-status-head")?.listeners.forEach((run) => run());
+			expect(find(container, "knap-status-body")?.hidden).toBe(false);
+
+			state.status = { ...state.status, notes: 141 };
+			jest.advanceTimersByTime(1_000);
+
+			expect(find(container, "knap-status-detail")?.text).toBe("Work notes · 141 notes");
+			// A redraw here would shut the fold under somebody reading it.
+			expect(find(container, "knap-status-body")?.hidden).toBe(false);
+		} finally {
+			jest.useRealTimers();
+		}
 	});
 });
 

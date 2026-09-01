@@ -89,6 +89,7 @@ class CloudVaultPickModal extends SuggestModal<VaultChoice> {
 		private readonly list: () => Promise<CloudVault[]>,
 		private readonly onPick: (vault: CloudVault) => void,
 		private readonly onMake: () => void,
+		private readonly onDone: () => void,
 	) {
 		super(host.app);
 		this.setPlaceholder(pickerPlaceholder("loading"));
@@ -142,6 +143,18 @@ class CloudVaultPickModal extends SuggestModal<VaultChoice> {
 		}
 		this.onPick(choice.vault);
 	}
+
+	/**
+	 * Closed, however it was closed.
+	 *
+	 * Somebody who opens this and thinks better of it used to leave a promise
+	 * that never settled behind them, and with it a screen that never looked
+	 * again. Chosen or not, the picker is over here.
+	 */
+	onClose(): void {
+		super.onClose();
+		this.onDone();
+	}
 }
 
 /**
@@ -183,22 +196,33 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 	 *
 	 * The promise settles when the person has finished with the picker one way
 	 * or another, including by closing it, so the screen redraws either way.
+	 *
+	 * A picked vault settles it when the link is made, which is when the cloud
+	 * vault answers rather than when every note has travelled (ADR-0086). The
+	 * screen carries the wait: the row says which vault it is linking to and
+	 * the dot turns until it is done.
 	 */
 	const pickAndLink = () =>
 		new Promise<void>((resolve, reject) => {
+			let picked = false;
 			new CloudVaultPickModal(
 				host,
 				() => sync.listVaults(),
 				(vault) => {
+					picked = true;
 					sync.link(vault).then(() => {
 						new Notice(`Linked. This vault now syncs with ${vault.name}.`);
 						resolve();
 					}, reject);
 				},
 				() => {
+					picked = true;
 					window.open(new URL("/vaults", KNAP_PANEL_URL).toString());
 					new Notice("Make one in your browser, then choose it here.");
 					resolve();
+				},
+				() => {
+					if (!picked) resolve();
 				},
 			).open();
 		});

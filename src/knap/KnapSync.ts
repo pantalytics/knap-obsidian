@@ -38,6 +38,23 @@ import { KnapServer } from "./KnapServer";
 import { KnapVaultClient } from "./KnapVaultClient";
 import type { WebSocketImpl } from "./KnapVaultClient";
 import { SignInFlow } from "./SignInFlow";
+import { withTimeout } from "./withTimeout";
+
+/**
+ * How long a link waits for the cloud vault to answer before it says so.
+ *
+ * The same half minute the binding gives the tree, because it is the same
+ * exchange being waited for from one step further out.
+ */
+const LINK_TIMEOUT_MS = 30_000;
+
+/**
+ * What a link says when the cloud vault never answered.
+ *
+ * It does not promise a retry, because nothing here schedules one: the link
+ * is kept, the bar goes to Offline, and Try again is the thing to press.
+ */
+export const UNREACHABLE = "Could not reach the cloud vault. Your notes are safe here.";
 
 export interface KnapLink {
 	token: string;
@@ -89,6 +106,13 @@ export class KnapSync {
 	private client: KnapVaultClient | null = null;
 	private binding: VaultBinding | null = null;
 	private attachments: AttachmentBinding | null = null;
+	/** The cloud vault a link is being made to right now, if there is one. */
+	private linkingTo: CloudVault | null = null;
+	/** That link, so a second press is the same act rather than a new one. */
+	private linkRun: Promise<void> | null = null;
+	/** The first pass over the vault, while it is still running. */
+	private filling: Promise<void> | null = null;
+	private watchers = new Set<() => void>();
 
 	constructor(private readonly options: KnapSyncOptions) {
 		this.server = new KnapServer(options.serverUrl, options.fetchFn);
@@ -98,6 +122,38 @@ export class KnapSync {
 	get linked(): KnapLink | null {
 		const stored = this.options.load();
 		return stored && stored.cloudVaultId ? stored : null;
+	}
+
+	/**
+	 * The cloud vault this one is being linked to right now, or "".
+	 *
+	 * A state of its own on the screen, because it is one underneath: the
+	 * vault is chosen, the socket is on its way up, and neither Choose nor
+	 * Unlink is a thing to press yet.
+	 */
+	get linking(): string {
+		return this.linkingTo?.name ?? "";
+	}
+
+	/**
+	 * Told whenever what this object would answer has changed.
+	 *
+	 * The screen used to redraw only where it had just pressed something,
+	 * so everything that finishes on its own -- a link coming up, a first
+	 * pass ending -- happened behind a page that went on saying what was
+	 * true when it was drawn. Returns the way to stop listening.
+	 */
+	onChange(watcher: () => void): () => void {
+		this.watchers.add(watcher);
+		return () => {
+			this.watchers.delete(watcher);
+		};
+	}
+
+	private announce(): void {
+		for (const watcher of [...this.watchers]) {
+			watcher();
+		}
 	}
 
 	get signedIn(): boolean {
@@ -121,22 +177,28 @@ export class KnapSync {
 	 */
 	status(): KnapStatus {
 		const linked = this.linked;
+		const linking = this.linkingTo !== null;
 		const connected = this.client?.connected ?? false;
 		const problems = this.binding?.problems ?? 0;
 		const word = syncWord({
 			signedIn: this.signedIn,
 			paused: false,
-			syncing: Boolean(this.client) && !this.client?.settled,
+			// The first pass counts as syncing while it runs. Notes are still
+			// arriving all through it, and a bar that said Up to date over a
+			// vault that is a third full is what made somebody press the
+			// button a second time.
+			syncing: linking || this.filling !== null || (this.client !== null && !this.client.settled),
 			// Not linked is not offline: there is no socket because there is
 			// nothing to open one to, and saying Offline would send somebody
-			// to check their wifi over a vault they never linked.
-			connected: linked ? connected : undefined,
+			// to check their wifi over a vault they never linked. Neither is a
+			// link being made: that socket is on its way up.
+			connected: linked && !linking ? connected : undefined,
 			stuck: problems,
 		});
 		return {
 			word,
 			dot: syncDot(word),
-			vaultName: linked?.cloudVaultName ?? "",
+			vaultName: this.linkingTo?.name ?? linked?.cloudVaultName ?? "",
 			notes: this.client ? this.client.tree().entries().size : 0,
 			problems,
 		};
@@ -151,6 +213,7 @@ export class KnapSync {
 			cloudVaultId: previous?.cloudVaultId ?? "",
 			cloudVaultName: previous?.cloudVaultName ?? "",
 		});
+		this.announce();
 	}
 
 	handleDeepLink(params: Record<string, string>): boolean {
@@ -165,15 +228,48 @@ export class KnapSync {
 		return this.server.listVaults(stored.token);
 	}
 
-	/** Link this local vault to one cloud vault. Replaces, never appends. */
+	/**
+	 * Link this local vault to one cloud vault. Replaces, never appends.
+	 *
+	 * Settles when the cloud vault answers, which is when the link exists.
+	 * The first pass over the notes runs on behind it and reports itself on
+	 * the bar. It used to settle only once every note had travelled, which on
+	 * a phone is minutes of a screen still saying Not linked, and the second
+	 * press that follows tore the first attempt down half way and reached the
+	 * person as *This vault is not linked any more.* over a link they had
+	 * just asked for (2026-09-01, on a phone, twice in one screenshot).
+	 *
+	 * Which is also why a link in flight is not restarted by a second press
+	 * for the same vault: it is the same act, so it is the same promise.
+	 */
 	async link(vault: CloudVault): Promise<void> {
 		const stored = this.options.load();
 		if (!stored?.token) {
 			throw new Error("Sign in first.");
 		}
+		if (this.linkRun) {
+			if (this.linkingTo?.id === vault.id) {
+				return this.linkRun;
+			}
+			throw new Error(`Still linking to ${this.linking}. Wait for that to finish.`);
+		}
+		this.linkingTo = vault;
+		this.linkRun = this.relink(vault, stored.token);
+		this.announce();
+		try {
+			await this.linkRun;
+		} finally {
+			this.linkingTo = null;
+			this.linkRun = null;
+			this.announce();
+		}
+	}
+
+	/** The link itself: whatever ran before goes down, the new one comes up. */
+	private async relink(vault: CloudVault, token: string): Promise<void> {
 		this.stop();
 		await this.options.save({
-			token: stored.token,
+			token,
 			cloudVaultId: vault.id,
 			cloudVaultName: vault.name,
 		});
@@ -188,6 +284,7 @@ export class KnapSync {
 		if (stored) {
 			await this.options.save({ ...stored, cloudVaultId: "", cloudVaultName: "" });
 		}
+		this.announce();
 	}
 
 	/**
@@ -217,38 +314,64 @@ export class KnapSync {
 			}
 		}
 		await this.options.save(null);
+		this.announce();
 		return { endedRemotely };
 	}
 
-	/** Bring the link up, if there is one. Safe to call at plugin load. */
+	/**
+	 * Bring the link up, if there is one. Safe to call at plugin load.
+	 *
+	 * Returns once the cloud vault has answered, not once the vault is full.
+	 * The first pass runs behind this call: it is minutes of work on a phone
+	 * with a few thousand notes, none of it a question of whether the link
+	 * exists, and what it finds is counted on the binding and reaches the
+	 * screen as Syncing, then as Problem if something stayed stuck.
+	 */
 	async start(): Promise<void> {
 		const stored = this.linked;
 		if (!stored || this.binding) {
 			return;
 		}
-		this.client = new KnapVaultClient(
+		const client = new KnapVaultClient(
 			this.server,
 			stored.cloudVaultId,
 			stored.token,
 			this.options.deviceName,
 			this.options.webSocket,
 		);
-		this.binding = new VaultBinding(
+		const binding = new VaultBinding(
 			this.options.files,
-			this.client,
+			client,
 			undefined,
 			this.options.makeSeen?.(stored.cloudVaultId) ?? null,
 		);
-		this.attachments = new AttachmentBinding(
+		const attachments = new AttachmentBinding(
 			this.options.files,
-			this.client,
+			client,
 			this.transportFor(stored.token, stored.cloudVaultId),
 			this.options.onRefused,
 		);
+		this.client = client;
+		this.binding = binding;
+		this.attachments = attachments;
 		// Notes first. Both wait for the same tree to sync, and a vault whose
 		// notes are already arriving is the one somebody is looking at.
-		await this.binding.start();
-		await this.attachments.start();
+		//
+		// Swallowed here and counted there: every unit the pass runs goes
+		// through the binding's queue, which counts what fails, and a
+		// rejection nobody is holding is an unhandled one in the console.
+		this.filling = binding
+			.start()
+			.then(() => attachments.start())
+			.catch(() => undefined)
+			.finally(() => {
+				if (this.binding === binding) {
+					this.filling = null;
+				}
+				this.announce();
+			});
+		await withTimeout(client.treeSynced(), LINK_TIMEOUT_MS, UNREACHABLE);
+		this.announce();
 	}
 
 	/** The file routes, bound to one vault and one token. */
@@ -342,5 +465,10 @@ export class KnapSync {
 		this.binding = null;
 		this.client?.destroy();
 		this.client = null;
+		// Whatever the first pass was still doing belongs to a client that no
+		// longer exists, and its failures went down with the binding that was
+		// counting them.
+		this.filling = null;
+		this.announce();
 	}
 }

@@ -17,6 +17,19 @@
  * linking somewhere else is Unlink and then Choose, which is what happens
  * underneath either way, and a third button to say so is a third button.
  *
+ * **Cloud vault has a third state, and it is the one this screen was worst
+ * at**: linking. The vault is chosen and the socket is on its way up, which
+ * on a phone is the difference between pressing a button and seeing anything
+ * happen. The row says which vault it is going to, the button says Linking
+ * and does not press, and the dot in the bar turns for the length of it.
+ * Before that, and measured on a phone on 2026-09-01: a person chose their
+ * vault, the page went on saying Not linked for the length of the first pass
+ * (#106), and choosing again took the first attempt down half way and told
+ * them *This vault is not linked any more.* (ADR-0086).
+ *
+ * The page subscribes while it is open, because everything it reports now
+ * finishes on its own rather than under the press that started it.
+ *
  * The bar is the only thing on the screen that folds. That is the hierarchy:
  * the dot and the word are always out, the vault and its size sit beside them,
  * and the handful of facts behind them come out when somebody asks. Nothing
@@ -81,7 +94,19 @@ export interface SignInActions {
 	pickAndLink(): Promise<void>;
 }
 
+/** How often the numbers on an open page are looked at again. */
+const BEAT_MS = 1_000;
+
 export class KnapSettingsTab extends PluginSettingTab {
+	/** Ends the subscription that redraws this page. Set while it is open. */
+	private unwatch: (() => void) | null = null;
+	/** The beat that keeps the climbing numbers honest, while it is open. */
+	private beat: number | null = null;
+	/** The word this page was drawn for, so the beat can tell a change. */
+	private drawnWord = "";
+	/** The bar's far end, which is the one thing the beat writes to. */
+	private detailEl: HTMLElement | null = null;
+
 	/**
 	 * ``plugin`` is the real plugin, not a stand-in. Obsidian registers the tab
 	 * against it, and handing it an object that merely looks like one threw
@@ -100,6 +125,30 @@ export class KnapSettingsTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
+		// What this drawing is of, before anything is drawn, because a page
+		// that never reaches the bar -- signed out, there is nothing to report
+		// yet -- would otherwise leave the beat comparing against the word of
+		// a page that is gone and redrawing this one every second.
+		this.drawnWord = this.sync.status().word;
+		this.detailEl = null;
+
+		// One subscription for as long as the page is open, because the two
+		// things it reports finish on their own: a link comes up a few
+		// seconds after somebody chose a vault, and the first pass ends some
+		// minutes after that. Redrawing only where it had just pressed
+		// something is how this page came to say Not linked over a vault that
+		// was linking, which is a page a person presses the button on again.
+		if (!this.unwatch) {
+			this.unwatch = this.sync.onChange(() => this.display());
+		}
+		// And a beat beside it, because one thing the page reports does not
+		// happen in steps: the first pass puts notes in the tree one at a
+		// time, and announcing every one of a few thousand would redraw this
+		// page a few thousand times. The beat writes the number in place and
+		// leaves the page alone unless the word itself changed.
+		if (this.beat === null) {
+			this.beat = window.setInterval(() => this.tick(), BEAT_MS);
+		}
 
 		// The server, once, quietly, where a plugin's own subtitle goes. It
 		// belongs on the screen because a beta build talks to somewhere other
@@ -142,6 +191,18 @@ export class KnapSettingsTab extends PluginSettingTab {
 				}),
 			);
 
+		const linking = this.sync.linking;
+		if (linking) {
+			// Chosen, and on its way up. Neither Choose nor Unlink is a thing
+			// to press yet, so the row says what is happening and the button
+			// says it too rather than going missing for the length of it.
+			new Setting(containerEl)
+				.setName("Cloud vault")
+				.setDesc(`Linking to ${linking}. This can take a moment.`)
+				.addButton((button) => button.setButtonText("Linking...").setDisabled(true));
+			return;
+		}
+
 		const linked = this.sync.linked;
 		const vault = new Setting(containerEl)
 			.setName("Cloud vault")
@@ -169,12 +230,44 @@ export class KnapSettingsTab extends PluginSettingTab {
 				.setButtonText("Choose...")
 				.setCta()
 				.onClick(() => {
+					// Redrawn either way. A link that could not be made is
+					// still a link that was saved, and a page that only
+					// redraws where it succeeded goes on saying Not linked
+					// over a vault this device is now linked to.
 					void this.actions
 						.pickAndLink()
-						.then(() => this.display())
-						.catch((error: Error) => new Notice(error.message));
+						.catch((error: Error) => new Notice(error.message))
+						.finally(() => this.display());
 				}),
 		);
+	}
+
+	/** The page is gone: stop redrawing it. */
+	hide(): void {
+		this.unwatch?.();
+		this.unwatch = null;
+		if (this.beat !== null) {
+			window.clearInterval(this.beat);
+			this.beat = null;
+		}
+		this.detailEl = null;
+	}
+
+	/**
+	 * One look, a second on from the last one.
+	 *
+	 * A changed word changes the shape of the page: the instruction under it,
+	 * the facts behind the fold, whether there is a Try again. That is a
+	 * redraw. A changed number is not, so it is written where it stands and
+	 * the fold somebody opened stays open.
+	 */
+	private tick(): void {
+		const status = this.sync.status();
+		if (status.word !== this.drawnWord) {
+			this.display();
+			return;
+		}
+		this.detailEl?.setText(detailLine(status));
 	}
 
 	/**
@@ -197,10 +290,10 @@ export class KnapSettingsTab extends PluginSettingTab {
 		head.setAttribute("aria-expanded", "false");
 		head.createSpan({ cls: `knap-dot knap-dot-${status.dot}` });
 		head.createSpan({ cls: "knap-status-word", text: status.word });
-		const detail = detailLine(status);
-		if (detail) {
-			head.createSpan({ cls: "knap-status-detail", text: detail });
-		}
+		// Always there, empty when there is nothing to say, because the beat
+		// writes into it a second from now and a span it has to create first
+		// is a span that appears in the middle of somebody reading the line.
+		this.detailEl = head.createSpan({ cls: "knap-status-detail", text: detailLine(status) });
 		head.addEventListener("click", () => {
 			const open = head.getAttribute("aria-expanded") === "true";
 			head.setAttribute("aria-expanded", String(!open));

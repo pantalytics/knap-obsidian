@@ -624,8 +624,36 @@
 	background: var(--color-green);
 }
 
+/* The working dot turns, and it is the only one that does. Syncing is the
+   only word that wears it, and on a phone the wait between choosing a cloud
+   vault and being linked to it is long enough that a dot which merely sits
+   there in a different colour reads as nothing happening. */
 .knap-dot-working {
-	background: var(--interactive-accent);
+	background: none;
+	box-sizing: border-box;
+	width: 10px;
+	height: 10px;
+	border: 2px solid var(--background-modifier-border);
+	border-top-color: var(--interactive-accent);
+	animation: knap-turn 0.8s linear infinite;
+}
+
+@keyframes knap-turn {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* Somebody who has asked for less motion gets the dot back, in the colour it
+   had before any of this. */
+@media (prefers-reduced-motion: reduce) {
+	.knap-dot-working {
+		animation: none;
+		border: none;
+		width: 8px;
+		height: 8px;
+		background: var(--interactive-accent);
+	}
 }
 
 .knap-dot-wait {
