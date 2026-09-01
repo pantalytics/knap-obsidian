@@ -555,6 +555,76 @@ describe("VaultBinding", () => {
 	});
 });
 
+/**
+ * How far the first pass has got, which is the number the screens draw.
+ *
+ * A phone that had just joined a vault of 2,567 notes said Up to date within
+ * seconds of linking, because the only thing the word looked at was whether
+ * the tree document had settled, and it had. The pass itself has to be able
+ * to say it is still running, and to say how far.
+ */
+describe("the progress of a first pass", () => {
+	/** A cloud vault with three notes already in it, and nobody on this end. */
+	async function filled(): Promise<Hub> {
+		const hub = new Hub();
+		const a = await device(hub, {
+			"een.md": "eerste",
+			"twee.md": "tweede",
+			"drie.md": "derde",
+		});
+		await a.binding.flush();
+		a.binding.stop();
+		return hub;
+	}
+
+	it("is busy from the moment it starts until the queue is empty", async () => {
+		const hub = await filled();
+		const binding = new VaultBinding(new MemoryFiles(), hub.device(), () => "conflict", null);
+
+		const running = binding.start();
+		expect(binding.progress.busy).toBe(true);
+		await running;
+		await binding.flush();
+
+		expect(binding.progress.busy).toBe(false);
+		binding.stop();
+	});
+
+	it("counts every note it has to look at, before it carries any of them", async () => {
+		const hub = await filled();
+		const files = new MemoryFiles();
+		const binding = new VaultBinding(files, hub.device(), () => "conflict", null);
+		// Read as each note lands, which is the only place the pass is half
+		// done and observable.
+		const readings: Array<{ done: number; total: number }> = [];
+		const write = files.write.bind(files);
+		files.write = async (path: string, text: string) => {
+			readings.push({ done: binding.progress.done, total: binding.progress.total });
+			await write(path, text);
+		};
+
+		await binding.start();
+		await binding.flush();
+
+		expect(readings).toHaveLength(3);
+		// The denominator is known from the first note rather than growing as
+		// the pass discovers work: a total that arrives at the end is a bar
+		// that appears after the job it was for.
+		expect(readings.map((r) => r.total)).toEqual([3, 3, 3]);
+		expect(binding.progress.busy).toBe(false);
+		binding.stop();
+	});
+
+	it("clears the count when the pass ends, so nothing sits at full", async () => {
+		const hub = await filled();
+		const { binding } = await device(hub);
+		await binding.flush();
+
+		expect(binding.progress).toEqual({ busy: false, done: 0, total: 0 });
+		binding.stop();
+	});
+});
+
 describe("splice", () => {
 	it("touches only the changed range", () => {
 		const doc = new Y.Doc();

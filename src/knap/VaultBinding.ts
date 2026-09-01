@@ -121,6 +121,32 @@ export interface SeenTree {
 	forget(): Promise<void>;
 }
 
+/**
+ * How far the first pass has got, for the corner of the window and the Knap
+ * screen to draw.
+ *
+ * `busy` is the whole answer to "is anything still moving", and it is what
+ * the word reads. The tree's own first exchange is not that answer, and
+ * saying it was is #40 arriving in the rebuilt client: a phone that had just
+ * joined a vault of 2,567 notes said Up to date within seconds of linking,
+ * because the one document the word looked at had settled while every note
+ * in the vault was still to come.
+ *
+ * `done` against `total` is the fill, and both are zero the rest of the time.
+ * A number that outlives the pass it counted is a bar that sits at full over
+ * a vault doing nothing, so the pass clears them when it ends: an ordinary
+ * edit afterwards is Syncing with nothing to count, which is honest, because
+ * one note is not a job worth a bar.
+ */
+export interface BindingProgress {
+	/** The first pass is running, or work is queued behind it. */
+	busy: boolean;
+	/** Notes the first pass has to carry. Zero when no pass is running. */
+	total: number;
+	/** How many of them it has carried. */
+	done: number;
+}
+
 const CONTENT = "content";
 
 /** How long to wait for the tree's first sync before giving up on a link. */
@@ -171,6 +197,13 @@ export class VaultBinding {
 	private held = new Set<string>();
 	/** Set whenever this device changed the tree, cleared when it is saved. */
 	private seenDirty = false;
+	/** The first pass is between its start and its end. */
+	private filling = false;
+	/** Notes that pass has to carry, and how many it has. See `progress`. */
+	private fillTotal = 0;
+	private fillDone = 0;
+	/** Units of work handed to the queue that have not settled yet. */
+	private pending = 0;
 
 	constructor(
 		private readonly files: FileStore,
@@ -255,6 +288,21 @@ export class VaultBinding {
 	}
 
 	/**
+	 * How far this binding has got, for whoever is drawing it.
+	 *
+	 * One reading rather than three getters, for the same reason `status`
+	 * is one call: the corner of the window and the settings screen must not
+	 * be able to describe one vault two ways.
+	 */
+	get progress(): BindingProgress {
+		return {
+			busy: this.filling || this.pending > 0,
+			total: this.fillTotal,
+			done: this.fillDone,
+		};
+	}
+
+	/**
 	 * Stand down for one note, because an editor is bound to it directly.
 	 *
 	 * Two writers on one note is one too many. While a note is open,
@@ -296,6 +344,11 @@ export class VaultBinding {
 	}
 
 	private enqueue(work: () => Promise<void>): Promise<void> {
+		// Counted the moment the work is handed over rather than when it
+		// starts, because everything behind the unit that is running is work
+		// this vault still owes, and a status that only sees the head of the
+		// queue reads as caught up with a thousand notes waiting in it.
+		this.pending += 1;
 		const counted = async () => {
 			try {
 				await work();
@@ -305,6 +358,8 @@ export class VaultBinding {
 				// rememberTree below off the failure path, and the queue's own
 				// handler is what keeps one failure from stopping the next unit.
 				throw error;
+			} finally {
+				this.pending -= 1;
 			}
 		};
 		// The record is written only where `work` returned: a unit that threw
@@ -332,7 +387,29 @@ export class VaultBinding {
 
 	// -- link time -----------------------------------------------------------
 
+	/**
+	 * The first pass, wrapped in the fact that it is running.
+	 *
+	 * The flag goes up before the wait for the tree, because a device that
+	 * has linked and is waiting on the tree is not caught up either, and it
+	 * comes down whatever happened, so a pass that gave up does not leave the
+	 * vault reading Syncing for the rest of the session.
+	 *
+	 * The counts are cleared on the way out rather than left at their final
+	 * values. See `BindingProgress`.
+	 */
 	private async reconcileAll(): Promise<void> {
+		this.filling = true;
+		try {
+			await this.fill();
+		} finally {
+			this.filling = false;
+			this.fillTotal = 0;
+			this.fillDone = 0;
+		}
+	}
+
+	private async fill(): Promise<void> {
 		// Wait for the tree before deciding anything is missing from it.
 		// Measured on production 2026-08-31: a device that reconciled against
 		// an empty tree minted a fresh document for a path that already had
@@ -351,6 +428,16 @@ export class VaultBinding {
 		const local = new Set((await this.files.listNotes()).map(normalize));
 		const remote = tree.entries();
 		const seen = (await this.seen?.load()) ?? new Map<string, string>();
+
+		// What this pass has to get through, counted before any of it runs:
+		// every local note, which either goes up or is a note the cloud vault
+		// already has, and every note the cloud vault lists, which either
+		// comes down or is already here. The two lists overlap and are
+		// deliberately not netted off. A pass that only counted the work it
+		// turned out to have would have no total until it was nearly done,
+		// which is a bar that appears at the end of the job it was for.
+		this.fillTotal = local.size + remote.size;
+		this.fillDone = 0;
 
 		// A vault whose files have not been indexed yet reads exactly like a
 		// vault somebody emptied, and only one of those two is worth acting
@@ -407,6 +494,11 @@ export class VaultBinding {
 				} catch {
 					this.failures += 1;
 				}
+				// Counted either way. A note that could not be reached is one
+				// this pass is finished with: it is on the failure count, the
+				// next start tries it again, and a bar that stalls one note
+				// short of full says the vault is still working when it is not.
+				this.fillDone += 1;
 			}
 		};
 		const width = Math.max(1, Math.min(FILL_WIDTH, items.length));
