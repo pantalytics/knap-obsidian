@@ -129,9 +129,13 @@ Three rules keep it honest on a narrow window:
 
 - **The row shrinks rather than overflowing.** Without `min-width: 0` the flex
   items refuse to give, the head runs past its own padding, and the card's
-  `overflow: hidden` cuts it at both ends: the dot off the left, the count off
-  the right. That leaves the word as the only carrier, which is the one thing
-  the two-carrier rule exists to prevent.
+  `overflow: hidden` cuts it. Measured at 390px, the cut is 9px at Obsidian's
+  smaller UI font and 44px at its larger one, and it is the note count that
+  goes: negative free space in a flex row packs the items left and spills the
+  tail. **The dot is never cut**, which #125 and the PR that closed it both
+  claimed off a screenshot before anybody measured it.
+  [`scripts/spikes/status_bar_on_a_phone/`](../scripts/spikes/status_bar_on_a_phone/README.md)
+  is where that was settled, and it fails against the stylesheet as it stood.
 - **The name gives way before the count.** They are two spans rather than one
   string precisely so they can shrink differently. A vault name is a name, and
   it is spelled out in full on the Cloud vault row a thumb below; *1,368 notes*
