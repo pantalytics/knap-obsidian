@@ -9,6 +9,7 @@ import {
 	MIN_SUPPORTED_SERVER_VERSION,
 	compareSemver,
 	isServerVersionSupported,
+	healthUrlForServer,
 	knapServer,
 	migrateRelayOnPremSettings,
 	serverCompatMessage,
@@ -292,5 +293,29 @@ describe("what this vault syncs", () => {
 		expect(knapServer()).not.toHaveProperty("lastUserEmail");
 		expect(knapServer()).not.toHaveProperty("syncMode");
 		expect(knapServer("a@b.test").lastUserEmail).toBe("a@b.test");
+	});
+});
+
+describe("the health check asks for a route the server serves", () => {
+	test("it is /healthz, the route knap_server answers", () => {
+		// Measured against a real create_app on 2026-09-01: /healthz answers
+		// 200, and the /v1/health this used to ask for answers 404. Anything
+		// but 200 puts the plugin offline, so the wrong path here is a device
+		// that disconnects itself ten seconds after Obsidian starts and tells
+		// its owner they are offline while they are signed in and online.
+		expect(healthUrlForServer(makeServer())).toBe(
+			"https://cp.tr.entire.vc/healthz",
+		);
+	});
+
+	test("no query string, and one slash however the address was typed", () => {
+		expect(
+			healthUrlForServer(makeServer({ controlPlaneUrl: "https://cp.test///" })),
+		).toBe("https://cp.test/healthz");
+	});
+
+	test("no server, or one without an address, means no polling at all", () => {
+		expect(healthUrlForServer(undefined)).toBe("");
+		expect(healthUrlForServer(makeServer({ controlPlaneUrl: "" }))).toBe("");
 	});
 });

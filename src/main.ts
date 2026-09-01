@@ -111,6 +111,7 @@ import {
 	type RelayOnPremServer,
 	migrateRelayOnPremSettings,
 	getDefaultServer,
+	healthUrlForServer,
 } from "./RelayOnPremConfig";
 import { RelayOnPremTokenProvider } from "./auth/RelayOnPremTokenProvider";
 import {
@@ -214,16 +215,6 @@ const DEFAULT_SETTINGS: RelaySettings = {
 };
 
 declare const GIT_TAG: string;
-
-// relay-onprem control-plane URLs are runtime/per-server config (multi-server,
-// user-editable), not a build-time constant — unlike the EndpointManager's
-// System-3 API_URL/AUTH_URL, there is no fixed default to bake in at build time.
-function healthUrlForServer(server?: RelayOnPremServer): string {
-	if (!server?.controlPlaneUrl) {
-		return "";
-	}
-	return `${server.controlPlaneUrl.replace(/\/+$/, "")}/v1/health?version=${GIT_TAG}`;
-}
 
 export default class Live extends Plugin {
 	appId!: string;
