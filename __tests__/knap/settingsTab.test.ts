@@ -134,6 +134,9 @@ function baseStatus() {
 		vaultName: "",
 		notes: 0,
 		problems: 0,
+		up: 0,
+		down: 0,
+		files: { up: 0, down: 0 },
 	};
 }
 
@@ -369,5 +372,37 @@ describe("the sign-out notice", () => {
 
 	it("admits the token may still be live when it did not", () => {
 		expect(signOutNotice(false)).toContain("may still count this device");
+	});
+});
+
+describe("the breakdown behind the fold", () => {
+	// The corner has room for two numbers and adds notes and attachments
+	// together to get them. This screen keeps them apart (ADR-0086).
+	it("names both directions and both kinds of file", () => {
+		expect(
+			statusFacts({
+				...baseStatus(),
+				word: SYNCING,
+				up: 412,
+				down: 2567,
+				files: { up: 3, down: 0 },
+			} as never),
+		).toEqual([
+			["To the cloud vault", "412 notes, 3 attachments"],
+			["To this device", "2,567 notes"],
+		]);
+	});
+
+	it("says only the direction that has something in it", () => {
+		expect(
+			statusFacts({ ...baseStatus(), word: SYNCING, files: { up: 1, down: 0 } } as never),
+		).toEqual([["To the cloud vault", "1 attachment"]]);
+	});
+
+	it("a vault with nothing moving keeps both rows off the screen", () => {
+		expect(statusFacts({ ...baseStatus(), notes: 12, vaultName: "Work" } as never)).toEqual([
+			["Cloud vault", "Work"],
+			["Notes", "12"],
+		]);
 	});
 });

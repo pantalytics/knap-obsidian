@@ -10,7 +10,7 @@ The decisions live as ADRs in the admin repository, `knap-mcp-admin/docs/adr/`:
 **0030** sign-in, **0031** one control surface, **0033** one server, **0034**
 permissions, **0038** the words, **0043** a vault is one unit, **0045** the
 plugin is Knap, **0066** one local vault to one cloud vault, **0071** what a
-failure may say. Where this page and an ADR disagree, the ADR wins.
+failure may say, **0086** what the corner counts. Where this page and an ADR disagree, the ADR wins.
 
 ## The rule
 
@@ -106,6 +106,7 @@ asks:
 |---|---|
 | The instruction for this word | Whenever the word carries one |
 | Cloud vault, Notes | When there is a link, and when notes have arrived |
+| To the cloud vault, To this device | While either direction has something in it, naming notes and attachments separately |
 | Could not sync, *N* changes | When something failed and stayed failed |
 | **Try again** | Only under *Problem* and *Offline*, the two words a person can act on |
 
@@ -155,6 +156,21 @@ and a two pixel bar follows while there is a denominator to draw it against. The
 word itself is in the tooltip rather than on screen, because the corner is read
 out of the side of the eye during a first sync and what is wanted there is how
 far along, not a sentence.
+
+**Two numbers, not one, and never a third.** Three things move notes: notes
+going up to the cloud vault, notes coming down to this device, and edits to a
+note both sides already have. The first two are countable and answer different
+questions, so they are counted apart, `↑ 412 ↓ 2,567`, either alone when the
+other is zero. Attachments travel the same two roads and are added into the same
+two numbers here; the settings screen behind this is where they are named
+separately. Edits are not counted at all, in either place.
+
+**And the corner is two seconds behind the vault, deliberately.** Saving a note
+pushes its document, which used to flip the icon, grow a count and draw a bar,
+all inside a second, every time anybody typed. So nothing is said until the
+vault has been moving for two seconds, and Up to date is held for two seconds
+after it stops. **Problem, Offline and Signed out are never held back**: the
+delay is for the state a person waits out, not the ones they act on. ADR-0086.
 
 It reads `readVaultStatus()` in `main.ts`, which returns the Knap client's own
 `status()` whenever there is one. **The corner and the settings screen cannot

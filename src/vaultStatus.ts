@@ -16,6 +16,7 @@
 
 import {
 	SYNCING,
+	UP_TO_DATE,
 	syncCounts,
 	syncDot,
 	syncProgress,
@@ -23,6 +24,7 @@ import {
 	type SyncDot,
 	type SyncWord,
 } from "./syncStatus";
+import { backlogLabel, backlogText, burstProgress, type Burst } from "./quiet";
 
 /**
  * Every dot the status bar may be wearing. It is here rather than in
@@ -170,6 +172,10 @@ export interface VaultReading {
 	counts: string;
 	/** How full the bar is, 0 to 1, or undefined when there is no bar. */
 	progress: number | undefined;
+	/** Notes still to reach the cloud vault. Zero on the pre-rebuild path. */
+	up: number;
+	/** Notes still to reach this device. Zero on the pre-rebuild path. */
+	down: number;
 }
 
 /**
@@ -195,6 +201,11 @@ export function vaultReading(
 		total,
 		counts: moving ? syncCounts(done, total) : "",
 		progress: moving ? syncProgress(done, total) : undefined,
+		// The pre-rebuild path cannot split its number: its queue counts sends
+		// and fetches in one total, which is the reason `vaultCounts` above has
+		// to choose between two ways of counting rather than adding them.
+		up: 0,
+		down: 0,
 	};
 }
 
@@ -222,13 +233,27 @@ export interface StatusBarPaint {
  * phrasing that lives next to the elements it writes into is a phrasing no
  * test reaches.
  */
-export function statusBarPaint(reading: VaultReading): StatusBarPaint {
+export function statusBarPaint(reading: VaultReading, burst: Burst): StatusBarPaint {
+	// Held back: the vault says it is syncing and the corner has not been told
+	// to say so yet, which is where an ordinary save lives and dies. Only this
+	// one word waits; the three a person has to act on go straight past.
+	if (reading.word === SYNCING && !burst.moving) {
+		return {
+			dot: "ok",
+			count: "",
+			label: `Knap: ${UP_TO_DATE.toLowerCase()}`,
+			percent: undefined,
+		};
+	}
 	const word = reading.word.toLowerCase();
+	const backlog = reading.up + reading.down;
+	const count = backlog > 0 ? backlogText(reading.up, reading.down) : reading.counts;
+	const said = backlog > 0 ? backlogLabel(reading.up, reading.down) : reading.counts;
+	const progress = backlog > 0 ? burstProgress(burst, backlog) : reading.progress;
 	return {
 		dot: reading.dot,
-		count: reading.counts,
-		label: reading.counts ? `Knap: ${word}, ${reading.counts}` : `Knap: ${word}`,
-		percent:
-			reading.progress === undefined ? undefined : Math.round(reading.progress * 100),
+		count,
+		label: said ? `Knap: ${word}, ${said}` : `Knap: ${word}`,
+		percent: progress === undefined ? undefined : Math.round(progress * 100),
 	};
 }

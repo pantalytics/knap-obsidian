@@ -61,6 +61,16 @@ export function statusFacts(status: KnapStatus): Array<[string, string]> {
 	if (status.notes > 0) {
 		facts.push(["Notes", status.notes.toLocaleString("en-US")]);
 	}
+	// The corner has room for two numbers and adds the two kinds of file
+	// together to get them. This is the screen with room to keep them apart,
+	// and attachments are worth keeping apart: one photo is a hundred notes'
+	// worth of bytes, so a single number sits still and then jumps (ADR-0086).
+	// The rows are named the way the tooltip says it, because somebody moves
+	// between the two in one sitting.
+	const going = pieces(status.up, status.files.up);
+	if (going) facts.push(["To the cloud vault", going]);
+	const coming = pieces(status.down, status.files.down);
+	if (coming) facts.push(["To this device", coming]);
 	if (status.problems > 0) {
 		facts.push([
 			"Could not sync",
@@ -68,6 +78,18 @@ export function statusFacts(status: KnapStatus): Array<[string, string]> {
 		]);
 	}
 	return facts;
+}
+
+/** "412 notes, 3 attachments", or as much of it as is above zero. */
+function pieces(notes: number, files: number): string {
+	const parts: string[] = [];
+	if (notes > 0) parts.push(`${count(notes)} note${notes === 1 ? "" : "s"}`);
+	if (files > 0) parts.push(`${count(files)} attachment${files === 1 ? "" : "s"}`);
+	return parts.join(", ");
+}
+
+function count(n: number): string {
+	return n.toLocaleString("en-US");
 }
 
 /** Only the two words a person can do something about get a button here. */
@@ -248,7 +270,7 @@ function detailLine(status: KnapStatus): string {
 	const parts: string[] = [];
 	if (status.vaultName) parts.push(status.vaultName);
 	if (status.notes > 0) {
-		parts.push(`${status.notes.toLocaleString("en-US")} note${status.notes === 1 ? "" : "s"}`);
+		parts.push(`${count(status.notes)} note${status.notes === 1 ? "" : "s"}`);
 	}
 	return parts.join(" · ");
 }

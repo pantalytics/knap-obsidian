@@ -31,7 +31,7 @@ import { buildConflictCopyPath } from "../conflictCopyPath";
 import { generateHash } from "../hashing";
 import type { AttachmentEntry, TreeDoc } from "./TreeDoc";
 import { isHidden, isNote, normalize } from "./TreeDoc";
-import type { FileEvent, FileStore } from "./VaultBinding";
+import type { Backlog, FileEvent, FileStore } from "./VaultBinding";
 
 /** What the binding needs from the file routes. KnapServer satisfies it. */
 export interface AttachmentTransport {
@@ -79,6 +79,8 @@ export class AttachmentBinding {
 	private stopTreeEvents: (() => void) | null = null;
 	private queue: Promise<void> = Promise.resolve();
 	private limits: AttachmentLimits = FALLBACK_LIMITS;
+	/** Files still to move, by direction. The note half keeps the same two. */
+	private outstanding = { up: 0, down: 0 };
 
 	constructor(
 		private readonly files: FileStore,
@@ -109,7 +111,11 @@ export class AttachmentBinding {
 		this.stopTreeEvents = this.docs.tree().onAttachmentChange((change) => {
 			void this.enqueue(async () => {
 				for (const [path, entry] of change.added) {
-					await this.pull(path, entry);
+					// An attachment this device already has is the echo of its
+					// own upload arriving back through the tree.
+					const here = (await this.files.readBinary(path)) !== null;
+					if (here) await this.pull(path, entry);
+					else await this.carry("down", () => this.pull(path, entry));
 				}
 				for (const [path] of change.removed) {
 					// A path in both halves is an attachment whose bytes
@@ -142,6 +148,29 @@ export class AttachmentBinding {
 
 	// -- link time -----------------------------------------------------------
 
+	/**
+	 * Attachments still to move, by direction.
+	 *
+	 * Kept apart from the notes rather than added to them because the two
+	 * behave differently on a slow line: one photo is a hundred notes' worth
+	 * of bytes, so a single number would sit still for a minute and then jump.
+	 * The corner adds them anyway; the screen behind it is where the four
+	 * numbers are worth having separately (ADR-0086).
+	 */
+	get backlog(): Backlog {
+		return { ...this.outstanding };
+	}
+
+	/** Run `work`, with this file on the gauge for as long as it takes. */
+	private async carry<T>(kind: "up" | "down", work: () => Promise<T>): Promise<T> {
+		this.outstanding[kind] += 1;
+		try {
+			return await work();
+		} finally {
+			this.outstanding[kind] -= 1;
+		}
+	}
+
 	private async reconcileAll(): Promise<void> {
 		// The same wait the note half makes, and for the same reason: a
 		// device that reconciled against an empty tree would decide every
@@ -154,13 +183,31 @@ export class AttachmentBinding {
 		);
 		const tree = this.docs.tree();
 		const recorded = tree.attachments();
-		for (const path of (await this.files.listAttachments()).map(normalize)) {
-			if (!recorded.has(path) && !isHidden(path)) {
+		const local = new Set((await this.files.listAttachments()).map(normalize));
+		// Sorted before any of it runs, so the gauge says how many files are
+		// still to come rather than how many are in flight right now.
+		const up = [...local].filter((path) => !recorded.has(path) && !isHidden(path));
+		// A recorded attachment already on the disk is checked, not fetched.
+		// Whether the bytes match is `pull`'s business and costs a hash; what
+		// the gauge needs is the file that is plainly not here.
+		const arriving = new Set(
+			[...recorded].filter(([path]) => !local.has(path)).map(([path]) => path),
+		);
+		this.outstanding.up += up.length;
+		this.outstanding.down += arriving.size;
+		for (const path of up) {
+			try {
 				await this.push(path);
+			} finally {
+				this.outstanding.up -= 1;
 			}
 		}
 		for (const [path, entry] of recorded) {
-			await this.pull(path, entry);
+			try {
+				await this.pull(path, entry);
+			} finally {
+				if (arriving.has(path)) this.outstanding.down -= 1;
+			}
 		}
 	}
 
@@ -175,7 +222,11 @@ export class AttachmentBinding {
 			await this.forget(normalize(event.path));
 			return;
 		}
-		await this.push(event.path);
+		// New bytes or replaced bytes, both going up, and unlike a note there
+		// is no cheap way to tell an edit from a first upload: an attachment is
+		// replaced whole. Both are counted, which is honest, because both take
+		// as long as the file is big.
+		await this.carry("up", () => this.push(event.path));
 	}
 
 	/**
