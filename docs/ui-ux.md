@@ -1,237 +1,276 @@
-# What this plugin should do, and what it should not
+# The screen, and what it refuses to be
 
-Knap is a fork of EVC Team Relay's Obsidian plugin. The fork exists because we
-run one service and upstream builds a hosted product, and most of what this
-plugin still renders answers questions our stack does not have.
+**Design document.** What a person sees in Obsidian, and why it has this shape.
+[`architecture.md`](architecture.md) is what sits underneath it. The design the
+fork was being cut down to before the rebuild is
+[`archive/ui-ux-fork.md`](archive/ui-ux-fork.md), and nothing in it describes
+what ships.
 
-This page is the design the fork is being cut down to. It was settled on
-2026-08-11 against an interactive mockup, and the decisions behind it live as
-ADRs in the private admin repository, `knap-mcp-admin/docs/adr/`: **0030**
-(sign-in), **0031** (one control surface), **0032** (whole vault by default),
-**0033** (one server), **0034** (permissions), **0042** (a vault is one share,
-which retired 0039's toggle), **0045** (the plugin is Knap, and the screen is
-two rows). Where this page and an ADR disagree, the ADR wins.
+The decisions live as ADRs in the admin repository, `knap-mcp-admin/docs/adr/`:
+**0030** sign-in, **0031** one control surface, **0033** one server, **0034**
+permissions, **0038** the words, **0043** a vault is one unit, **0045** the
+plugin is Knap, **0066** one local vault to one cloud vault, **0071** what a
+failure may say. Where this page and an ADR disagree, the ADR wins.
 
-## The one rule
+## The rule
 
-**Everything a person can change about their notes is changed here.** Whether
-this device syncs, and who may read the vault. Knap's web page sets nothing
-about the vault: it connects an AI and reports whether the chain is working.
+**Everything about the vault is set here in Obsidian. Knap's page reports.**
+One row is taken out of that: **who may read a cloud vault is set on Knap's page
+and nowhere else**, because that is a fact about a vault rather than about a
+device, and two places to set it is how two places come to disagree.
 
-*What* syncs is no longer on that list, because it is no longer a question: a
-vault syncs whole (ADR-0042). What is left is device-shaped or account-shaped,
-and both live here rather than
-being split across two surfaces. That distinction is real in the architecture
-and invisible to the person using it: from where they sit, *does this laptop
-sync* and *who can see this* are the same decision about the same vault, made in
-the same sitting.
+So this side owns: whether this device is signed in, and which cloud vault this
+local vault is linked to. That is the whole list, and it is why the screen is
+this short.
 
-## The flow
+## The screen
 
-### 1. Install, then one button
+One settings tab. Obsidian's own `setting-item` rows, so it reads like the pages
+either side of it rather than like a panel we built.
 
-The settings tab is a sentence and a button. No server field, no email, no
-password, no code to paste. Pressing it opens a browser, Zitadel asks, and the
-callback comes back through `obsidian://synced-vaults/oauth-callback`.
+```
+  Settings → Knap
+  ┌──────────────────────────────────────────────────────────────┐
+  │ next.knap.pantalytics.com                                    │  ← the host,
+  │                                                              │    once, quietly
+  │ ┌──────────────────────────────────────────────────────────┐ │
+  │ │ ● Syncing                     Work notes · 312 notes   ▾ │ │  ← the bar
+  │ ├──────────────────────────────────────────────────────────┤ │
+  │ │ Leave Obsidian open until it finishes. It picks up       │ │
+  │ │ where it left off if you close it.                       │ │
+  │ │ Cloud vault      Work notes                              │ │
+  │ │ Notes            312                                     │ │
+  │ └──────────────────────────────────────────────────────────┘ │
+  │                                                              │
+  │ Account                                       [ Sign out ]   │
+  │ Signed in.                                                   │
+  │                                                              │
+  │ Cloud vault                                   [ Unlink ]     │
+  │ Work notes. Deleting a note here deletes it in the cloud     │
+  │ vault too, and the other way round.                          │
+  └──────────────────────────────────────────────────────────────┘
 
-That button is the only way in. There is no *Other ways to sign in*, and no email
-and password form behind it: an account created through the identity service has
-no password until an admin sets one, so the second door opened onto nothing. A
-choice of two, where one of them cannot work for a new person, is worse than no
-choice at all.
+  signed out:                        signed in, not linked yet:
+  ┌────────────────────────────┐     ┌────────────────────────────┐
+  │ Account       [ Sign in ]  │     │ Cloud vault  [ Choose... ] │
+  │ Not signed in. Signing in  │     │ Not linked.                │
+  │ opens your browser and     │     └────────────────────────────┘
+  │ comes back here.           │
+  └────────────────────────────┘
+```
 
-There is no server field because there is no second server (ADR-0033). The list,
-the default chip, the duplicate check, the connection test, the endpoint editor
-and the self-host dialog all answer a question nobody is asked now.
+Each of the three parts earns its place. **The bar** says how it is going, and
+is first because it is what somebody came to find out. **Account** is who.
+**Cloud vault** is what this vault syncs with. The two rows under the bar are
+what somebody came to change, which is rarer than wanting to know.
 
-### 2. The whole vault syncs, without asking
+The screen exists at all because the commands were the only way in, and a
+command palette is where somebody looks after they already know the thing is
+there. Asked to try the beta, the first thing a person does is open Settings and
+look for a button.
 
-Signing in shares the vault at its root, through the vault scope in
-`src/vaultScope.ts`. The person watches notes move instead of answering a
-question about a vault they have not yet seen us handle. There is no second
-answer to give: one vault is one share, the way it is in Obsidian Sync and in
-every other sync a person has used.
+Four things that are absent on purpose:
 
-Two lines of copy while they wait, and both earn their place:
+- **No server field.** There is one server and no second one to point at.
+- **No scope or folder picker.** A vault is one unit. Somebody who must keep
+  part of their notes off the cloud uses a second vault, which is Obsidian's own
+  answer.
+- **No second kind of member to set.** There is one kind of person in a vault.
+- **No Change button on Cloud vault.** Linking somewhere else is Unlink and then
+  Choose, which is what happens underneath either way. A third button to say so
+  is a third button.
 
-- *The whole vault is on its way up. Leave Obsidian open until it finishes, and
-  it picks up where it left off if you close it.*
-- *Your notes, all of them. Not your settings, themes or plugins: those stay on
-  the device they are installed on.*
+And one thing that is present on purpose: **signed in, there is always a way
+back out.** A screen that can only sign in is one a person cannot hand their
+laptop on from, and the only alternative was uninstalling the plugin, which
+leaves the token alive anyway.
 
-The second is not a detail. A bare second device reads as a failed sync to
-anybody expecting their setup to arrive with the notes, and this is the only
-moment they are looking at the screen.
+### The bar, and the fold
 
-### 3. Working
+The bar is the only thing on the screen that folds, and that is the hierarchy.
+The dot and the word are always out. The vault and its note count sit at the far
+end, pushed there rather than following the word so the eye finds the word in
+the same place whatever it is about. Everything else comes out when somebody
+asks:
 
-Two rows and two buttons, and that is the whole screen (ADR-0045). **Account** is
-the address signed in, **Status** is the state word with its dot, and under them
-sits whatever instruction the state carries. *Logout* ends the session on this
-device. *Dashboard* opens Knap's page in a browser, which is where the rest of
-it lives: which devices sync, and which AI is connected.
-
-The rows are Obsidian's own `setting-item`, label on the left and value on the
-right, so the screen reads like the settings pages either side of it rather than
-like a panel we built.
-
-### 4. Folders are content, not settings
-
-A folder is a thing inside the vault, and the vault is what syncs. So there is
-no folder picker, no *Knap: sync this folder* on the context menu, and no
-*Add a folder* button. **Making a folder makes it everywhere, moving it moves it
-everywhere, and deleting it deletes it everywhere**, which is what a person
-already expects from a sync and what they get from Obsidian Sync.
-
-That last one looks like it needs code and does not, which is worth writing
-down because it cost a wrong change to find out. `deleteFile` removes one entry
-from the sync store, and a folder is an entry like any other, so deleting a
-folder reads like it would leave the notes inside it behind. **Measured in a
-real Obsidian on 2026-08-12** (`make obsidian` in the admin repo, against the
-build at `4a72663`): Obsidian fires a `delete` event for every descendant
-before the folder's own, empty subfolders included, on both `vault.delete` and
-the file explorer's `fileManager.trashFile`. Every note removes itself, and the
-shared map is clean afterwards with a same-prefix sibling untouched. A cascade
-inside `deleteFile` is not needed, and the one written for it walked the whole
-sync store once per delete event.
-
-**Adopting a share does not ask either.** The member screen's *Sync this vault
-here* attaches at the vault root with the vault scope, the same way signing in
-does. It used to open a folder picker, which made a folder-scope record for a
-share the rest of the plugin treats as a whole vault: that disagreement is
-exactly what one share per vault exists to end, so a picker here would have
-reintroduced it through the back door.
-
-The one screen that still names a folder is for vaults an older build left
-syncing them: whole vault and folder shares are exclusive in both directions
-(`SharedFolder._new`), so the folders come off before the vault share can be
-made. It is a button, it asks first because deleting a share deletes its
-documents, and it goes when the last of those vaults has been through it.
-
-### 5. Signed out
-
-The status word turns to *Signed out* with a red dot, the shares pause, and
-*Sign in* is the only button left: there is no account row to show and nothing on
-Knap's page to open without one. Nothing has been lost, and the copy says so:
-every note is still on this device.
-
-## One vault, one row, and never a second level
-
-The vault is the row and there is nothing under it. Anything that wants to be a
-second level is a fact on the first, or it does not exist. This is the shape
-ADR-0042 bought: the table of folders that used to sit inside the row was the
-only reason there were ever two.
-
-## One status, written once
-
-The states live in `status.py` in the admin repository and that stays the single
-source. **This plugin reads from that list rather than inventing its own words.**
-The screens showed *Uploading, 412 of 1,202* and *Syncing, 412 notes so far* for
-one fact, which teaches a person they are watching two things fail in two ways.
-
-| Part of the row | Rule |
+| Behind the fold | When |
 |---|---|
-| State word, dot, counts, bar | Identical to Knap's, string for string |
-| The instruction under it | Whatever this side can act on |
-| Caveats and warnings | Here only. Nobody is watching a web page during a first sync |
+| The instruction for this word | Whenever the word carries one |
+| Cloud vault, Notes | When there is a link, and when notes have arrived |
+| Could not sync, *N* changes | When something failed and stayed failed |
+| **Try again** | Only under *Problem* and *Offline*, the two words a person can act on |
 
-The states are **Syncing**, **Up to date**, **Paused**, **Signed out**. Only the
-last one differs between the screens on purpose: the fix lives here, so only this
-side gets the button.
-
-### The corner of the window
-
-The same reading, drawn small. The icon wears the dot, the count sits beside it,
-and a two pixel bar sits after that while there is a denominator to draw it
-against. The word itself is in the tooltip rather than on screen: the corner is
-read out of the side of the eye during a first sync, and what is wanted there is
-how far along, not a sentence.
-
-It is the same `vaultReading` the settings screen draws, through
-`statusBarPaint` in `vaultStatus.ts`, so the two cannot describe one vault
-differently. The corner reads it once a second for the same reason that screen
-does: a bar somebody is watching that stands still reads as stuck. The bar is
-absent rather than empty when there is nothing moving, because an empty track
-beside a finished vault reads as work that never started.
+Nothing deeper is kept here at all. What went wrong in detail is the server's;
+this device only ever tells it four content-free facts (ADR-0071).
 
 ## The words
 
-Four of them, and no others. This is Knap's ADR-0038, and the admin repo's
-`docs/nomenclature.md` carries the same table, because a person moves between
-the two applications in one sitting and matching up two vocabularies is not
-their job.
+Six, from `src/syncStatus.ts`, and no screen invents a seventh. That file is the
+list. It used to mirror a `status.py` in the admin repository, and that file went
+with the rebuild, so there is nothing on the other side to keep in step with
+today.
+
+| Word | Dot | The instruction under it |
+|---|---|---|
+| **Syncing** | accent | Leave Obsidian open until it finishes. It picks up where it left off if you close it. |
+| **Up to date** | green | none |
+| **Paused** | yellow | Nothing is moving while this device is paused. |
+| **Offline** | yellow | Your changes are saved here and go up when the connection is back. |
+| **Signed out** | red | Your notes are all still on this device. Sign in again to carry on. |
+| **Problem** | red | Everything else is up to date, and nothing was lost. |
+
+The order they are decided in is the argument: no account beats everything,
+because nothing else is even attempted without one. Paused beats the rest
+because the person did it on purpose. **Offline beats Problem**, because a device
+with no connection has everything stuck, and blaming the notes for what the
+tunnel did sends somebody looking in the wrong place.
+
+**Two words share each of the two unhappy dots**, and that is what having both
+carriers is for. Yellow is wait: Paused and Offline both resolve with nobody
+doing anything. Red is act: Signed out and Problem both need a person.
+
+Offline and Problem were added on 2026-09-01, because four words could not say
+that something was wrong and Signed out held the only error dot, so a refused
+upload had to present itself as a missing account. **The rule for adding a
+seventh is that a word earns its place when the reader's next move is
+different.**
+
+Counts are one phrasing: *412 of 1,202* once something has counted the far side,
+*412 notes so far* while the first pass is still discovering how much there is.
+Inventing the second number would be worse than not saying it.
+
+### The corner of the window
+
+The same reading, drawn small: the icon wears the dot, the count sits beside it,
+and a two pixel bar follows while there is a denominator to draw it against. The
+word itself is in the tooltip rather than on screen, because the corner is read
+out of the side of the eye during a first sync and what is wanted there is how
+far along, not a sentence.
+
+It reads `readVaultStatus()` in `main.ts`, which returns the Knap client's own
+`status()` whenever there is one. **The corner and the settings screen cannot
+word one vault two ways**, which is the whole reason it is read there and not
+computed beside the icon. The bar is absent rather than empty when nothing is
+moving: an empty track beside a finished vault reads as work that never started.
+
+## Choosing a cloud vault
+
+A suggest modal, and the list is fetched every time it opens. That is the whole
+answer to the gap between two windows: somebody who has just made a cloud vault
+in the browser closes the picker, opens it again, and it is there. No refresh
+button, no polling, and no message telling them to reopen it.
+
+```
+  ┌ Search cloud vaults... ───────────────────────────────┐
+  │ Work notes                                            │
+  │ Tuinplannen                                           │
+  │ New cloud vault                 opens Knap in browser │  ← always last,
+  └───────────────────────────────────────────────────────┘     survives every query
+```
+
+The state of the fetch goes in the placeholder (*Asking Knap...*, *Could not
+reach Knap. Your notes are safe here.*), never into the list, so there is never
+a row somebody can select that is not a thing they can choose.
+
+**The way out is in the list rather than beside it**, because it answers the same
+question. A person with no cloud vaults used to be told to go and make one in the
+panel and then left in Obsidian with nothing to press. It sits last, under
+everything real, and it survives every query: somebody typing the name of a vault
+that does not exist yet is exactly the person who needs it.
+
+Each row is the vault's name and nothing else. There is one kind of person in a
+vault, so there is no access level to qualify it with.
+
+## The commands
+
+Four, all still labelled *(beta)*, which is a name that has outlived its
+accuracy now that this is the only shipping path.
+
+| Command | The same act as |
+|---|---|
+| Sign in (beta) | the Account row's button |
+| Link this vault (beta) | Cloud vault, Choose |
+| Sign out (beta) | the Account row's button |
+| Unlink from the cloud vault (beta) | Cloud vault, Unlink |
+
+Both entry points share one implementation, so the palette and the screen cannot
+drift into two accounts of the same act. `signOutNotice` exists for exactly that
+reason.
+
+## What a notice says
+
+A notice is what this plugin has instead of a page, so each one says what
+happened and what is now true.
+
+| After | It says |
+|---|---|
+| Signing in | Signed in. Now link this vault. |
+| Linking | Linked. This vault now syncs with *name*. |
+| Unlinking | Unlinked. Nothing was deleted, anywhere. |
+| Signing out | Signed out. Nothing was deleted, anywhere. |
+| Signing out with no connection | Signed out here only. Knap could not be reached, so it may still count this device as signed in. |
+| A file too large | *path*: This file is 24 MB, and the cloud vault takes attachments up to 10 MB. It stays on this device. Both numbers, because *too large* leaves somebody guessing by how much. Refused here rather than uploaded and refused there, so nobody spends their upstream first |
+| A vault that is full | *path*: The cloud vault is full. Remove some attachments from it, or use a second vault. |
+| A sign-in that started elsewhere | That sign-in did not start here. Run sign in (beta) and try again. |
+| A link that cannot come back up | Knap could not reach your cloud vault. It will retry when you sign in again. |
+
+Two shapes to copy. **Say what is still true**, because the fear behind most of
+these is losing notes: *nothing was deleted, anywhere*, *your notes are safe
+here*, *it stays on this device*. And **never claim what was not measured**: the
+sign-out that could not reach the server says so rather than reporting success.
+
+## The look
+
+**Everything is Obsidian's, not ours.** The colours are the vault's theme
+variables and the accent is whichever one the person picked, because a settings
+tab that looks like our website is the one tab in the list that looks wrong.
+Ours is how short the sentences are, not what colour they sit on.
+
+The classes are in `styles.css` under `.knap-`: the host line, the bar and its
+fold, the four dots, the picker's way out. All of them are built from
+`--background-*`, `--text-*`, `--size-*` and `--color-green|yellow|red`.
+
+## The words a person sees
+
+The admin repo's `docs/nomenclature.md` carries the same table, because somebody
+moves between the two applications in one sitting and matching up two
+vocabularies is not their job.
 
 | On screen | What it means |
 |---|---|
-| **Vault** | This Obsidian vault |
+| **Vault** | This Obsidian vault. **Cloud vault** is the one on Knap, and *local vault* is this one when both halves are in view |
 | **Folder** | A folder inside the vault. It syncs because the vault does, so it is never a thing to turn on |
-| **Sync** | What happens between them. The settings tab is **Knap**, the product's own name, and Knap's page uses the same four words |
-| **MCP** | How an AI reaches the vault |
+| **Sync** | What happens between them |
+| **Link** and **Unlink** | The relationship, and ending it. Unlink stops the syncing and deletes nothing, which is what tells it apart from deleting a vault |
+| **Account**, **Sign in**, **Sign out** | Who, and the two ends of it |
 
 | Not on screen | Say instead |
 |---|---|
 | share, workspace, space | folder |
-| Relay Server, relay-onprem, Knap servers, Obsidian servers | Knap |
-| relay, control plane, any hostname | Knap, or the vault |
+| relay, control plane, server, a hostname | Knap, or the cloud vault. The one exception is the host line at the top of the tab, which is there because a beta build talks somewhere other than a release does, and it sits nowhere near a button because it is not a choice |
+| client | device |
 | pair, pairing code, token | **Sign in** |
-| viewer, editor, role | **can read**, **can edit** |
+| viewer, editor, owner, role | nothing. There is one kind of person in a vault |
+| remote vault | cloud vault |
 
-*Relay* is upstream's word for their product and their server. Neither is
-something a person using this plugin has to know about, so neither reaches the
-screen. `Relay: share folder` became `Synced Vaults: sync this folder` for that
-reason, and then went altogether when there stopped being a folder to sync on
-its own. The menu items that remain say *Knap:* now.
+*Relay* is upstream's word for their product and their server, and neither is
+something a person using this plugin has to know about.
 
-**Upstream's own screens still say all of it**, and they are left that way on
-purpose. `Relays.svelte`, `ManageRelay.svelte`, `ManageSharedFolder.svelte` and
-`ManageRemoteFolder.svelte` only render when `isRelayOnPremMode()` is false,
-which it never is here, so nobody reads them. Renaming a file we rebase from
-upstream costs every future rebase to buy a word that is never shown.
+**Upstream's own screens still say all of it, and they are left that way.**
+`Relays.svelte`, `ManageRelay.svelte`, `ManageSharedFolder.svelte` and
+`ManageRemoteFolder.svelte`, and every folder picker reached from them, render
+only in a world this build does not have. Renaming a file we rebase from
+upstream costs every future rebase to buy a word nobody reads. **A picker that
+turns up on a screen we do render is a bug**, and that is the check to run before
+believing they are gone.
 
-**That is also where every remaining folder picker lives**, and it is the check
-to run before believing the pickers are gone: `FolderSuggestModal`,
-`ShareFolderModal`, `AddToVaultModal`, `RemoteFolderSuggestModal` and
-`FolderSelectInput` are all reached only from those four. `PluginSettings.svelte`
-branches to `RelayOnPremSettings` on `isRelayOnPremMode()`, so in this fork they
-are unreachable rather than merely unused. A picker that turns up on a screen we
-do render is a bug, not upstream's business.
+## Changing any of this
 
-## Permissions come from one place
-
-Invites are set here, stored by the control plane, and read by everything else.
-**The MCP grants nothing.** An AI connects as the person who added it and reaches
-exactly what that person reaches, so removing somebody from a share removes their
-AI with them, in one act, with nothing to remember.
-
-There is no scope list, no per-connector grant, and no table mapping our users to
-theirs. Any of those is a second permission model, and two of them disagree the
-week somebody leaves.
-
-## What goes
-
-| | Why |
-|---|---|
-| `Relays.svelte`, `ManageRelay.svelte` | Upstream's hosted product at entire.vc. On our stack the list stays empty forever, beside the one that matters |
-| `BillingView.svelte` | We run one service. Nothing to buy, no plan to be on |
-| `AgentKeysView.svelte` | Write-only, per share, and they need web publishing on. Reading needs an account, so this was never our credential |
-| `RelayOnPremServerList.svelte`, `EndpointConfigModal`, `SelfHostModal` | One server (ADR-0033). The largest single file in the fork, serving a question nobody is asked |
-| `Discord.svelte`, `GetInTouch.svelte`, the icon and button rows | Already gone. They sent people away from the screen before it had said anything |
-| `CreateShareView.svelte`, `QuickShareModal` | Already gone (ADR-0042). A vault is one share and nothing creates a second |
-| `ShareManagementModal`'s `createShare` and `createLocalSharedFolder` | Dead with the form above them. The modal itself stays: it is the other route to the member list |
-
-## What stays, and gets rewritten
-
-`CreateInviteView.svelte` and `UserSelectModal` were on the removal list until
-2026-08-11, on the reasoning that membership belonged on the web. With invites
-moving here they stay, in our wording: *can read* and *can edit* rather than
-viewer and editor, and no relay anywhere in the copy.
-
-## Two things to check before changing any of this
-
-- **Vault scope has no prefix guard.** A folder share is protected inbound by its
-  own path prefix; a vault share is protected only by `isExcludedPath`, and the
-  write path uses `vault.adapter` rather than Obsidian's file index. A regression
-  there writes a remote file into somebody's plugin directory.
-- **The OAuth state check is load-bearing.** Anything on the machine can invoke a
-  URL scheme, so a callback carrying the wrong state is rejected rather than used
-  (TR-21). It survived the move off the loopback server on purpose.
+- The screen is `src/knap/KnapSettingsTab.ts`. `statusFacts` and `hasRetry` are
+  exported and pure precisely so the branching is pinned in
+  `__tests__/knap/settingsTab.test.ts` rather than asserted against a screen.
+- The words are `src/syncStatus.ts`, and adding one means the rule above.
+- The picker is `ObsidianKnap.ts`; `vaultChoices` and `pickerPlaceholder` are
+  exported for the same reason.
+- Run the `humanizer` skill over any sentence a person reads before it ships,
+  and keep em-dashes out of it.
