@@ -27,7 +27,7 @@
 import { Modal, setIcon, type App } from "obsidian";
 
 import type { LinkFacts, LinkRow, LinkStep } from "./linkSteps";
-import { linkRows } from "./linkSteps";
+import { BOTH_WAYS, linkRows } from "./linkSteps";
 
 /** How long the finished list stays up, so the last line can be read. */
 const CLOSE_AFTER_MS = 900;
@@ -52,6 +52,8 @@ export class LinkProgressModal extends Modal {
 		contentEl.empty();
 		contentEl.addClass("knap-link");
 		contentEl.createEl("h2", { text: `Linking to ${this.vaultName}` });
+		// What the link means from here on, on the screen that makes it.
+		contentEl.createDiv({ cls: "knap-link-say", text: BOTH_WAYS });
 		this.rowsEl = contentEl.createDiv({ cls: "knap-link-steps" });
 		this.noteEl = contentEl.createDiv({ cls: "knap-link-note" });
 		this.paint();

@@ -536,13 +536,28 @@
 	margin-bottom: var(--size-4-4);
 }
 
-/* The bar. First thing on the screen, because it is what somebody came to
-   find out; the rows under it are what they came to change, which is rarer. */
-.knap-status {
+/* The Cloud vault row and the strip under it, as one object. A border around
+   both and a hairline between them: the strip is how this vault is doing, not
+   a third subject on a screen with two rows on it. */
+.knap-vault {
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
-	background: var(--background-secondary);
+	overflow: hidden;
 	margin-bottom: var(--size-4-4);
+}
+
+/* Obsidian gives a setting item its own bottom rule and outer padding, which
+   inside this block would draw a second line beside the hairline. */
+.knap-vault .setting-item {
+	border-top: 0;
+	padding: var(--size-4-3) var(--size-4-4);
+}
+
+/* The strip. Under the vault it belongs to, and tinted, so the row above it
+   stays the thing with the buttons on it. */
+.knap-status {
+	border-top: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
 	overflow: hidden;
 }
 
@@ -597,16 +612,6 @@
 	content: "·";
 	margin-right: var(--size-4-1);
 	color: var(--text-faint);
-}
-
-/* The name gives way first. It is a name, and it is spelled out in full on
-   the Cloud vault row a thumb below; the count is the answer somebody opened
-   the screen for, so it is the half that survives a narrow window. */
-.knap-status-vault {
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	min-width: 3em;
 }
 
 .knap-status-count {
@@ -669,6 +674,17 @@
 	margin-left: auto;
 	color: var(--text-normal);
 	font-variant-numeric: tabular-nums;
+}
+
+/* What the vault holds, ruled off from what is still moving. It is the line
+   somebody holds against Knap's own page, so it is there under every word. */
+.knap-status-total {
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: var(--size-2-3);
+}
+
+.knap-status-total .knap-status-key {
+	color: var(--text-muted);
 }
 
 .knap-status-retry {
@@ -817,4 +833,10 @@
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
 	margin-top: var(--size-2-2);
+}
+
+/* The same sentence under the heading, where it needs room before the steps
+   rather than after the line it explains. */
+.knap-link > .knap-link-say {
+	margin-bottom: var(--size-4-3);
 }

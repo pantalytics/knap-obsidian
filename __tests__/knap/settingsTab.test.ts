@@ -1,20 +1,21 @@
 /**
- * Two rows and a bar, and each of them says the right thing in each state.
+ * Two rows and a strip, and each of them says the right thing in each state.
  *
  * The screen exists because the commands were the only way in, and somebody
  * asked to try the beta opens Settings first. What is pinned here is the shape
- * it settled on: no Change button, no Problems row, and a bar whose detail is
- * folded away until it is asked for.
+ * it settled on: no Change button, no Problems row, a Cloud vault row that is
+ * a name, and a strip that belongs to that row rather than floating above it.
  */
 
 import {
 	KnapSettingsTab,
+	barSentence,
 	hasFold,
 	hasRetry,
 	signOutNotice,
 	statusFacts,
 } from "../../src/knap/KnapSettingsTab";
-import { OFFLINE, PROBLEM, SYNCING, UP_TO_DATE } from "../../src/syncStatus";
+import { INITIALIZING, OFFLINE, PROBLEM, SYNCING, UP_TO_DATE } from "../../src/syncStatus";
 
 type Row = { name: string; desc: string; buttons: string[]; press?: () => void };
 
@@ -26,6 +27,7 @@ interface FakeEl {
 	cls: string;
 	text: string;
 	hidden: boolean;
+	rows?: Row[];
 	type?: string;
 	children: FakeEl[];
 	attrs: Record<string, string>;
@@ -45,11 +47,16 @@ function el(cls = "", text = ""): FakeEl {
 		cls,
 		text,
 		hidden: false,
+		rows: [],
 		children: [],
 		attrs: {},
 		listeners: [],
 		createDiv: (spec = {}) => {
 			const child = el(spec.cls ?? "", spec.text ?? "");
+			// One list for the whole tree: the Cloud vault row is drawn into a
+			// block of its own now, and a test asking what the rows say should
+			// not have to know which element each was drawn into.
+			child.rows = node.rows;
 			node.children.push(child);
 			return child;
 		},
@@ -150,6 +157,7 @@ function baseStatus() {
 		dot: "ok" as string,
 		vaultName: "",
 		notes: 0,
+		attachments: 0,
 		problems: 0,
 		up: 0,
 		down: 0,
@@ -291,16 +299,29 @@ describe("the screen, signed in", () => {
 		// is what happens underneath either way.
 		const { rows } = drawFor({ signedIn: true, linked: { id: "v1", name: "Work notes" } });
 		const vault = rows.find((r) => r.name === "Cloud vault");
-		expect(vault?.desc).toContain("Work notes");
+		expect(vault?.desc).toBe("Work notes");
 		expect(vault?.buttons).toEqual(["Unlink"]);
 	});
 
-	it("still says a delete travels both ways, which the shortening did not touch", () => {
-		// #116 put this here, and a person deleting a note is entitled to know
-		// it goes on both sides. It is a warning rather than an explanation, so
-		// it stays on the row instead of moving behind the fold.
+	it("says the name and nothing else on that row", () => {
+		// #116's sentence about a delete travelling both ways moved to the
+		// screen that links. This row is read every week about a decision
+		// somebody took once.
 		const { rows } = drawFor({ signedIn: true, linked: { id: "v1", name: "Work notes" } });
-		expect(rows.find((r) => r.name === "Cloud vault")?.desc).toContain("deletes it in the");
+		expect(rows.find((r) => r.name === "Cloud vault")?.desc).not.toContain("deletes it in the");
+	});
+
+	it("puts the account above the vault, and the strip under the vault", () => {
+		const { rows, container } = drawFor({
+			signedIn: true,
+			linked: { id: "v1", name: "Work notes" },
+		});
+		expect(rows.map((r) => r.name)).toEqual(["Account", "Cloud vault"]);
+		// Inside the vault's own block rather than beside it: one border round
+		// both, so the strip cannot be read as a third subject.
+		const block = find(container, "knap-vault");
+		expect(block).toBeDefined();
+		expect(find(block as never, "knap-status")).toBeDefined();
 	});
 
 	it("has no row for problems, in any state", () => {
@@ -335,7 +356,9 @@ describe("the screen, signed in", () => {
 });
 
 describe("the bar", () => {
-	it("wears the word and the dot, with the vault and its size beside them", () => {
+	it("wears the word, the dot and the size, and not the vault's name", () => {
+		// The row a hairline above spells the name out. Saying it again within
+		// a thumb of itself is what #125 took out of the fold.
 		const { container } = drawFor({
 			signedIn: true,
 			linked: { id: "v1", name: "Work notes" },
@@ -343,13 +366,11 @@ describe("the bar", () => {
 		});
 		expect(find(container, "knap-status-word")?.text).toBe("Up to date");
 		expect(find(container, "knap-dot-ok")).toBeDefined();
-		expect(find(container, "knap-status-vault")?.text).toBe("Work notes");
 		expect(find(container, "knap-status-count")?.text).toBe("1,202 notes");
+		expect(find(container, "knap-status-head")?.text).not.toContain("Work notes");
 	});
 
-	it("keeps the name and the count apart, because they shrink differently", () => {
-		// One string could only be cut from the end, which on a phone is the
-		// count: the half somebody opened the screen for (#125).
+	it("counts one note as a note", () => {
 		const { container } = drawFor({
 			signedIn: true,
 			linked: { id: "v1", name: "260812_RH_Obsidian_vault" },
@@ -359,13 +380,13 @@ describe("the bar", () => {
 	});
 
 	it("does not open at all when the fold would be empty", () => {
-		// Up to date carries no instruction, and with nothing stuck there is
-		// nothing behind the head. A head that opens onto an empty strip is
+		// A vault whose tree has not been read yet counts nothing, has nothing
+		// stuck and nothing to retry. A head that opens onto an empty strip is
 		// worse than a head that does not open (#125).
 		const { container } = drawFor({
 			signedIn: true,
 			linked: { id: "v1", name: "Work notes" },
-			status: { word: UP_TO_DATE, dot: "ok", vaultName: "Work notes", notes: 1202 },
+			status: { word: UP_TO_DATE, dot: "ok", vaultName: "Work notes" },
 		});
 		const head = find(container, "knap-status-head");
 		expect(head?.getAttribute("aria-expanded")).toBeNull();
@@ -510,12 +531,13 @@ describe("what the fold holds", () => {
 		expect(statusFacts({ ...baseStatus() } as never)).toEqual([]);
 	});
 
-	it("does not repeat the vault or the count the head already carries", () => {
+	it("does not repeat the vault's name the row above already carries", () => {
 		// Three copies of one name on a phone screen was #125: in the head,
-		// behind the fold, and on the Cloud vault row underneath.
-		expect(
-			statusFacts({ ...baseStatus(), vaultName: "Work notes", notes: 1202 } as never),
-		).toEqual([]);
+		// behind the fold, and on the Cloud vault row. The count is a different
+		// fact and stays, as the total.
+		expect(statusFacts({ ...baseStatus(), vaultName: "Work notes", notes: 1202 } as never)).toEqual(
+			[["Total", "1,202 notes"]],
+		);
 	});
 
 	it("counts one stuck change as a change, not as changes", () => {
@@ -524,11 +546,21 @@ describe("what the fold holds", () => {
 		]);
 	});
 
-	it("folds nothing away on the happy path, and something under every other word", () => {
-		expect(hasFold({ ...baseStatus(), word: UP_TO_DATE, notes: 1202 } as never)).toBe(false);
+	it("folds the total away under every word, and nothing when nothing is counted", () => {
+		expect(hasFold({ ...baseStatus(), word: UP_TO_DATE, notes: 1202 } as never)).toBe(true);
 		expect(hasFold({ ...baseStatus(), word: UP_TO_DATE, problems: 2 } as never)).toBe(true);
-		expect(hasFold({ ...baseStatus(), word: SYNCING } as never)).toBe(true);
+		expect(hasFold({ ...baseStatus(), word: SYNCING } as never)).toBe(false);
 		expect(hasFold({ ...baseStatus(), word: OFFLINE } as never)).toBe(true);
+	});
+
+	it("says one sentence, under the one word that asks for something", () => {
+		// Every other word told somebody to wait, over rows that already say
+		// what is being waited for. Initializing asks them to leave Obsidian
+		// open, which is not what they would otherwise do (ADR-0090).
+		expect(barSentence(INITIALIZING as never)).toContain("Leave Obsidian open");
+		expect(barSentence(SYNCING as never)).toBe("");
+		expect(barSentence(OFFLINE as never)).toBe("");
+		expect(barSentence(UP_TO_DATE as never)).toBe("");
 	});
 
 	it("offers the button only for the two words a person can act on", () => {
@@ -552,7 +584,9 @@ describe("the sign-out notice", () => {
 describe("the breakdown behind the fold", () => {
 	// The corner has room for two numbers and adds notes and attachments
 	// together to get them. This screen keeps them apart (ADR-0088).
-	it("names both directions and both kinds of file", () => {
+	it("names both directions the way the words above them are, and both kinds of file", () => {
+		// Uploading and Downloading, not "To the cloud vault": somebody
+		// watching the word wants the same word on the line counting it.
 		expect(
 			statusFacts({
 				...baseStatus(),
@@ -560,22 +594,36 @@ describe("the breakdown behind the fold", () => {
 				up: 412,
 				down: 2567,
 				files: { up: 3, down: 0 },
+				notes: 2979,
+				attachments: 148,
 			} as never),
 		).toEqual([
-			["To the cloud vault", "412 notes, 3 attachments"],
-			["To this device", "2,567 notes"],
+			["Uploading", "412 notes, 3 attachments"],
+			["Downloading", "2,567 notes"],
+			["Total", "2,979 notes, 148 attachments"],
 		]);
 	});
 
 	it("says only the direction that has something in it", () => {
 		expect(
 			statusFacts({ ...baseStatus(), word: SYNCING, files: { up: 1, down: 0 } } as never),
-		).toEqual([["To the cloud vault", "1 attachment"]]);
+		).toEqual([["Uploading", "1 attachment"]]);
 	});
 
-	it("a vault with nothing moving keeps both rows off the screen", () => {
-		// And nothing else takes their place: the vault and its size are the
-		// head's, which is what #125 settled.
-		expect(statusFacts({ ...baseStatus(), notes: 12, vaultName: "Work" } as never)).toEqual([]);
+	it("keeps the total last, under the failures as well", () => {
+		// The two directions and the failures are what is moving or stuck; the
+		// total is what is there when nothing is, so it is ruled off at the end.
+		expect(
+			statusFacts({ ...baseStatus(), word: PROBLEM, problems: 1, notes: 12 } as never),
+		).toEqual([
+			["Could not sync", "1 change"],
+			["Total", "12 notes"],
+		]);
+	});
+
+	it("a vault with nothing moving still says how much it holds", () => {
+		expect(
+			statusFacts({ ...baseStatus(), notes: 12, attachments: 4, vaultName: "Work" } as never),
+		).toEqual([["Total", "12 notes, 4 attachments"]]);
 	});
 });
