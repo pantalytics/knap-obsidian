@@ -43,9 +43,15 @@ import {
 	OFFLINE,
 	PROBLEM,
 	UPLOADING,
+	syncCounts,
 	syncInstruction,
 } from "../syncStatus";
-import type { KnapStatus, KnapSync } from "./KnapSync";
+import {
+	checkedCounts,
+	checking,
+	type KnapStatus,
+	type KnapSync,
+} from "./KnapSync";
 
 /**
  * What to say after a sign-out. One sentence, two entry points: this button
@@ -60,6 +66,32 @@ export function signOutNotice(endedRemotely: boolean): string {
 
 /** The last row, and the only one that is there whatever the vault is doing. */
 export const TOTAL = "Total";
+
+/** The first row while the pass at start is going: how far it has got. */
+export const CHECKED = "Checked";
+
+/**
+ * What the head says at its far end.
+ *
+ * The size of the vault, except while the pass at start is going, when it is
+ * how far that pass has got: *412 of 2,505*. A restart over a vault that is
+ * already here opens every note, compares it and closes it, and on a few
+ * thousand notes that is minutes with nothing on the move. The head said
+ * *Syncing* beside *2,505 notes* through all of it, which reads as 2,505
+ * notes still to go and gives no way to tell a pass that is going from one
+ * that is stuck. A number that climbs once a second answers both.
+ *
+ * Notes and attachments together, the way the corner says it, because the
+ * head has room for one number. The row behind the fold keeps them apart.
+ */
+export function headCount(status: KnapStatus): string {
+	if (checking(status)) {
+		const { done, total } = checkedCounts(status);
+		return syncCounts(done, total);
+	}
+	if (status.notes > 0) return `${count(status.notes)} note${status.notes === 1 ? "" : "s"}`;
+	return "";
+}
 
 /**
  * The facts behind the fold, for one reading.
@@ -80,6 +112,12 @@ export const TOTAL = "Total";
  */
 export function statusFacts(status: KnapStatus): Array<[string, string]> {
 	const facts: Array<[string, string]> = [];
+	// The pass at start, by kind, while it is going. The two halves run one
+	// after the other, so the row names the one that is under way, and the
+	// half that is through says so in one word rather than as a fraction
+	// of itself.
+	const checked = checkedText(status);
+	if (checked) facts.push([CHECKED, checked]);
 	// The corner has room for two numbers and adds the two kinds of file
 	// together to get them. This is the screen with room to keep them apart,
 	// and attachments are worth keeping apart: one photo is a hundred notes'
@@ -97,6 +135,24 @@ export function statusFacts(status: KnapStatus): Array<[string, string]> {
 	const held = pieces(status.notes, status.attachments);
 	if (held) facts.push([TOTAL, held]);
 	return facts;
+}
+
+/** "412 of 2,505 notes", then "all notes, 12 of 338 attachments"; empty once through. */
+function checkedText(status: KnapStatus): string {
+	if (!checking(status)) return "";
+	const { notes, attachments } = status.checked;
+	const parts: string[] = [];
+	if (notes.total > 0) {
+		parts.push(
+			notes.done < notes.total
+				? `${syncCounts(notes.done, notes.total)} notes`
+				: "all notes",
+		);
+	}
+	if (attachments.total > 0 && notes.done >= notes.total) {
+		parts.push(`${syncCounts(attachments.done, attachments.total)} attachments`);
+	}
+	return parts.join(", ");
 }
 
 /** "412 notes, 3 attachments", or as much of it as is above zero. */
@@ -388,11 +444,9 @@ export class KnapSettingsTab extends PluginSettingTab {
 		head.createSpan({ cls: `knap-dot knap-dot-${status.dot}` });
 		head.createSpan({ cls: "knap-status-word", text: status.word });
 		const detail = head.createSpan({ cls: "knap-status-detail" });
-		if (status.notes > 0) {
-			detail.createSpan({
-				cls: "knap-status-count",
-				text: `${count(status.notes)} note${status.notes === 1 ? "" : "s"}`,
-			});
+		const said = headCount(status);
+		if (said) {
+			detail.createSpan({ cls: "knap-status-count", text: said });
 		}
 
 		if (folds) {

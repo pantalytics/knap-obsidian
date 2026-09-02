@@ -35,7 +35,7 @@ import { AttachmentBinding } from "./AttachmentBinding";
 import type { LiveNoteHandle } from "./knapEditor";
 import { conflictLabelFor, personLabel } from "./person";
 import { normalize } from "./TreeDoc";
-import type { FileStore, SeenTree } from "./VaultBinding";
+import type { FileStore, Pass, SeenTree } from "./VaultBinding";
 import { VaultBinding } from "./VaultBinding";
 import type { CloudVault, Fetch } from "./KnapServer";
 import { KnapServer } from "./KnapServer";
@@ -88,6 +88,30 @@ export interface KnapStatus {
 	down: number;
 	/** Attachments still to go up, and still to come down. */
 	files: { up: number; down: number };
+	/**
+	 * How far the pass at start has got, notes and attachments apart.
+	 *
+	 * The four gauges above count what moves, and a restart over a vault
+	 * that is already here moves nothing: every note is opened, compared and
+	 * closed, which on a few thousand notes is minutes with every gauge at
+	 * zero. This is the number that moves through that, so a screen can say
+	 * *412 of 2,505* rather than Syncing over nothing.
+	 */
+	checked: { notes: Pass; attachments: Pass };
+}
+
+/** Notes and attachments together: what the corner, with room for two numbers, reads. */
+export function checkedCounts(status: Pick<KnapStatus, "checked">): Pass {
+	return {
+		done: status.checked.notes.done + status.checked.attachments.done,
+		total: status.checked.notes.total + status.checked.attachments.total,
+	};
+}
+
+/** Whether the pass at start is still going: something found, not all of it through. */
+export function checking(status: Pick<KnapStatus, "checked">): boolean {
+	const { done, total } = checkedCounts(status);
+	return total > 0 && done < total;
 }
 
 export interface KnapSyncOptions {
@@ -240,7 +264,28 @@ export class KnapSync {
 			up: backlog.up,
 			down: backlog.down,
 			files,
+			checked: this.checked(),
 		};
+	}
+
+	/**
+	 * How far the pass at start has got, by kind of file.
+	 *
+	 * The two halves run one after the other, notes first, and the attachment
+	 * half does not know its own size until it starts. Read as it stands, the
+	 * total would sit at the note count for the whole of the first half and
+	 * then grow, which drops a bar that had just filled back to most of the
+	 * way. So while the fill is on and the attachment half has not begun, its
+	 * total is what the tree records, which is what that half will count
+	 * once it does, give or take the files that are only here.
+	 */
+	private checked(): KnapStatus["checked"] {
+		const notes = this.binding?.checked ?? { done: 0, total: 0 };
+		let attachments = this.attachments?.checked ?? { done: 0, total: 0 };
+		if (this.filling && attachments.total === 0 && this.client) {
+			attachments = { done: 0, total: this.client.tree().attachments().size };
+		}
+		return { notes, attachments };
 	}
 
 	/** Sign in: browser out, deep link back, token kept. No link yet. */

@@ -141,6 +141,16 @@ export interface Backlog {
 	down: number;
 }
 
+/**
+ * How far the pass at start has got: pieces of work finished, of the pieces
+ * it found. Zero and zero before the tree has been read, equal once it is
+ * through.
+ */
+export interface Pass {
+	done: number;
+	total: number;
+}
+
 const CONTENT = "content";
 
 /**
@@ -169,6 +179,8 @@ export class VaultBinding {
 	private failures = 0;
 	/** Work taken on and not finished, by direction. Never edits. */
 	private outstanding = { up: 0, down: 0 };
+	/** The pass at start, counted as it goes. */
+	private pass: Pass = { done: 0, total: 0 };
 	/** Paths an open editor is holding, which this binding leaves alone. */
 	private held = new Set<string>();
 	/** Set whenever this device changed the tree, cleared when it is saved. */
@@ -275,6 +287,21 @@ export class VaultBinding {
 	 */
 	get backlog(): Backlog {
 		return { ...this.outstanding };
+	}
+
+	/**
+	 * How far the pass at start has got.
+	 *
+	 * The two gauges above count what moves, and on a restart over a vault
+	 * that is already here nothing moves: every note is opened, compared and
+	 * closed again, which on a few thousand notes is minutes of work with
+	 * both gauges at zero. The screen said Syncing over that with no number
+	 * beside it, and a person watching had no way to tell a pass that was
+	 * going from one that was stuck. This counts every piece of the pass,
+	 * the compares included, so the screen can say how far along it is.
+	 */
+	get checked(): Pass {
+		return { ...this.pass };
 	}
 
 	/** Run `work`, with this note on the gauge for as long as it takes. */
@@ -423,6 +450,9 @@ export class VaultBinding {
 		const down = new Set(bind.filter(([path]) => !local.has(path)).map(([path]) => path));
 		this.outstanding.up += up.length;
 		this.outstanding.down += down.size;
+		// Everything the pass is about to do, counted before any of it runs,
+		// so the first reading already says how much there is.
+		this.pass = { done: 0, total: gone.length + up.length + bind.length };
 
 		// Each half runs several notes deep. The tree above is read first and
 		// in full, so what each note does is its own business and the width
@@ -463,6 +493,9 @@ export class VaultBinding {
 					await work(item);
 				} catch {
 					this.failures += 1;
+				} finally {
+					// Done or failed, this piece is behind us either way.
+					this.pass.done += 1;
 				}
 			}
 		};

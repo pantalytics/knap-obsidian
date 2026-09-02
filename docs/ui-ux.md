@@ -42,9 +42,10 @@ either side of it rather than like a panel we built.
   │ │ Cloud vault                                 [ Unlink ]   │ │  ← the vault
   │ │ Work notes                                               │ │
   │ ├──────────────────────────────────────────────────────────┤ │
-  │ │ ● Initializing                        2,979 notes      ▾ │ │  ← the strip
+  │ │ ● Initializing                       290 of 3,127      ▾ │ │  ← the strip
   │ ├──────────────────────────────────────────────────────────┤ │
   │ │ Leave Obsidian open until it finishes.                   │ │
+  │ │ Checked                                290 of 2,979 notes │ │
   │ │ Uploading                       412 notes, 3 attachments │ │
   │ │ Downloading                                 2,567 notes  │ │
   │ │ Total                       2,979 notes, 148 attachments │ │
@@ -111,11 +112,15 @@ leaves the token alive anyway.
 The strip is the only thing on the screen that folds, and that is the hierarchy.
 The dot and the word are always out. How big the vault is sits at the far end,
 pushed there rather than following the word so the eye finds the word in the
-same place whatever it is about. Everything else comes out when somebody asks:
+same place whatever it is about. **While the pass at start is going, the far end
+is how far it has got instead**, *290 of 3,127*, notes and attachments added
+together the way the corner adds them. Everything else comes out when somebody
+asks:
 
 | Behind the fold | When |
 |---|---|
 | Leave Obsidian open until it finishes | Under *Initializing*, and no other word |
+| **Checked** | While the pass at start is going: *412 of 2,505 notes*, then *all notes, 12 of 338 attachments* |
 | Uploading, Downloading | While either direction has something in it, naming notes and attachments separately |
 | Could not sync, *N* changes | When something failed and stayed failed |
 | **Total** | Whenever the tree has been read, ruled off from the rows above it |
@@ -130,6 +135,20 @@ Initializing asks for is different in kind: leave Obsidian open, which is not
 what a person would otherwise do (ADR-0090). *Signed out* keeps its sentence
 where it is still read, which is the corner of the window rather than here: this
 strip only exists over a link, and a link needs an account.
+
+**Checked is the line for the work the two directions cannot see.** A restart
+over a vault that is already here opens every note, compares it against its
+document and closes it, and on a few thousand notes that is minutes with nothing
+going up or down. Until 2026-09-02 the strip said *Syncing* beside *2,505 notes*
+through all of it, which reads as 2,505 notes still to go and gives no way to
+tell a pass that is getting somewhere from one that is stuck. The pass counts
+every piece it found before it runs any of them, uploads, downloads and compares
+alike, so the number climbs from the first second and reaches the total at the
+moment the word changes. It is not a new word: what a person does under it is
+wait, which is what Syncing already says (ADR-0089's test). There is no estimate
+of how long is left, on purpose. The rate of a pass depends on the line and on
+the server's pool of sockets, and a minute that becomes four is worse than a
+count that climbs.
 
 **Total is the line that is there when nothing is moving.** It is what the cloud
 vault holds, counted off the tree, and it is the one number on this screen that
