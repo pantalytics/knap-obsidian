@@ -44,6 +44,12 @@ from GitHub and keeps them updated.
 3. Paste `pantalytics/knap-obsidian`, pick the latest version, **Add plugin**
 4. Enable **Knap** in *Settings → Community plugins*
 
+BRAT's updates replace `main.js`, `manifest.json` and `styles.css` and leave
+the rest of the plugin's folder alone, so an update keeps you signed in, keeps
+the cloud vault linked and does not sync the vault over again. The status word
+goes back to *Initializing* only when the update lands before the first sync
+has finished, because that pass really is unfinished.
+
 ### Manual
 
 1. Download `main.js`, `manifest.json` and `styles.css` from the
