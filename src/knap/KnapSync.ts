@@ -26,7 +26,10 @@
  */
 
 import type { SyncDot, SyncWord } from "../syncStatus";
-import { syncDot, syncWord } from "../syncStatus";
+import { UP_TO_DATE, syncDot, syncWord } from "../syncStatus";
+import { TREE_SYNC_FAILED, TREE_SYNC_TIMEOUT_MS, withTimeout } from "./deadline";
+import type { LinkFacts, LinkReporter } from "./linkSteps";
+import { linkCounts } from "./linkSteps";
 import type { AttachmentTransport, Refusal } from "./AttachmentBinding";
 import { AttachmentBinding } from "./AttachmentBinding";
 import type { LiveNoteHandle } from "./knapEditor";
@@ -44,6 +47,20 @@ export interface KnapLink {
 	token: string;
 	cloudVaultId: string;
 	cloudVaultName: string;
+	/**
+	 * Whether this device has been all the way through a first pass over
+	 * this cloud vault.
+	 *
+	 * Persisted rather than held in memory, because the whole point of the
+	 * word it drives is that a first sync is long enough for somebody to
+	 * quit Obsidian in the middle of it. A restart that forgot would come
+	 * back up saying Syncing over a vault that is still half here.
+	 *
+	 * Absent on a link made before this existed, which reads as not yet
+	 * done: one extra honest Initializing, and it clears the first time the
+	 * vault falls quiet.
+	 */
+	initialized?: boolean;
 }
 
 /**
@@ -113,6 +130,21 @@ export class KnapSync {
 	private lost = false;
 	/** What this vault holds on this disk, taken once per start. */
 	private counts: { notes: number; attachments: number } | null = null;
+	/** Whether this device is still in its first pass over the cloud vault. */
+	private firstSync = false;
+	/**
+	 * Whether a reconciliation is running right now.
+	 *
+	 * The backlog gauges are the ordinary answer to "is anything moving", and
+	 * they are zero for the moment between the bindings being built and the
+	 * reconciliation having decided how much there is to do. A status read in
+	 * that gap said Up to date over a vault whose whole contents were about to
+	 * arrive, which is #40's lie in its smallest form and, worse, was enough
+	 * to clear the flag below before the first pass had begun.
+	 */
+	private filling = false;
+	/** Set while the record of that is being written, so it is written once. */
+	private settling = false;
 
 	constructor(private readonly options: KnapSyncOptions) {
 		this.server = new KnapServer(options.serverUrl, options.fetchFn);
@@ -168,6 +200,7 @@ export class KnapSync {
 			// seconds over a vault whose bodies are hours away, and green over
 			// that is exactly the lie #40 was about.
 			syncing:
+				this.filling ||
 				(Boolean(this.client) && !this.client?.settled) ||
 				backlog.up + backlog.down + files.up + files.down > 0,
 			// Which way the notes are going, so the word can say Uploading or
@@ -182,7 +215,19 @@ export class KnapSync {
 			connected: linked ? connected : undefined,
 			stuck: problems,
 			lost: this.lost,
+			// The first pass over a newly linked vault, which is the one a
+			// person must not close Obsidian in the middle of (ADR-0090).
+			initial: this.firstSync,
 		});
+		// A vault that has fallen quiet has finished its first pass, and this
+		// is where that becomes true: the word above is the only reader of
+		// the flag, and this is the moment it stopped mattering. Written to
+		// the settings once, so a restart mid-fill still says Initializing
+		// and a restart after one does not.
+		if (this.firstSync && word === UP_TO_DATE) {
+			this.firstSync = false;
+			void this.rememberInitialized();
+		}
 		return {
 			word,
 			dot: syncDot(word),
@@ -218,8 +263,16 @@ export class KnapSync {
 		return this.server.listVaults(stored.token);
 	}
 
-	/** Link this local vault to one cloud vault. Replaces, never appends. */
-	async link(vault: CloudVault): Promise<void> {
+	/**
+	 * Link this local vault to one cloud vault. Replaces, never appends.
+	 *
+	 * `report` is told as each of the eight steps finishes, so the screen can
+	 * say what is being counted and what it found rather than sitting on a
+	 * spinner for however long the tree takes (ADR-0090). It is optional
+	 * because the command palette links too, and a notice is all that entry
+	 * point has room for.
+	 */
+	async link(vault: CloudVault, report?: LinkReporter): Promise<void> {
 		const stored = this.options.load();
 		if (!stored?.token) {
 			throw new Error("Sign in first.");
@@ -229,8 +282,11 @@ export class KnapSync {
 			token: stored.token,
 			cloudVaultId: vault.id,
 			cloudVaultName: vault.name,
+			// A fresh link has not been through a first pass, whatever the
+			// last vault this device was linked to had been through.
+			initialized: false,
 		});
-		await this.start();
+		await this.start(report);
 	}
 
 	/** End the link. Stops the syncing, deletes nothing on either side. */
@@ -274,26 +330,34 @@ export class KnapSync {
 	}
 
 	/** Bring the link up, if there is one. Safe to call at plugin load. */
-	async start(): Promise<void> {
+	async start(report: LinkReporter = () => undefined): Promise<void> {
 		const stored = this.linked;
 		if (!stored || this.binding) {
 			return;
 		}
+		const facts: LinkFacts = {};
 		// Who we are, for the caret and the conflict copies. Asked once per
 		// start rather than per label, and never fatal: an address we could
 		// not fetch leaves both falling back to the device name, which is
 		// what they said before this existed.
 		this.person = await this.whoAmI(stored.token);
 		this.lost = false;
+		// A link that has never finished a pass is still in its first one,
+		// and so is one whose settings predate this field.
+		this.firstSync = stored.initialized !== true;
 		// What this vault holds on this disk, counted once per start. The
 		// number rides along on every socket so the server can say "1773 of
 		// 2611 notes" while a fill is behind, instead of a bare count that
 		// reads as complete. Stale within a session is fine: the local total
 		// barely moves, and every restart takes it fresh.
-		this.counts = {
-			notes: (await this.options.files.listNotes()).length,
-			attachments: (await this.options.files.listAttachments()).length,
-		};
+		//
+		// Taken before the first socket opens, which is why the two local
+		// steps are reported after the two cloud ones despite happening
+		// first: the socket carries these numbers, so they have to exist
+		// before it does.
+		const localNotes = (await this.options.files.listNotes()).map(normalize);
+		const localAttachments = (await this.options.files.listAttachments()).map(normalize);
+		this.counts = { notes: localNotes.length, attachments: localAttachments.length };
 		this.client = new KnapVaultClient(
 			this.server,
 			stored.cloudVaultId,
@@ -303,6 +367,33 @@ export class KnapSync {
 			() => this.loseVault(stored.cloudVaultName),
 			() => this.counts,
 		);
+		// The tree, before anything is counted against it. Both bindings make
+		// this same wait for the same reason, and making it here as well costs
+		// nothing (it is the same already-settled promise by then) and buys
+		// the screen a Connecting step that ends when the connection is real.
+		await withTimeout(this.client.treeSynced(), TREE_SYNC_TIMEOUT_MS, TREE_SYNC_FAILED);
+		report("connecting", facts);
+		const tree = this.client.tree();
+		const cloudNotes = tree.entries();
+		const cloudAttachments = tree.attachments();
+		facts.cloudNotes = cloudNotes.size;
+		report("cloudNotes", facts);
+		facts.cloudAttachments = cloudAttachments.size;
+		report("cloudAttachments", facts);
+		facts.localNotes = localNotes.length;
+		report("localNotes", facts);
+		facts.localAttachments = localAttachments.length;
+		report("localAttachments", facts);
+		const plan = linkCounts(
+			{ notes: cloudNotes.keys(), attachments: cloudAttachments.keys() },
+			{ notes: localNotes, attachments: localAttachments },
+		);
+		facts.downloadNotes = plan.downloadNotes;
+		facts.downloadAttachments = plan.downloadAttachments;
+		report("toDownload", facts);
+		facts.uploadNotes = plan.uploadNotes;
+		facts.uploadAttachments = plan.uploadAttachments;
+		report("toUpload", facts);
 		this.binding = new VaultBinding(
 			this.options.files,
 			this.client,
@@ -316,10 +407,52 @@ export class KnapSync {
 			this.options.onRefused,
 			() => conflictLabelFor(this.person, this.options.deviceName, new Date()),
 		);
-		// Notes first. Both wait for the same tree to sync, and a vault whose
-		// notes are already arriving is the one somebody is looking at.
-		await this.binding.start();
-		await this.attachments.start();
+		// Set before the screen is told, so a status read on the back of that
+		// report sees a vault that is filling rather than one that is quiet.
+		this.filling = true;
+		// The link exists here, and this is where the screen is told so: both
+		// bindings are built over a tree that has synced, and everything after
+		// this line is the first pass itself.
+		//
+		// **Said before the fill rather than after it**, which is the whole
+		// point. `binding.start()` waits for the entire reconciliation, and on
+		// a vault of a few thousand notes that is minutes. Until this, linking
+		// resolved at the far end of that wait: the picker closed, nothing
+		// happened, and the notice saying it had worked arrived long after the
+		// person had gone looking for what went wrong (ADR-0090).
+		report("linked", facts);
+		try {
+			// Notes first. Both wait for the same tree to sync, and a vault
+			// whose notes are already arriving is the one somebody is looking
+			// at.
+			await this.binding.start();
+			await this.attachments.start();
+		} finally {
+			this.filling = false;
+		}
+	}
+
+	/**
+	 * Write down that this device has been through a first pass.
+	 *
+	 * Never fatal, and never retried: the cost of losing this write is one
+	 * more Initializing after the next restart, which is a word rather than a
+	 * wrong outcome. The guard is against the settings being written every
+	 * second, because the reader of the flag is a status the screen ticks.
+	 */
+	private async rememberInitialized(): Promise<void> {
+		if (this.settling) return;
+		this.settling = true;
+		try {
+			const stored = this.options.load();
+			if (stored?.cloudVaultId) {
+				await this.options.save({ ...stored, initialized: true });
+			}
+		} catch {
+			// See above.
+		} finally {
+			this.settling = false;
+		}
 	}
 
 	/**
@@ -446,6 +579,7 @@ export class KnapSync {
 	}
 
 	stop(): void {
+		this.filling = false;
 		this.attachments?.stop();
 		this.attachments = null;
 		this.binding?.stop();

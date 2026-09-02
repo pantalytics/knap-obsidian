@@ -107,6 +107,8 @@ real engine.
 | `ObsidianFileStore.ts` · `ObsidianSeenTree.ts` · `obsidianFetch.ts` | The three adapters. Thin on purpose: every rule lives where jest can reach it |
 | `ObsidianKnap.ts` | Where it meets Obsidian: the switch, the tab, the picker, the commands, the protocol handler |
 | `KnapSettingsTab.ts` | The one screen. [`ui-ux.md`](ui-ux.md) is the whole of it |
+| `linkSteps.ts` · `LinkProgressModal.ts` | What linking says while it happens. The step list and its arithmetic are pure; the modal only draws them |
+| `deadline.ts` | A bounded wait, and the one number every wait for the tree uses |
 
 ## The four flows
 

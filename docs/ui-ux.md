@@ -156,13 +156,14 @@ other than a release does, but that is the frame it is read in.
 
 ## The words
 
-Eight, from `src/syncStatus.ts`, and no screen invents a ninth. That file is the
+Nine, from `src/syncStatus.ts`, and no screen invents a tenth. That file is the
 list. It used to mirror a `status.py` in the admin repository, and that file went
 with the rebuild, so there is nothing on the other side to keep in step with
 today.
 
 | Word | Dot | The instruction under it |
 |---|---|---|
+| **Initializing** | accent | The first sync brings the whole vault over, and it takes a while. Leave Obsidian open until it finishes. |
 | **Syncing** | accent | Leave Obsidian open until it finishes. It picks up where it left off if you close it. |
 | **Uploading** | accent | the same sentence |
 | **Downloading** | accent | the same sentence |
@@ -194,6 +195,17 @@ an hour wants to know which of the two it is, and the three moving words are
 chosen off the same two gauges the numbers come from. A vault moving both ways
 at once is Syncing, and so is one whose queue cannot say which way it is going,
 because a word that guesses is worse than the general one.
+
+**Initializing came on 2026-09-02 (ADR-0090)**, and it passes the older,
+stricter test rather than the one ADR-0089 loosened. Under Syncing a person may
+close the laptop, and the sentence under it says so. Under Initializing they may
+not yet: this is the first pass over a vault that has just been linked, and the
+whole of it is still on its way. It beats the three direction words for as long
+as it lasts, because a first sync is usually both directions at once and which
+way it is going is the least interesting thing about it. It clears the first
+time the vault falls quiet, and that is written into the settings, so quitting
+Obsidian in the middle of a first sync comes back to Initializing rather than to
+Syncing over a vault that is still half here.
 
 Counts are one phrasing: *412 of 1,202* once something has counted the far side,
 *412 notes so far* while the first pass is still discovering how much there is.
@@ -263,6 +275,51 @@ that does not exist yet is exactly the person who needs it.
 Each row is the vault's name and nothing else. There is one kind of person in a
 vault, so there is no access level to qualify it with.
 
+## Linking, while it happens
+
+Pressing a vault in the picker used to do this: the picker closed, the screen
+behind it did not change, and somewhere between one second and four minutes
+later a notice said *Linked*. It was not hung. The reconciliation was running,
+and linking did not resolve until the whole of it had, so the only reading
+available to a person was that the button had not worked.
+
+So the link reports itself, eight steps, in `src/knap/linkSteps.ts`:
+
+```
+  ┌ Linking to Work notes ────────────────────────────────┐
+  │ ✓ Connecting                                          │
+  │ ✓ Notes in the cloud vault                      1,204 │
+  │ ✓ Attachments in the cloud vault                   88 │
+  │ ✓ Notes on this device                          1,190 │
+  │ ✓ Attachments on this device                       80 │
+  │ ✓ To download                  14 notes, 8 attachments│
+  │ ⟳ To upload                                           │
+  │   Linked                                              │
+  └───────────────────────────────────────────────────────┘
+```
+
+**The two rows near the end are what the modal is for.** Everything above them
+is how they were arrived at, and *To download* and *To upload* are the answer to
+how long the next part is going to take. They say *Nothing* rather than *0*,
+because a zero in a column of counts reads as a number rather than as an answer.
+
+The work does not happen in quite that order. The local counts are taken before
+the first socket opens, because they ride along on it, and the cloud counts
+cannot be read until the tree has synced. Every number is true at the moment its
+step is reported, and the far side is read first because it is the side a person
+cannot see.
+
+**It closes itself on the last step**, and the last step is said before the fill
+rather than after it. That is the fix: the link exists once both bindings stand
+over a synced tree, and what follows is the first sync, which the bar behind has
+a word for. A modal held open over minutes of downloading would be a second
+place saying the same thing, over a vault a person cannot use while it is up.
+
+A step that fails stops the list where it stood, with that step marked and the
+sentence under it. The modal stays, because a modal that vanished would leave
+the failure to a notice in the corner over a screen that still says *Not linked*
+and does not say why.
+
 ## The commands
 
 Four, all still labelled *(beta)*, which is a name that has outlived its
@@ -287,7 +344,7 @@ happened and what is now true.
 | After | It says |
 |---|---|
 | Signing in | Signed in. Now link this vault. |
-| Linking | Linked. This vault now syncs with *name*. |
+| Linking | Linked. This vault now syncs with *name*. Leave Obsidian open while it fills up. |
 | Unlinking | Unlinked. Nothing was deleted, anywhere. |
 | Signing out | Signed out. Nothing was deleted, anywhere. |
 | Signing out with no connection | Signed out here only. Knap could not be reached, so it may still count this device as signed in. |

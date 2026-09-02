@@ -24,11 +24,13 @@ import {
 	syncInstruction,
 	syncProgress,
 	syncWord,
+	INITIALIZING,
 } from "../src/syncStatus";
 
 describe("the words", () => {
 	test("these are they, in this order", () => {
 		expect(SYNC_WORDS).toEqual([
+			"Initializing",
 			"Syncing",
 			"Uploading",
 			"Downloading",
@@ -69,8 +71,30 @@ describe("the words", () => {
 		expect(syncDot(DOWNLOADING)).toBe("working");
 	});
 
-	test("all three moving words say so, and nothing else does", () => {
-		expect(SYNC_WORDS.filter(isMoving)).toEqual([SYNCING, UPLOADING, DOWNLOADING]);
+	test("all four moving words say so, and nothing else does", () => {
+		expect(SYNC_WORDS.filter(isMoving)).toEqual([
+			INITIALIZING,
+			SYNCING,
+			UPLOADING,
+			DOWNLOADING,
+		]);
+	});
+
+	test("a first pass is Initializing, whichever way the notes are going", () => {
+		// The one moving word whose instruction differs, because what a person
+		// has to do about it differs: leave this one running (ADR-0090).
+		const first = { signedIn: true, paused: false, syncing: true, initial: true };
+		expect(syncWord(first)).toBe(INITIALIZING);
+		expect(syncWord({ ...first, up: 412, down: 0 })).toBe(INITIALIZING);
+		expect(syncWord({ ...first, up: 0, down: 2567 })).toBe(INITIALIZING);
+		expect(syncDot(INITIALIZING)).toBe("working");
+		expect(syncInstruction(INITIALIZING)).not.toBe(syncInstruction(SYNCING));
+	});
+
+	test("a first pass with nothing left to carry is Up to date, not Initializing", () => {
+		expect(syncWord({ signedIn: true, paused: false, syncing: false, initial: true })).toBe(
+			UP_TO_DATE,
+		);
 	});
 
 	test("and all three carry the same instruction, because the wait is the same", () => {

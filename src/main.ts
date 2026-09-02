@@ -138,6 +138,7 @@ import {
 	PROBLEM,
 	SIGNED_OUT,
 	DOWNLOADING,
+	INITIALIZING,
 	SYNCING,
 	UPLOADING,
 	UP_TO_DATE,
@@ -1082,6 +1083,11 @@ export default class Live extends Plugin {
 		this.timeProvider.setTimeout(() => {
 			const reading = this.readVaultStatus();
 			const lines: Record<SyncWord, string> = {
+				// The first pass over a vault that has just been linked. The
+				// one moving word whose sentence asks for something, because
+				// closing Obsidian in the middle of this one leaves the vault
+				// half here (ADR-0090).
+				[INITIALIZING]: "Your vault is filling up. Leave Obsidian open.",
 				[SYNCING]: "Your vault is syncing.",
 				// One sentence each, because the after-update notice is the
 				// one place the word is read as a whole sentence rather than
