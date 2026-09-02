@@ -377,12 +377,26 @@ export class KnapSync {
 		return { endedRemotely };
 	}
 
-	/** Bring the link up, if there is one. Safe to call at plugin load. */
-	async start(report: LinkReporter = () => undefined): Promise<void> {
+	/**
+	 * Bring the link up, if there is one. Safe to call at plugin load.
+	 *
+	 * A start somebody is watching, which is the link modal, gives up on the
+	 * tree after a deadline, because a person is looking at a screen that
+	 * has to end. A start nobody is watching waits for as long as the link
+	 * exists. Until 2026-09-02 it too gave up after half a minute, and
+	 * Obsidian opened on a train, or during a deploy, was a vault that never
+	 * came up: the notice said it would retry at the next sign-in, nothing
+	 * did, and once the server was back the status read Up to date over a
+	 * binding that had never been built. The socket underneath reconnects on
+	 * its own the whole time, so the honest thing is to wait on it, and the
+	 * word on screen says Offline while it does.
+	 */
+	async start(report?: LinkReporter): Promise<void> {
 		const stored = this.linked;
 		if (!stored || this.binding) {
 			return;
 		}
+		const tell: LinkReporter = report ?? (() => undefined);
 		const facts: LinkFacts = {};
 		// Who we are, for the caret and the conflict copies. Asked once per
 		// start rather than per label, and never fatal: an address we could
@@ -419,29 +433,42 @@ export class KnapSync {
 		// this same wait for the same reason, and making it here as well costs
 		// nothing (it is the same already-settled promise by then) and buys
 		// the screen a Connecting step that ends when the connection is real.
-		await withTimeout(this.client.treeSynced(), TREE_SYNC_TIMEOUT_MS, TREE_SYNC_FAILED);
-		report("connecting", facts);
+		const client = this.client;
+		const treeSynced = client.treeSynced();
+		try {
+			await (report
+				? withTimeout(treeSynced, TREE_SYNC_TIMEOUT_MS, TREE_SYNC_FAILED)
+				: treeSynced);
+		} catch (error) {
+			// The wait ends on its own when the client goes: an unlink, a sign
+			// out or a retry while the server was still away. None of those
+			// is a failure of this start, so none of them is reported as one.
+			if (this.client !== client) return;
+			throw error;
+		}
+		if (this.client !== client) return;
+		tell("connecting", facts);
 		const tree = this.client.tree();
 		const cloudNotes = tree.entries();
 		const cloudAttachments = tree.attachments();
 		facts.cloudNotes = cloudNotes.size;
-		report("cloudNotes", facts);
+		tell("cloudNotes", facts);
 		facts.cloudAttachments = cloudAttachments.size;
-		report("cloudAttachments", facts);
+		tell("cloudAttachments", facts);
 		facts.localNotes = localNotes.length;
-		report("localNotes", facts);
+		tell("localNotes", facts);
 		facts.localAttachments = localAttachments.length;
-		report("localAttachments", facts);
+		tell("localAttachments", facts);
 		const plan = linkCounts(
 			{ notes: cloudNotes.keys(), attachments: cloudAttachments.keys() },
 			{ notes: localNotes, attachments: localAttachments },
 		);
 		facts.downloadNotes = plan.downloadNotes;
 		facts.downloadAttachments = plan.downloadAttachments;
-		report("toDownload", facts);
+		tell("toDownload", facts);
 		facts.uploadNotes = plan.uploadNotes;
 		facts.uploadAttachments = plan.uploadAttachments;
-		report("toUpload", facts);
+		tell("toUpload", facts);
 		this.binding = new VaultBinding(
 			this.options.files,
 			this.client,
@@ -468,7 +495,7 @@ export class KnapSync {
 		// resolved at the far end of that wait: the picker closed, nothing
 		// happened, and the notice saying it had worked arrived long after the
 		// person had gone looking for what went wrong (ADR-0090).
-		report("linked", facts);
+		tell("linked", facts);
 		try {
 			// Notes first. Both wait for the same tree to sync, and a vault
 			// whose notes are already arriving is the one somebody is looking

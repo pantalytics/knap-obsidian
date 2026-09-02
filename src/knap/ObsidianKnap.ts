@@ -310,10 +310,16 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 	// that has not finished loading answers that with too few. Since a note
 	// missing from disk is now read as a note somebody deleted, starting
 	// early would take the rest of the vault out of the cloud with it.
+	//
+	// A server that cannot be reached is not a failure here: the start
+	// waits for it, the status says Offline meanwhile, and the vault comes
+	// up when the server does. What is left to catch is the kind of thing
+	// that will not fix itself.
 	host.app.workspace.onLayoutReady(() => {
 		void sync.start().catch(() => {
 			new Notice(
-				"Knap could not reach your cloud vault. It will retry when you sign in again.",
+				"Knap could not bring your cloud vault up. Your notes are safe here; " +
+					"open Settings and press Try again.",
 			);
 		});
 	});
