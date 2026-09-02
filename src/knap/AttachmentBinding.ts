@@ -32,7 +32,7 @@ import { generateHash } from "../hashing";
 import { TREE_SYNC_FAILED, TREE_SYNC_TIMEOUT_MS, withTimeout } from "./deadline";
 import type { AttachmentEntry, TreeDoc } from "./TreeDoc";
 import { isHidden, isNote, normalize } from "./TreeDoc";
-import type { Backlog, FileEvent, FileStore } from "./VaultBinding";
+import type { Backlog, FileEvent, FileStore, Pass } from "./VaultBinding";
 
 /** What the binding needs from the file routes. KnapServer satisfies it. */
 export interface AttachmentTransport {
@@ -79,6 +79,8 @@ export class AttachmentBinding {
 	private limits: AttachmentLimits = FALLBACK_LIMITS;
 	/** Files still to move, by direction. The note half keeps the same two. */
 	private outstanding = { up: 0, down: 0 };
+	/** The pass at start, counted as it goes. The note half keeps the same. */
+	private pass: Pass = { done: 0, total: 0 };
 
 	constructor(
 		private readonly files: FileStore,
@@ -159,6 +161,15 @@ export class AttachmentBinding {
 		return { ...this.outstanding };
 	}
 
+	/**
+	 * How far the pass at start has got. Every recorded attachment already
+	 * on the disk is hashed and compared, which is the part of the pass the
+	 * two gauges above cannot see; see `VaultBinding.checked`.
+	 */
+	get checked(): Pass {
+		return { ...this.pass };
+	}
+
 	/** Run `work`, with this file on the gauge for as long as it takes. */
 	private async carry<T>(kind: "up" | "down", work: () => Promise<T>): Promise<T> {
 		this.outstanding[kind] += 1;
@@ -193,11 +204,13 @@ export class AttachmentBinding {
 		);
 		this.outstanding.up += up.length;
 		this.outstanding.down += arriving.size;
+		this.pass = { done: 0, total: up.length + recorded.size };
 		for (const path of up) {
 			try {
 				await this.push(path);
 			} finally {
 				this.outstanding.up -= 1;
+				this.pass.done += 1;
 			}
 		}
 		for (const [path, entry] of recorded) {
@@ -205,6 +218,7 @@ export class AttachmentBinding {
 				await this.pull(path, entry);
 			} finally {
 				if (arriving.has(path)) this.outstanding.down -= 1;
+				this.pass.done += 1;
 			}
 		}
 	}

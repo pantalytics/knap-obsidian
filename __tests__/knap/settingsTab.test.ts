@@ -12,6 +12,7 @@ import {
 	barSentence,
 	hasFold,
 	hasRetry,
+	headCount,
 	signOutNotice,
 	statusFacts,
 } from "../../src/knap/KnapSettingsTab";
@@ -162,6 +163,15 @@ function baseStatus() {
 		up: 0,
 		down: 0,
 		files: { up: 0, down: 0 },
+		checked: { notes: { done: 0, total: 0 }, attachments: { done: 0, total: 0 } },
+	};
+}
+
+/** A pass at start, part way through its notes. */
+function partWay(done: number, notes: number, attachments = 0) {
+	return {
+		notes: { done, total: notes },
+		attachments: { done: 0, total: attachments },
 	};
 }
 
@@ -568,6 +578,69 @@ describe("what the fold holds", () => {
 		expect(hasRetry({ ...baseStatus(), word: OFFLINE } as never)).toBe(true);
 		expect(hasRetry({ ...baseStatus(), word: UP_TO_DATE } as never)).toBe(false);
 		expect(hasRetry({ ...baseStatus(), word: SYNCING } as never)).toBe(false);
+	});
+});
+
+describe("the pass at start", () => {
+	// A restart over a vault that is already here compares every note and
+	// moves none, so both directions read zero for minutes. The head said
+	// Syncing beside 2,505 notes through all of it, which reads as 2,505
+	// still to go and says nothing about whether it is getting anywhere.
+	it("puts how far it has got in the head, in place of the size", () => {
+		const status = { ...baseStatus(), word: SYNCING, notes: 2505, checked: partWay(412, 2505) };
+		expect(headCount(status as never)).toBe("412 of 2,505");
+		const { container } = drawFor({
+			signedIn: true,
+			linked: { id: "v1", name: "Work notes" },
+			status,
+		});
+		expect(find(container, "knap-status-count")?.text).toBe("412 of 2,505");
+	});
+
+	it("adds notes and attachments together in the head, the way the corner does", () => {
+		expect(
+			headCount({ ...baseStatus(), word: SYNCING, checked: partWay(412, 2505, 338) } as never),
+		).toBe("412 of 2,843");
+	});
+
+	it("goes back to the size once the pass is through", () => {
+		const through = { notes: { done: 2505, total: 2505 }, attachments: { done: 338, total: 338 } };
+		expect(headCount({ ...baseStatus(), notes: 2505, checked: through } as never)).toBe(
+			"2,505 notes",
+		);
+		// And before it has found anything, which is the moment after a link
+		// comes up: no number is better than 0 of 0.
+		expect(headCount({ ...baseStatus(), notes: 2505 } as never)).toBe("2,505 notes");
+	});
+
+	it("keeps the two kinds apart behind the fold, naming the half under way", () => {
+		expect(
+			statusFacts({ ...baseStatus(), word: SYNCING, notes: 2505, checked: partWay(412, 2505, 338) } as never),
+		).toEqual([
+			["Checked", "412 of 2,505 notes"],
+			["Total", "2,505 notes"],
+		]);
+		// The notes are through and the attachments are being hashed.
+		expect(
+			statusFacts({
+				...baseStatus(),
+				word: SYNCING,
+				checked: { notes: { done: 2505, total: 2505 }, attachments: { done: 12, total: 338 } },
+			} as never),
+		).toEqual([["Checked", "all notes, 12 of 338 attachments"]]);
+	});
+
+	it("sits above the directions, because it is the pass they are part of", () => {
+		expect(
+			statusFacts({ ...baseStatus(), word: INITIALIZING, down: 2093, checked: partWay(412, 2505) } as never),
+		).toEqual([
+			["Checked", "412 of 2,505 notes"],
+			["Downloading", "2,093 notes"],
+		]);
+	});
+
+	it("opens the fold for it, so a person can see what the number is", () => {
+		expect(hasFold({ ...baseStatus(), word: SYNCING, checked: partWay(1, 3) } as never)).toBe(true);
 	});
 });
 

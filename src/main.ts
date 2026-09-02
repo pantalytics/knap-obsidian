@@ -76,7 +76,7 @@ import {
 } from "./debug";
 import { getPatcher, Patcher } from "./Patcher";
 import { registerKnapBeta } from "./knap/ObsidianKnap";
-import type { KnapSync } from "./knap/KnapSync";
+import { checkedCounts, checking, type KnapSync } from "./knap/KnapSync";
 import type { KnapLink } from "./knap/KnapSync";
 import { LiveTokenStore } from "./LiveTokenStore";
 import NetworkStatus from "./NetworkStatus";
@@ -143,6 +143,8 @@ import {
 	UPLOADING,
 	UP_TO_DATE,
 	isMoving,
+	syncCounts,
+	syncProgress,
 	type SyncWord,
 } from "./syncStatus";
 import {
@@ -1602,13 +1604,27 @@ export default class Live extends Plugin {
 			// The corner adds the two kinds of file together, because it has
 			// room for two numbers and not four; the settings screen behind
 			// it keeps notes and attachments apart (ADR-0088).
+			//
+			// The count and the bar are the pass at start while it is going:
+			// a restart over a vault that is already here compares every
+			// note and moves none, so the two directions are zero for
+			// minutes and the corner had nothing to draw. `statusBarPaint`
+			// reads these only when the directions are empty, so a first
+			// sync keeps its arrows.
+			const checked = checkedCounts(status);
+			const passing = isMoving(status.word) && checking(status);
 			return {
 				word: status.word,
 				dot: status.dot,
-				done: status.notes,
-				total: 0,
-				counts: status.problems > 0 ? String(status.problems) : "",
-				progress: undefined,
+				done: checked.done,
+				total: checked.total,
+				counts:
+					status.problems > 0
+						? String(status.problems)
+						: passing
+							? syncCounts(checked.done, checked.total)
+							: "",
+				progress: passing ? syncProgress(checked.done, checked.total) : undefined,
 				up: status.up + status.files.up,
 				down: status.down + status.files.down,
 			};

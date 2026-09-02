@@ -161,3 +161,40 @@ describe("the two gauges", () => {
 		expect(binding.backlog).toEqual({ up: 0, down: 0 });
 	});
 });
+
+describe("the pass at start", () => {
+	it("counts every compare, which is the work the two gauges cannot see", async () => {
+		// A restart over a vault that is already here: every note on both
+		// sides, so nothing goes up and nothing comes down, and both gauges
+		// sit at zero for as long as the compares take. The pass is what
+		// moves through that.
+		const files = new MemoryFiles();
+		const seed: Record<string, string> = {};
+		for (let i = 0; i < 12; i++) {
+			files.map.set(`note-${i}.md`, `body ${i}`);
+			seed[`note-${i}.md`] = `body ${i}`;
+		}
+		const binding = new VaultBinding(files, docs(seed));
+		expect(binding.checked).toEqual({ done: 0, total: 0 });
+		const seen: Array<{ done: number; total: number; up: number; down: number }> = [];
+		files.onRead = () => seen.push({ ...binding.checked, ...binding.backlog });
+
+		await binding.start();
+		await settle(binding);
+
+		// The total is known from the first read, before any of it is done.
+		expect(seen[0].total).toBe(12);
+		expect(seen.every((r) => r.total === 12 && r.done < 12)).toBe(true);
+		expect(seen.every((r) => r.up === 0 && r.down === 0)).toBe(true);
+		expect(binding.checked).toEqual({ done: 12, total: 12 });
+	});
+
+	it("counts uploads and downloads in the same pass", async () => {
+		const files = new MemoryFiles();
+		files.map.set("mine.md", "only here");
+		const binding = new VaultBinding(files, docs({ "theirs.md": "only there" }));
+		await binding.start();
+		await settle(binding);
+		expect(binding.checked).toEqual({ done: 2, total: 2 });
+	});
+});

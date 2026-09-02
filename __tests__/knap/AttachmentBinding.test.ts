@@ -423,3 +423,29 @@ describe("readable", () => {
 		expect(readable(10 * 1024 * 1024 * 1024)).toBe("10.0 GB");
 	});
 });
+
+describe("the pass at start", () => {
+	it("counts every recorded attachment it compares, not only the ones that move", async () => {
+		const hub = new Hub();
+		const transport = new MemoryTransport();
+		const alice = await device(hub, transport);
+		await alice.files.writeBinary("a.png", bytes("A"));
+		await alice.files.writeBinary("b.png", bytes("B"));
+		await settle(alice);
+
+		// A second device that already holds both: nothing to fetch, two to
+		// hash and compare, and the pass says two of two once it is through.
+		const files = new MemoryFiles();
+		await files.writeBinary("a.png", bytes("A"));
+		await files.writeBinary("b.png", bytes("B"));
+		const bob = new AttachmentBinding(files, hub.join(), transport);
+		expect(bob.checked).toEqual({ done: 0, total: 0 });
+		await bob.start();
+		await bob.flush();
+
+		expect(bob.checked).toEqual({ done: 2, total: 2 });
+		expect(bob.backlog).toEqual({ up: 0, down: 0 });
+		alice.binding.stop();
+		bob.stop();
+	});
+});
