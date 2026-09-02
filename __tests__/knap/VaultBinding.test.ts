@@ -10,6 +10,7 @@
 
 import * as Y from "yjs";
 
+import { generateHash } from "../../src/hashing";
 import { TreeDoc } from "../../src/knap/TreeDoc";
 import {
 	FileEvent,
@@ -96,6 +97,25 @@ class Hub {
 	 */
 	treeDelay = 0;
 
+	/** Which documents any device borrowed, by id. */
+	borrowed = new Set<string>();
+
+	/**
+	 * What the server's markdown mirror does after every flush: a sha256 per
+	 * note, in the tree's third map, keyed by document id.
+	 */
+	async mirror(): Promise<void> {
+		const tree = this.byId.get("tree")?.[0];
+		if (!tree) return;
+		const hashes = tree.getMap<string>("hashes");
+		for (const docId of tree.getMap<string>("files").values()) {
+			const doc = this.byId.get(docId)?.[0];
+			if (!doc) continue;
+			const text = doc.getText("content").toString();
+			hashes.set(docId, await generateHash(new TextEncoder().encode(text)));
+		}
+	}
+
 	/** The tree as the server holds it. */
 	treeOf(): Y.Map<string> {
 		const peers = this.byId.get("tree") ?? [];
@@ -170,6 +190,7 @@ class Hub {
 			tree: () => (tree ??= new TreeDoc(open("tree").doc)),
 			treeSynced: () => open("tree").synced,
 			withNote: async <T,>(docId: string, use: (note: { doc: Y.Doc }) => Promise<T>) => {
+				this.borrowed.add(docId);
 				const entry = open(docId);
 				await entry.synced;
 				return use({ doc: entry.doc });
@@ -410,6 +431,70 @@ describe("VaultBinding", () => {
 
 		expect(a.files.map.get("nieuw.md")).toBe("van B");
 		expect(a.files.map.get("eigen.md")).toBe("x");
+	});
+
+	it("a restart opens no note whose file is what the server last mirrored", async () => {
+		const hub = new Hub();
+		const seen = new MemorySeen();
+		const a = await device(hub, { "een.md": "1", "twee.md": "2" }, seen);
+		await settle(a.binding);
+		await hub.mirror();
+
+		hub.borrowed.clear();
+		const again = await restart(hub, a.files, seen);
+		await settle(again);
+		expect(hub.borrowed.size).toBe(0);
+		// The pass still counts them: the screen says the check is done.
+		expect(again.checked).toEqual({ done: 2, total: 2 });
+	});
+
+	it("a restart opens the one note that changed in the cloud while the device was away", async () => {
+		const hub = new Hub();
+		const seen = new MemorySeen();
+		const a = await device(hub, { "stil.md": "blijft", "druk.md": "oud" }, seen);
+		const b = await device(hub);
+		await settle(a.binding, b.binding);
+		await hub.mirror();
+		a.binding.stop();
+
+		await b.files.write("druk.md", "nieuw");
+		await settle(b.binding);
+		await hub.mirror();
+
+		hub.borrowed.clear();
+		const again = await restart(hub, a.files, seen);
+		await settle(again);
+		expect(hub.borrowed.has(hub.treeOf().get("stil.md") as string)).toBe(false);
+		expect(hub.borrowed.has(hub.treeOf().get("druk.md") as string)).toBe(true);
+		expect(a.files.map.get("druk.md")).toBe("nieuw");
+	});
+
+	it("a restart opens the one note edited here while the plugin was not running", async () => {
+		const hub = new Hub();
+		const seen = new MemorySeen();
+		const a = await device(hub, { "stil.md": "blijft", "druk.md": "oud" }, seen);
+		await settle(a.binding);
+		await hub.mirror();
+		a.binding.stop();
+		a.files.map.set("druk.md", "hier veranderd"); // no event: the plugin was off
+
+		hub.borrowed.clear();
+		const again = await restart(hub, a.files, seen);
+		await settle(again);
+		expect(hub.borrowed.has(hub.treeOf().get("stil.md") as string)).toBe(false);
+		expect(hub.borrowed.has(hub.treeOf().get("druk.md") as string)).toBe(true);
+	});
+
+	it("a note the server has not hashed yet is opened, as before", async () => {
+		const hub = new Hub();
+		const seen = new MemorySeen();
+		const a = await device(hub, { "een.md": "1" }, seen);
+		await settle(a.binding);
+
+		hub.borrowed.clear();
+		const again = await restart(hub, a.files, seen);
+		await settle(again);
+		expect(hub.borrowed.has(hub.treeOf().get("een.md") as string)).toBe(true);
 	});
 
 	it("a vault whose files have not loaded deletes nothing", async () => {
