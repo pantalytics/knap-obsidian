@@ -145,4 +145,15 @@ describe("TreeDoc", () => {
 			/never leaves/,
 		);
 	});
+
+	it("reads the hash the server wrote for a note, and nothing for one it has not", () => {
+		const server = new Y.Doc();
+		const device = new TreeDoc(new Y.Doc());
+		const id = device.ensureNote("Notes/plan.md");
+		expect(device.hashFor(id)).toBeUndefined();
+
+		server.getMap<string>("hashes").set(id, "abc123");
+		Y.applyUpdate(device.doc, Y.encodeStateAsUpdate(server));
+		expect(device.hashFor(id)).toBe("abc123");
+	});
 });

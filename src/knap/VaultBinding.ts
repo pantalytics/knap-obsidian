@@ -38,6 +38,7 @@
 import * as Y from "yjs";
 
 import { buildConflictCopyPath } from "../conflictCopyPath";
+import { generateHash } from "../hashing";
 import { TREE_SYNC_FAILED, TREE_SYNC_TIMEOUT_MS, withTimeout } from "./deadline";
 import { TreeDoc, isNote, normalize } from "./TreeDoc";
 
@@ -467,11 +468,33 @@ export class VaultBinding {
 		});
 		await this.inWaves(bind, async ([path, docId]) => {
 			try {
+				if (await this.sameAsCloud(path, docId)) return;
 				await this.bindNote(path, docId);
 			} finally {
 				if (down.has(path)) this.outstanding.down -= 1;
 			}
 		});
+	}
+
+	/**
+	 * Whether the file on disk is the note as the server last mirrored it.
+	 *
+	 * The tree carries a hash per note, written by the server's mirror, and a
+	 * file that hashes to the same thing needs no socket: nothing to fetch,
+	 * nothing to push, and nothing to compare. This is what turns a restart
+	 * over a vault that is already here from minutes of opening every note
+	 * into seconds of reading every file. Measured before it: 2,505 notes,
+	 * eight sockets at a time, about five minutes with nothing moving.
+	 *
+	 * Only ever answers yes on a match. A note the server has not hashed yet
+	 * takes the long road, and so does one whose file cannot be read.
+	 */
+	private async sameAsCloud(path: string, docId: string): Promise<boolean> {
+		const cloud = this.docs.tree().hashFor(docId);
+		if (cloud === undefined) return false;
+		const text = await this.files.read(path);
+		if (text === null) return false;
+		return (await generateHash(new TextEncoder().encode(text))) === cloud;
 	}
 
 	/**

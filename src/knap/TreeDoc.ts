@@ -18,7 +18,13 @@
  * map with a kind field would put a device's attachment bookkeeping in a
  * position to name a note's path and delete another device's note.
  *
- * This module wraps both maps for the plugin. It never talks to the network:
+ * `hashes` is the third map, and the server's: document id to the sha256 of
+ * the note's text, put there by the markdown mirror every time it writes the
+ * note. This plugin only reads it, at start, to tell a note it already has
+ * from one that changed while it was away without opening a socket per note.
+ * Keyed by document id, so a move costs it nothing.
+ *
+ * This module wraps all three maps for the plugin. It never talks to the network:
  * the caller binds the underlying Y.Doc to a socket, and this class stays
  * honest whether the doc is live, offline, or in a test.
  */
@@ -28,6 +34,7 @@ import * as Y from "yjs";
 export const TREE_DOC_ID = "tree";
 const FILES = "files";
 const ATTACHMENTS = "attachments";
+const HASHES = "hashes";
 
 export interface TreeChange {
 	added: Map<string, string>;
@@ -50,10 +57,21 @@ export interface AttachmentChange {
 export class TreeDoc {
 	private readonly files: Y.Map<string>;
 	private readonly attachmentMap: Y.Map<AttachmentEntry>;
+	private readonly hashes: Y.Map<string>;
 
 	constructor(readonly doc: Y.Doc) {
 		this.files = doc.getMap<string>(FILES);
 		this.attachmentMap = doc.getMap<AttachmentEntry>(ATTACHMENTS);
+		this.hashes = doc.getMap<string>(HASHES);
+	}
+
+	/**
+	 * The sha256 of a note's text as the server last mirrored it, or
+	 * undefined for a note the server has not written yet. Compare it with
+	 * the file on disk: equal means nothing to fetch and nothing to push.
+	 */
+	hashFor(docId: string): string | undefined {
+		return this.hashes.get(docId);
 	}
 
 	/** path -> document id, a plain snapshot. */
