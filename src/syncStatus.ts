@@ -26,12 +26,22 @@
  * notes arriving. Syncing said neither, and a person watching a first sync for
  * an hour wants to know which of the two it is.
  *
+ * **Initializing came on 2026-09-02** (ADR-0090), and it passes the older,
+ * stricter test rather than the one ADR-0089 loosened: the reader's next move
+ * really is different. Under Syncing a person may close the laptop, and the
+ * sentence under it says so. Under Initializing they may not yet, because this
+ * is the first pass over a vault that has just been linked and the whole of it
+ * is still on its way. One word covers both directions here on purpose: a
+ * first sync is usually both at once, and which way it is going is the least
+ * interesting thing about it.
+ *
  * The header used to say this list mirrored `status.py` in the admin
  * repository. That file went with the 2026-08-18 rebuild and the panel now
  * words a vault's standing for itself in `panel.py`. There is nothing on the
  * other side to keep in step with today, so this file is the list.
  */
 
+export const INITIALIZING = "Initializing";
 export const SYNCING = "Syncing";
 export const UPLOADING = "Uploading";
 export const DOWNLOADING = "Downloading";
@@ -43,6 +53,7 @@ export const PROBLEM = "Problem";
 
 /** In the order a vault moves through them, trouble last. */
 export const SYNC_WORDS = [
+	INITIALIZING,
 	SYNCING,
 	UPLOADING,
 	DOWNLOADING,
@@ -65,6 +76,7 @@ export type SyncWord = (typeof SYNC_WORDS)[number];
 export type SyncDot = "ok" | "working" | "wait" | "error";
 
 const DOTS: Record<SyncWord, SyncDot> = {
+	[INITIALIZING]: "working",
 	[SYNCING]: "working",
 	[UPLOADING]: "working",
 	[DOWNLOADING]: "working",
@@ -109,6 +121,14 @@ export interface VaultState {
 	/** Pieces of work that failed and stayed failed. */
 	stuck?: number;
 	/**
+	 * This vault has been linked and has not finished its first pass yet.
+	 *
+	 * It picks Initializing over the three ordinary moving words. Not a
+	 * separate branch in the order below, because it is the same fact as
+	 * `syncing` with one thing added: which sync this is.
+	 */
+	initial?: boolean;
+	/**
 	 * The server refused this device the vault: taken out of it, or the
 	 * vault is gone.
 	 *
@@ -140,7 +160,11 @@ export function syncWord(state: VaultState): SyncWord {
 	if (state.lost) return PROBLEM;
 	if (state.connected === false) return OFFLINE;
 	if ((state.stuck ?? 0) > 0) return PROBLEM;
-	if (state.syncing) return movingWord(state.up, state.down);
+	if (state.syncing) {
+		// The first pass beats the direction, because what somebody has to do
+		// about it is different: leave this one running.
+		return state.initial ? INITIALIZING : movingWord(state.up, state.down);
+	}
 	return UP_TO_DATE;
 }
 
@@ -161,7 +185,9 @@ export function movingWord(up = 0, down = 0): SyncWord {
 
 /** Whether this word is one of the three that mean notes are on the move. */
 export function isMoving(word: SyncWord): boolean {
-	return word === SYNCING || word === UPLOADING || word === DOWNLOADING;
+	return (
+		word === INITIALIZING || word === SYNCING || word === UPLOADING || word === DOWNLOADING
+	);
 }
 
 /**
@@ -203,6 +229,11 @@ function group(n: number): string {
  */
 export function syncInstruction(word: SyncWord): string {
 	switch (word) {
+		case INITIALIZING:
+			return (
+				"The first sync brings the whole vault over, and it takes a while. " +
+				"Leave Obsidian open until it finishes."
+			);
 		case SIGNED_OUT:
 			return "Your notes are all still on this device. Sign in again to carry on.";
 		case PAUSED:

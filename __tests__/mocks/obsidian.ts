@@ -123,3 +123,20 @@ export class Notice {
 		noticeMock(message, timeout);
 	}
 }
+
+/**
+ * Enough of a Modal for a module that extends one to load. Nothing here
+ * draws: the modal in `src/knap/LinkProgressModal.ts` keeps its rules in
+ * `linkSteps.ts`, which is pure and tested on its own.
+ */
+export class Modal {
+	app: unknown;
+	contentEl: unknown = {};
+	constructor(app: unknown) {
+		this.app = app;
+	}
+	open(): void {}
+	close(): void {}
+}
+
+export const setIcon = jest.fn();

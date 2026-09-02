@@ -712,3 +712,109 @@
 	color: var(--text-faint);
 	font-size: var(--font-ui-smaller);
 }
+
+/* The link, while it happens. Eight rows, each going from waiting to running
+   to a number, and the two near the end are what the wait after it is going
+   to cost. It closes itself when the last one lands, because what follows is
+   the first sync and the bar behind this has a word for that. */
+.knap-link h2 {
+	margin-top: 0;
+}
+
+.knap-link-steps {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+}
+
+.knap-link-step {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	min-width: 0;
+}
+
+/* A step that has not happened is quiet rather than absent: the list is also
+   how long this is, and eight rows say that before the first one finishes. */
+.knap-link-waiting {
+	color: var(--text-faint);
+}
+
+.knap-link-doing {
+	color: var(--text-normal);
+	font-weight: var(--font-semibold);
+}
+
+.knap-link-done {
+	color: var(--text-muted);
+}
+
+.knap-link-failed {
+	color: var(--text-error);
+}
+
+/* Fixed, so the labels line up whether or not a row has a mark yet. */
+.knap-link-mark {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--icon-s);
+	height: var(--icon-s);
+	flex-shrink: 0;
+}
+
+.knap-link-mark svg {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+.knap-link-done .knap-link-mark {
+	color: var(--color-green);
+}
+
+.knap-link-doing .knap-link-mark {
+	color: var(--interactive-accent);
+	animation: knap-link-spin 1s linear infinite;
+}
+
+@keyframes knap-link-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* Somebody who has asked their system for less movement gets none. */
+@media (prefers-reduced-motion: reduce) {
+	.knap-link-doing .knap-link-mark {
+		animation: none;
+	}
+}
+
+.knap-link-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Pushed to the far end, the way the facts under the status bar are, so the
+   numbers line up in a column at any width. */
+.knap-link-value {
+	margin-left: auto;
+	flex-shrink: 0;
+	color: var(--text-normal);
+	font-variant-numeric: tabular-nums;
+}
+
+.knap-link-note {
+	margin-top: var(--size-4-3);
+}
+
+.knap-link-problem {
+	color: var(--text-error);
+}
+
+.knap-link-say {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	margin-top: var(--size-2-2);
+}

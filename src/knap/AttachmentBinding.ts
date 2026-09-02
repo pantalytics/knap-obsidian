@@ -29,6 +29,7 @@
 
 import { buildConflictCopyPath } from "../conflictCopyPath";
 import { generateHash } from "../hashing";
+import { TREE_SYNC_FAILED, TREE_SYNC_TIMEOUT_MS, withTimeout } from "./deadline";
 import type { AttachmentEntry, TreeDoc } from "./TreeDoc";
 import { isHidden, isNote, normalize } from "./TreeDoc";
 import type { Backlog, FileEvent, FileStore } from "./VaultBinding";
@@ -59,9 +60,6 @@ export interface AttachmentDocs {
  * ADR-0071 governs what leaves the device, and nothing here does.
  */
 export type Refusal = (path: string, reason: string) => void;
-
-/** How long to wait for the tree's first sync before giving up on a link. */
-const TREE_SYNC_TIMEOUT_MS = 30_000;
 
 /**
  * What a deployment accepts, when it could not be asked. Deliberately the
@@ -179,7 +177,7 @@ export class AttachmentBinding {
 		await withTimeout(
 			this.docs.treeSynced(),
 			TREE_SYNC_TIMEOUT_MS,
-			"Could not reach the server. Nothing was changed; try again.",
+			TREE_SYNC_FAILED,
 		);
 		const tree = this.docs.tree();
 		const recorded = tree.attachments();
@@ -352,23 +350,6 @@ export class AttachmentBinding {
 			this.refused(path, messageOf(error));
 		}
 	}
-}
-
-/** Reject with `message` if `promise` has not settled in `ms`. */
-function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
-	return new Promise<T>((resolve, reject) => {
-		const timer = window.setTimeout(() => reject(new Error(message)), ms);
-		promise.then(
-			(value) => {
-				window.clearTimeout(timer);
-				resolve(value);
-			},
-			(error: unknown) => {
-				window.clearTimeout(timer);
-				reject(error instanceof Error ? error : new Error(String(error)));
-			},
-		);
-	});
 }
 
 function messageOf(error: unknown): string {

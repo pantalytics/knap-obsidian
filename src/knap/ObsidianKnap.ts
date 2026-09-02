@@ -23,6 +23,7 @@ import type { KnapLink } from "./KnapSync";
 import { ObsidianFileStore } from "./ObsidianFileStore";
 import { ObsidianSeenTree } from "./ObsidianSeenTree";
 import { KnapSettingsTab, signOutNotice } from "./KnapSettingsTab";
+import { LinkProgressModal } from "./LinkProgressModal";
 import { SIGNIN_ACTION } from "./SignInFlow";
 import { obsidianFetch } from "./obsidianFetch";
 
@@ -196,15 +197,47 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 	 * or another, including by closing it, so the screen redraws either way.
 	 */
 	const pickAndLink = () =>
-		new Promise<void>((resolve, reject) => {
+		new Promise<void>((resolve) => {
 			new CloudVaultPickModal(
 				host,
 				() => sync.listVaults(),
 				(vault) => {
-					sync.link(vault).then(() => {
-						new Notice(`Linked. This vault now syncs with ${vault.name}.`);
-						resolve();
-					}, reject);
+					// The picker hands over to the progress modal, which is
+					// what the person watches from here. It reports each step,
+					// closes itself when the link is made, and stays up with
+					// the failing step marked when one is not.
+					const progress = new LinkProgressModal(host.app, vault.name);
+					progress.open();
+					let settled = false;
+					sync
+						.link(vault, (step, facts) => {
+							progress.step(step, facts);
+							// The link exists at this step and the first sync
+							// runs on behind it, so this is where the screen
+							// underneath is redrawn. Waiting for the whole
+							// fill would be a settings screen that still says
+							// Not linked over a vault that is filling up.
+							if (step === "linked" && !settled) {
+								settled = true;
+								new Notice(
+									`Linked. This vault now syncs with ${vault.name}. ` +
+										"Leave Obsidian open while it fills up.",
+								);
+								resolve();
+							}
+						})
+						.catch((error: Error) => {
+							// The modal is where this is read, so it is not
+							// also thrown at whoever opened the picker: the
+							// caller's only answer to a rejection is a notice
+							// in the corner saying what the screen in front of
+							// it already says. Resolving redraws the settings
+							// screen, which still says Not linked, correctly.
+							progress.fail(error.message);
+							if (settled) return;
+							settled = true;
+							resolve();
+						});
 				},
 				() => {
 					window.open(new URL("/vaults", KNAP_PANEL_URL).toString());

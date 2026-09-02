@@ -21,6 +21,14 @@ jest.mock("obsidian", () => ({
 	// though nothing here builds one.
 	PluginSettingTab: class {},
 	SuggestModal: class {},
+	// The picker hands over to the progress modal, so that module loads with
+	// this one and needs a base class to extend.
+	Modal: class {
+		contentEl = {};
+		open() {}
+		close() {}
+	},
+	setIcon: () => undefined,
 	Setting: class {},
 }));
 
