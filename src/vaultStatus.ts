@@ -15,8 +15,8 @@
  */
 
 import {
-	SYNCING,
 	UP_TO_DATE,
+	isMoving,
 	syncCounts,
 	syncDot,
 	syncProgress,
@@ -193,7 +193,7 @@ export function vaultReading(
 ): VaultReading {
 	const word = vaultSyncWord(signedIn, folders, held);
 	const { done, total } = vaultCounts(folders);
-	const moving = word === SYNCING && total > 0;
+	const moving = isMoving(word) && total > 0;
 	return {
 		word,
 		dot: syncDot(word),
@@ -237,7 +237,7 @@ export function statusBarPaint(reading: VaultReading, burst: Burst): StatusBarPa
 	// Held back: the vault says it is syncing and the corner has not been told
 	// to say so yet, which is where an ordinary save lives and dies. Only this
 	// one word waits; the three a person has to act on go straight past.
-	if (reading.word === SYNCING && !burst.moving) {
+	if (isMoving(reading.word) && !burst.moving) {
 		return {
 			dot: "ok",
 			count: "",
