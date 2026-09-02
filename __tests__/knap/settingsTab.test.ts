@@ -18,6 +18,9 @@ import { OFFLINE, PROBLEM, SYNCING, UP_TO_DATE } from "../../src/syncStatus";
 
 type Row = { name: string; desc: string; buttons: string[]; press?: () => void };
 
+/** What the plugin said in the corner. `var` so the mock factory can hoist it. */
+var notices: string[] = [];
+
 /** Whatever the screen built by hand, flattened to what it says and does. */
 interface FakeEl {
 	cls: string;
@@ -60,6 +63,9 @@ function el(cls = "", text = ""): FakeEl {
 		},
 		getAttribute: (name) => node.attrs[name] ?? null,
 		addEventListener: (_name, run) => node.listeners.push(run),
+		empty: () => {
+			node.children.splice(0, node.children.length);
+		},
 		insertBefore: (child, before) => {
 			const from = node.children.indexOf(child);
 			if (from >= 0) node.children.splice(from, 1);
@@ -119,7 +125,17 @@ jest.mock("obsidian", () => {
 			public plugin: unknown,
 		) {}
 	}
-	return { Setting, PluginSettingTab, Notice: class {}, App: class {}, setIcon: () => {} };
+	return {
+		Setting,
+		PluginSettingTab,
+		Notice: class {
+			constructor(message: string) {
+				notices.push(message);
+			}
+		},
+		App: class {},
+		setIcon: () => {},
+	};
 });
 
 interface FakeState {
@@ -146,8 +162,25 @@ function fakeSync(state: FakeState) {
 	let signedIn = state.signedIn;
 	let linked = state.linked;
 	const retried: string[] = [];
+	let settle: (() => void) | null = null;
+	let breaks: ((error: Error) => void) | null = null;
 	return {
 		retried,
+		/** Move the vault on, the way a socket does behind the screen's back. */
+		becomes(status: Partial<ReturnType<typeof baseStatus>>) {
+			state.status = { ...(state.status ?? {}), ...status };
+		},
+		/** Let a retry that is being held finish. */
+		finishRetry() {
+			settle?.();
+			settle = null;
+		},
+		/** End the held retry the way an unreachable server ends one. */
+		failRetry(message: string) {
+			breaks?.(new Error(message));
+			settle = null;
+			breaks = null;
+		},
 		get signedIn() {
 			return signedIn;
 		},
@@ -161,8 +194,14 @@ function fakeSync(state: FakeState) {
 			vaultName: linked?.name ?? "",
 			...(state.status ?? {}),
 		}),
-		retry: async () => {
+		retry: () => {
 			retried.push("retry");
+			// Held open until the test says so, because the half-minute a real
+			// retry can take is the whole reason the button says anything.
+			return new Promise<void>((resolve, reject) => {
+				settle = resolve;
+				breaks = reject;
+			});
 		},
 		unlink: async () => {
 			linked = null;
@@ -183,7 +222,7 @@ function drawWith(sync: ReturnType<typeof fakeSync>) {
 			rows.splice(0, rows.length);
 		},
 	});
-	const plugin = { app: {} };
+	const plugin = { app: {}, registerInterval: (id: number) => id };
 	const actions = { signIn: async () => {}, pickAndLink: async () => {} };
 	const tab = new KnapSettingsTab(
 		plugin as never,
@@ -193,8 +232,17 @@ function drawWith(sync: ReturnType<typeof fakeSync>) {
 	);
 	tab.containerEl = container as never;
 	tab.display();
-	return { rows, container: container as unknown as FakeEl };
+	open.push(tab);
+	return { rows, container: container as unknown as FakeEl, tab };
 }
+
+/** Every screen a test opened, so its tick stops with the test. */
+const open: KnapSettingsTab[] = [];
+
+afterEach(() => {
+	while (open.length) open.pop()?.hide();
+	notices.length = 0;
+});
 
 function drawFor(state: FakeState) {
 	return drawWith(fakeSync(state));
@@ -371,6 +419,89 @@ describe("the bar", () => {
 		find(container, "knap-status-retry")?.listeners.forEach((run) => run());
 		await Promise.resolve();
 		expect(sync.retried).toEqual(["retry"]);
+	});
+
+	// A retry waits as long as the tree takes, which is up to half a minute.
+	// A button that says nothing for that long is a button somebody presses
+	// again, and then reports as one that cannot be clicked at all.
+	it("says it is going while it goes, and refuses to go twice", async () => {
+		const sync = fakeSync({
+			signedIn: true,
+			linked: { id: "v1", name: "Work notes" },
+			status: { word: OFFLINE, dot: "wait", vaultName: "Work notes" },
+		});
+		const { container } = drawWith(sync);
+		find(container, "knap-status-retry")?.listeners.forEach((run) => run());
+		await Promise.resolve();
+
+		const going = find(container, "knap-status-retry");
+		expect(going?.text).toBe("Trying...");
+		expect(going?.disabled).toBe(true);
+
+		going?.listeners.forEach((run) => run());
+		expect(sync.retried).toEqual(["retry"]);
+
+		sync.finishRetry();
+		await Promise.resolve();
+		expect(find(container, "knap-status-retry")?.text).toBe("Try again");
+	});
+
+	it("says out loud what went wrong, instead of swallowing it", async () => {
+		const sync = fakeSync({
+			signedIn: true,
+			linked: { id: "v1", name: "Work notes" },
+			status: { word: OFFLINE, dot: "wait", vaultName: "Work notes" },
+		});
+		const { container } = drawWith(sync);
+		find(container, "knap-status-retry")?.listeners.forEach((run) => run());
+		await Promise.resolve();
+
+		sync.failRetry("Could not reach the server. Nothing was changed; try again.");
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(notices).toEqual(["Could not reach the server. Nothing was changed; try again."]);
+		expect(find(container, "knap-status-retry")?.text).toBe("Try again");
+	});
+});
+
+/**
+ * The bar is a reading, not an event. A screen drawn once at open told
+ * somebody Offline over a link that connected a second later, and went on
+ * telling them until they closed Settings and came back.
+ */
+describe("the bar, a second later", () => {
+	it("reads the vault again rather than staying as it was drawn", () => {
+		const sync = fakeSync({
+			signedIn: true,
+			linked: { id: "v1", name: "Work notes" },
+			status: { word: OFFLINE, dot: "wait", vaultName: "Work notes" },
+		});
+		const { container, tab } = drawWith(sync);
+		expect(find(container, "knap-status-word")?.text).toBe(OFFLINE);
+
+		sync.becomes({ word: UP_TO_DATE, dot: "ok", notes: 12 });
+		tab.paint();
+
+		expect(find(container, "knap-status-word")?.text).toBe(UP_TO_DATE);
+		expect(find(container, "knap-status-count")?.text).toBe("12 notes");
+	});
+
+	it("leaves the fold as the person left it", () => {
+		const sync = fakeSync({
+			signedIn: true,
+			linked: { id: "v1", name: "Work notes" },
+			status: { word: OFFLINE, dot: "wait", vaultName: "Work notes" },
+		});
+		const { container, tab } = drawWith(sync);
+		find(container, "knap-status-head")?.listeners.forEach((run) => run());
+		expect(find(container, "knap-status-body")?.hidden).toBe(false);
+
+		sync.becomes({ word: PROBLEM, dot: "error", problems: 2 });
+		tab.paint();
+
+		expect(find(container, "knap-status-body")?.hidden).toBe(false);
+		expect(find(container, "knap-status-head")?.getAttribute("aria-expanded")).toBe("true");
 	});
 });
 

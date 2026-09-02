@@ -137,8 +137,11 @@ import {
 	PAUSED,
 	PROBLEM,
 	SIGNED_OUT,
+	DOWNLOADING,
 	SYNCING,
+	UPLOADING,
 	UP_TO_DATE,
+	isMoving,
 	type SyncWord,
 } from "./syncStatus";
 import {
@@ -1080,6 +1083,11 @@ export default class Live extends Plugin {
 			const reading = this.readVaultStatus();
 			const lines: Record<SyncWord, string> = {
 				[SYNCING]: "Your vault is syncing.",
+				// One sentence each, because the after-update notice is the
+				// one place the word is read as a whole sentence rather than
+				// as a label beside a number.
+				[UPLOADING]: "Your vault is uploading.",
+				[DOWNLOADING]: "Your vault is downloading.",
 				[UP_TO_DATE]: "Your vault is up to date.",
 				[PAUSED]: "Sync is paused on this device.",
 				[OFFLINE]: "Knap is out of reach. Your notes are safe here.",
@@ -1645,7 +1653,7 @@ export default class Live extends Plugin {
 		// once; only Syncing waits (ADR-0088).
 		this.corner = settle(
 			this.corner,
-			reading.word === SYNCING,
+			isMoving(reading.word),
 			reading.up + reading.down,
 			Date.now(),
 		);

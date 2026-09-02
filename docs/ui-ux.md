@@ -10,7 +10,8 @@ The decisions live as ADRs in the admin repository, `knap-mcp-admin/docs/adr/`:
 **0030** sign-in, **0031** one control surface, **0033** one server, **0034**
 permissions, **0038** the words, **0043** a vault is one unit, **0045** the
 plugin is Knap, **0066** one local vault to one cloud vault, **0071** what a
-failure may say, **0088** what the corner counts. Where this page and an ADR
+failure may say, **0088** what the corner counts, **0089** which way it says
+they are going. Where this page and an ADR
 disagree, the ADR wins.
 
 ## The rule
@@ -155,7 +156,7 @@ other than a release does, but that is the frame it is read in.
 
 ## The words
 
-Six, from `src/syncStatus.ts`, and no screen invents a seventh. That file is the
+Eight, from `src/syncStatus.ts`, and no screen invents a ninth. That file is the
 list. It used to mirror a `status.py` in the admin repository, and that file went
 with the rebuild, so there is nothing on the other side to keep in step with
 today.
@@ -163,6 +164,8 @@ today.
 | Word | Dot | The instruction under it |
 |---|---|---|
 | **Syncing** | accent | Leave Obsidian open until it finishes. It picks up where it left off if you close it. |
+| **Uploading** | accent | the same sentence |
+| **Downloading** | accent | the same sentence |
 | **Up to date** | green | none |
 | **Paused** | yellow | Nothing is moving while this device is paused. |
 | **Offline** | yellow | Your changes are saved here and go up when the connection is back. |
@@ -182,8 +185,15 @@ doing anything. Red is act: Signed out and Problem both need a person.
 Offline and Problem were added on 2026-09-01, because four words could not say
 that something was wrong and Signed out held the only error dot, so a refused
 upload had to present itself as a missing account. **The rule for adding a
-seventh is that a word earns its place when the reader's next move is
-different.**
+seventh was that a word earns its place when the reader's next move is
+different**, and Uploading and Downloading broke it on 2026-09-01 (ADR-0089,
+which supersedes ADR-0088 on this one point). They mean the same move as
+Syncing, which is wait. What they add is whose work is in flight: your own
+notes going up, or somebody else's arriving. Somebody watching a first sync for
+an hour wants to know which of the two it is, and the three moving words are
+chosen off the same two gauges the numbers come from. A vault moving both ways
+at once is Syncing, and so is one whose queue cannot say which way it is going,
+because a word that guesses is worse than the general one.
 
 Counts are one phrasing: *412 of 1,202* once something has counted the far side,
 *412 notes so far* while the first pass is still discovering how much there is.
@@ -197,7 +207,7 @@ word itself is in the tooltip rather than on screen, because the corner is read
 out of the side of the eye during a first sync and what is wanted there is how
 far along, not a sentence.
 
-**Two numbers, not one, and never a third.** Three things move notes: notes
+**The word carries the direction, and so do two numbers.** Three things move notes: notes
 going up to the cloud vault, notes coming down to this device, and edits to a
 note both sides already have. The first two are countable and answer different
 questions, so they are counted apart, `↑ 412 ↓ 2,567`, either alone when the
