@@ -8,6 +8,7 @@
  */
 
 import {
+	BOTH_WAYS,
 	LINK_STEPS,
 	linkCounts,
 	linkRows,
@@ -105,5 +106,15 @@ describe("what has to move", () => {
 		const counts = linkCounts(both, both);
 		expect(movePhrase(counts.downloadNotes, counts.downloadAttachments)).toBe("Nothing");
 		expect(movePhrase(counts.uploadNotes, counts.uploadAttachments)).toBe("Nothing");
+	});
+});
+
+describe("what linking means, said where somebody is choosing", () => {
+	// #116 put this on the Cloud vault row in Settings, which is read every
+	// week about a decision taken once. The screen that makes the link is
+	// where a delete travelling both ways is still news.
+	it("says a delete goes both ways, in both directions", () => {
+		expect(BOTH_WAYS).toContain("deletes it in the cloud vault");
+		expect(BOTH_WAYS).toContain("the other way round");
 	});
 });

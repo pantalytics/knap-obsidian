@@ -78,6 +78,8 @@ export interface KnapStatus {
 	vaultName: string;
 	/** Notes the tree holds. Zero until the tree has been read. */
 	notes: number;
+	/** Attachments the tree holds, counted the same way and at the same time. */
+	attachments: number;
 	/** Pieces of work that failed and stayed failed. */
 	problems: number;
 	/** Notes this device still has to send to the cloud vault. */
@@ -233,6 +235,7 @@ export class KnapSync {
 			dot: syncDot(word),
 			vaultName: linked?.cloudVaultName ?? "",
 			notes: this.client ? this.client.tree().entries().size : 0,
+			attachments: this.client ? this.client.tree().attachments().size : 0,
 			problems,
 			up: backlog.up,
 			down: backlog.down,

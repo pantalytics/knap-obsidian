@@ -1,5 +1,6 @@
 /**
- * The one screen the rebuilt client has: a status bar, an account and a link.
+ * The one screen the rebuilt client has: an account, a cloud vault, and how
+ * that vault is doing.
  *
  * It exists because the commands were the only way in, and a command palette
  * is where somebody looks after they already know the thing is there. Asked to
@@ -7,23 +8,27 @@
  * button, and in a beta build the relay's own tab is hidden, so they found
  * nothing at all.
  *
- * **Two rows and a bar, and each of the three earns its place**: the bar says
- * how it is going, Account is who, Cloud vault is what this vault syncs with.
- * The bar waits for a link, because how it is going is a question about a
- * cloud vault and there is not one yet.
- * That last row keeps one sentence the shortening did not touch, because a
- * delete travels both ways and somebody is entitled to know that before they
- * press it rather than after (#116).
+ * **Two rows and a strip, in the order they depend on each other**: Account is
+ * who, Cloud vault is what this vault syncs with, and the strip under it is how
+ * that vault is going. The strip was the first thing on the screen until
+ * 2026-09-02, floating above the two rows as if it were a third subject; it is
+ * a fact about one cloud vault, so it now sits inside that row's block, sharing
+ * its border, and it appears only where there is a link.
+ *
+ * The Cloud vault row is a name and nothing else. The sentence about a delete
+ * travelling both ways moved to the screen that links (#116 put it here, and
+ * where it belongs is where somebody is choosing rather than on a row they
+ * read every week).
  * There is no server field (ADR-0033), no scope picker (ADR-0043), and no
  * second kind of member to set (ADR-0034). There is also no Change button:
  * linking somewhere else is Unlink and then Choose, which is what happens
  * underneath either way, and a third button to say so is a third button.
  *
- * The bar is the only thing on the screen that folds. That is the hierarchy:
- * the dot and the word are always out, the vault and its size sit beside them,
- * and the handful of facts behind them come out when somebody asks. Nothing
- * deeper is kept here at all. What went wrong in detail is on the server, and
- * the device only ever tells it four content-free facts (ADR-0071).
+ * The strip is the only thing on the screen that folds. That is the hierarchy:
+ * the dot and the word are always out, the size sits beside them, and the
+ * counts behind them come out when somebody asks. Nothing deeper is kept here
+ * at all. What went wrong in detail is on the server, and the device only ever
+ * tells it four content-free facts (ADR-0071).
  *
  * Signed in, there is always a way back out. A screen that can only sign in is
  * one a person cannot hand their laptop on from, and the only alternative was
@@ -32,7 +37,14 @@
 
 import { Notice, type Plugin, PluginSettingTab, Setting, setIcon } from "obsidian";
 
-import { OFFLINE, PROBLEM, syncInstruction } from "../syncStatus";
+import {
+	DOWNLOADING,
+	INITIALIZING,
+	OFFLINE,
+	PROBLEM,
+	UPLOADING,
+	syncInstruction,
+} from "../syncStatus";
 import type { KnapStatus, KnapSync } from "./KnapSync";
 
 /**
@@ -46,20 +58,25 @@ export function signOutNotice(endedRemotely: boolean): string {
 		: "Signed out here only. Knap could not be reached, so it may still count this device as signed in.";
 }
 
+/** The last row, and the only one that is there whatever the vault is doing. */
+export const TOTAL = "Total";
+
 /**
  * The facts behind the fold, for one reading.
  *
- * Pure, and exported, because it is the half of the bar worth pinning in a
+ * Pure, and exported, because it is the half of the strip worth pinning in a
  * test: which facts appear depends on the word, and a fact that appears with
  * nothing to say is the sort of empty row this screen exists to be rid of.
  *
- * **The vault and its note count are not here**, because the head already
- * carries them and the fold's whole justification is holding what the head
- * does not. They were in both until #125, which is how one phone screen came
- * to say the vault's name three times: in the head, behind the fold, and again
- * on the Cloud vault row. On a desktop width those three sit far apart and the
- * repetition is quiet. Stacked into one column on a phone they are within a
- * thumb of each other.
+ * Three kinds of row, in the order somebody reads them. The two directions
+ * are named the way the words above them are (ADR-0089), because a person
+ * watching *Uploading* wants the same word on the line that counts it. Then
+ * Total: what the cloud vault holds, which nothing else on this screen says
+ * and which is the one number that can be held against Knap's own page.
+ *
+ * **The vault's name is not here**, because the row a hairline above carries
+ * it. That was #125's repetition, and moving the strip under that row would
+ * have brought it back.
  */
 export function statusFacts(status: KnapStatus): Array<[string, string]> {
 	const facts: Array<[string, string]> = [];
@@ -67,22 +84,18 @@ export function statusFacts(status: KnapStatus): Array<[string, string]> {
 	// together to get them. This is the screen with room to keep them apart,
 	// and attachments are worth keeping apart: one photo is a hundred notes'
 	// worth of bytes, so a single number sits still and then jumps (ADR-0088).
-	// The rows are named the way the tooltip says it, because somebody moves
-	// between the two in one sitting.
-	//
-	// These are not the repetition #125 took out. The head carries the vault
-	// and how many notes are in it; how many are still moving is a different
-	// fact and is nowhere else on the screen.
 	const going = pieces(status.up, status.files.up);
-	if (going) facts.push(["To the cloud vault", going]);
+	if (going) facts.push([UPLOADING, going]);
 	const coming = pieces(status.down, status.files.down);
-	if (coming) facts.push(["To this device", coming]);
+	if (coming) facts.push([DOWNLOADING, coming]);
 	if (status.problems > 0) {
 		facts.push([
 			"Could not sync",
 			`${status.problems} change${status.problems === 1 ? "" : "s"}`,
 		]);
 	}
+	const held = pieces(status.notes, status.attachments);
+	if (held) facts.push([TOTAL, held]);
 	return facts;
 }
 
@@ -99,15 +112,28 @@ function count(n: number): string {
 }
 
 /**
- * Whether the bar has anything folded away at all.
+ * The one sentence this screen still says, and only under one word.
  *
- * On the happy path it does not: no instruction under *Up to date*, nothing
- * stuck, nothing to retry. A head that opens onto an empty strip is worse than
- * a head that does not open, so the bar only becomes a button when there is
- * something under it.
+ * Every other word's instruction went on 2026-09-02: they told somebody to
+ * wait, over a strip whose counts already say what is being waited for.
+ * Initializing keeps its own, because it is the one asking for something a
+ * person would not otherwise do (ADR-0090): leave Obsidian open.
+ */
+export function barSentence(word: KnapStatus["word"]): string {
+	return word === INITIALIZING ? syncInstruction(word) : "";
+}
+
+/**
+ * Whether the strip has anything folded away at all.
+ *
+ * Almost always, now that Total is behind it: a linked vault holds notes, and
+ * that count is what somebody opens the fold for. It stays a question rather
+ * than a constant because a vault whose tree has not been read yet counts
+ * nothing, and a head that opens onto an empty strip is worse than a head that
+ * does not open.
  */
 export function hasFold(status: KnapStatus): boolean {
-	return Boolean(syncInstruction(status.word)) || statusFacts(status).length > 0 || hasRetry(status);
+	return Boolean(barSentence(status.word)) || statusFacts(status).length > 0 || hasRetry(status);
 }
 
 /** Only the two words a person can do something about get a button here. */
@@ -196,17 +222,6 @@ export class KnapSettingsTab extends PluginSettingTab {
 
 		const linked = this.sync.linked;
 
-		// The bar only appears once there is a link. Before that it has no
-		// vault to be about, and the words are all wrong for it: nothing is
-		// syncing, so it settled on Up to date, over a vault that was going
-		// nowhere. That is #40's lie in a new place, and the row underneath
-		// already says Not linked, which is both truer and the way out.
-		if (linked) {
-			this.statusEl = containerEl.createDiv({ cls: "knap-status-slot" });
-			this.paint();
-			this.startTick();
-		}
-
 		new Setting(containerEl)
 			.setName("Account")
 			.setDesc("Signed in.")
@@ -219,14 +234,17 @@ export class KnapSettingsTab extends PluginSettingTab {
 				}),
 			);
 
-		const vault = new Setting(containerEl)
+		// The row and the strip under it are one object, so they are drawn
+		// into one block: a border around both, and a hairline between them.
+		// Two separate cards with a gap read as two subjects, which is what
+		// the strip floating above the rows used to say.
+		const block = containerEl.createDiv({ cls: "knap-vault" });
+
+		const vault = new Setting(block)
 			.setName("Cloud vault")
-			.setDesc(
-				linked
-					? `${linked.cloudVaultName}. Deleting a note here deletes it in the ` +
-						"cloud vault too, and the other way round."
-					: "Not linked.",
-			);
+			// The name, and nothing else. Everything a person can do about it
+			// is the button beside it.
+			.setDesc(linked ? linked.cloudVaultName : "Not linked.");
 
 		if (linked) {
 			vault.addButton((button) =>
@@ -237,6 +255,15 @@ export class KnapSettingsTab extends PluginSettingTab {
 					});
 				}),
 			);
+			// The strip only exists once there is a link. Before that it has
+			// no vault to be about, and the words are all wrong for it:
+			// nothing is syncing, so it settled on Up to date, over a vault
+			// that was going nowhere. That is #40's lie in a new place, and
+			// the row above it already says Not linked, which is both truer
+			// and the way out.
+			this.statusEl = block.createDiv({ cls: "knap-status-slot" });
+			this.paint();
+			this.startTick();
 			return;
 		}
 
@@ -329,23 +356,21 @@ export class KnapSettingsTab extends PluginSettingTab {
 	}
 
 	/**
-	 * The bar: a dot, a word, and what it is about, with the rest folded away.
+	 * The strip: a dot, a word, how big the vault is, and the counts folded
+	 * away behind them.
 	 *
 	 * Drawn by hand rather than as a Setting because a Setting is a name, a
-	 * description and controls on the right, and this is none of those. It is
-	 * the first thing on the screen because it is what somebody came to find
-	 * out; the two rows under it are what they came to change, which is rarer.
+	 * description and controls on the right, and this is none of those. It sits
+	 * under the Cloud vault row because it is a fact about that vault, and
+	 * inside its block because a gap would make it a fourth thing on a screen
+	 * with three things on it.
 	 *
-	 * **The head is a button only when something is folded behind it** (#125).
-	 * Under *Up to date* there is no instruction, nothing stuck and nothing to
-	 * retry, so the head opens onto an empty strip, and a control that does
-	 * nothing is worse than no control.
+	 * **The head is a button only when something is folded behind it** (#125),
+	 * which since Total went behind the fold is nearly always.
 	 *
-	 * The detail is two spans rather than one string because they shrink
-	 * differently. On a phone the whole line is wider than the card, and the
-	 * count is the half worth keeping: a long vault name is a name, while
-	 * *1,368 notes* is the answer to what somebody opened the screen for. So the
-	 * name truncates and the count never does.
+	 * The head carries the count and not the name. The row a hairline above
+	 * spells the name out, and saying it twice within a thumb of itself is
+	 * what #125 took out of the fold in the first place.
 	 */
 	private drawStatus(containerEl: HTMLElement, status: KnapStatus): void {
 		const block = containerEl.createDiv({ cls: "knap-status" });
@@ -363,13 +388,10 @@ export class KnapSettingsTab extends PluginSettingTab {
 		head.createSpan({ cls: `knap-dot knap-dot-${status.dot}` });
 		head.createSpan({ cls: "knap-status-word", text: status.word });
 		const detail = head.createSpan({ cls: "knap-status-detail" });
-		if (status.vaultName) {
-			detail.createSpan({ cls: "knap-status-vault", text: status.vaultName });
-		}
 		if (status.notes > 0) {
 			detail.createSpan({
 				cls: "knap-status-count",
-				text: `${status.notes.toLocaleString("en-US")} note${status.notes === 1 ? "" : "s"}`,
+				text: `${count(status.notes)} note${status.notes === 1 ? "" : "s"}`,
 			});
 		}
 
@@ -389,12 +411,16 @@ export class KnapSettingsTab extends PluginSettingTab {
 		// over it, and moved above it here, where the reader expects it.
 		block.insertBefore(head, body);
 
-		const instruction = syncInstruction(status.word);
+		const instruction = barSentence(status.word);
 		if (instruction) {
 			body.createDiv({ cls: "knap-status-say", text: instruction });
 		}
 		for (const [key, value] of statusFacts(status)) {
-			const row = body.createDiv({ cls: "knap-status-fact" });
+			// The total is ruled off from the rows above it: those are what is
+			// still moving, and it is what is there when nothing is.
+			const row = body.createDiv({
+				cls: key === TOTAL ? "knap-status-fact knap-status-total" : "knap-status-fact",
+			});
 			row.createSpan({ cls: "knap-status-key", text: key });
 			row.createSpan({ cls: "knap-status-value", text: value });
 		}

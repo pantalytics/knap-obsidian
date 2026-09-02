@@ -119,6 +119,17 @@ function valueOf(step: LinkStep, facts: LinkFacts): string {
 	}
 }
 
+/**
+ * What linking means for a delete, said where somebody is choosing.
+ *
+ * #116 put this on the Cloud vault row in Settings, which is a row somebody
+ * reads every week about a decision they took once. It belongs on the screen
+ * that makes the link: from here on a delete travels, and that is worth
+ * knowing before rather than after.
+ */
+export const BOTH_WAYS =
+	"Deleting a note here deletes it in the cloud vault too, and the other way round.";
+
 function number(value?: number): string {
 	return value === undefined ? "" : value.toLocaleString("en-US");
 }

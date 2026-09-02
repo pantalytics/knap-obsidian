@@ -35,19 +35,20 @@ either side of it rather than like a panel we built.
   ┌──────────────────────────────────────────────────────────────┐
   │ next.knap.pantalytics.com                                    │  ← the host,
   │                                                              │    once, quietly
-  │ ┌──────────────────────────────────────────────────────────┐ │
-  │ │ ● Syncing                     Work notes · 312 notes   ▾ │ │  ← the bar
-  │ ├──────────────────────────────────────────────────────────┤ │
-  │ │ Leave Obsidian open until it finishes. It picks up       │ │
-  │ │ where it left off if you close it.                       │ │
-  │ └──────────────────────────────────────────────────────────┘ │
-  │                                                              │
   │ Account                                       [ Sign out ]   │
   │ Signed in.                                                   │
   │                                                              │
-  │ Cloud vault                                   [ Unlink ]     │
-  │ Work notes. Deleting a note here deletes it in the cloud     │
-  │ vault too, and the other way round.                          │
+  │ ┌──────────────────────────────────────────────────────────┐ │
+  │ │ Cloud vault                                 [ Unlink ]   │ │  ← the vault
+  │ │ Work notes                                               │ │
+  │ ├──────────────────────────────────────────────────────────┤ │
+  │ │ ● Initializing                        2,979 notes      ▾ │ │  ← the strip
+  │ ├──────────────────────────────────────────────────────────┤ │
+  │ │ Leave Obsidian open until it finishes.                   │ │
+  │ │ Uploading                       412 notes, 3 attachments │ │
+  │ │ Downloading                                 2,567 notes  │ │
+  │ │ Total                       2,979 notes, 148 attachments │ │
+  │ └──────────────────────────────────────────────────────────┘ │
   └──────────────────────────────────────────────────────────────┘
 
   signed out:                        signed in, not linked yet:
@@ -59,19 +60,30 @@ either side of it rather than like a panel we built.
   └────────────────────────────┘
 ```
 
-Each of the three parts earns its place. **The bar** says how it is going, and
-is first because it is what somebody came to find out. **Account** is who.
-**Cloud vault** is what this vault syncs with. The two rows under the bar are
-what somebody came to change, which is rarer than wanting to know.
+Each of the three parts earns its place, and they are in the order they depend
+on each other. **Account** is who. **Cloud vault** is what this vault syncs
+with. **The strip** under it is how that vault is going, and it is inside that
+row's block rather than beside it: one border round both, a hairline between.
 
-**The bar waits for a link**, which is why it is absent from both the small
+**The strip belonged to nothing until 2026-09-02.** It sat above both rows, the
+first thing on the screen, which said it was a third subject on a screen with
+two things on it. It is a fact about one cloud vault, so it is drawn under the
+row that names one, and the name it used to carry in its own head went with the
+move: the row a hairline above spells it out.
+
+**The strip waits for a link**, which is why it is absent from both the small
 screens above. How it is going is a question about a cloud vault, and before
 there is one every word is wrong for the state: nothing is syncing, so nothing
 is behind, so it settled on *Up to date* over notes that had never left the
-device. The row underneath says *Not linked*, which is truer and is also the way
+device. The row above it says *Not linked*, which is truer and is also the way
 out of it. A vault with an account and no link reads **Paused** where it has to
 be said in one word, in the corner of the window: nothing is moving, and nothing
 is going to until somebody picks a cloud vault.
+
+**The Cloud vault row is a name.** The sentence about a delete travelling both
+ways moved to the screen that links (#116 put it on this row, and a row read
+every week is not where a decision taken once belongs). It is the first thing
+under the heading on the linking modal now.
 
 The screen exists at all because the commands were the only way in, and a
 command palette is where somebody looks after they already know the thing is
@@ -94,40 +106,49 @@ back out.** A screen that can only sign in is one a person cannot hand their
 laptop on from, and the only alternative was uninstalling the plugin, which
 leaves the token alive anyway.
 
-### The bar, and the fold
+### The strip, and the fold
 
-The bar is the only thing on the screen that folds, and that is the hierarchy.
-The dot and the word are always out. The vault and its note count sit at the far
-end, pushed there rather than following the word so the eye finds the word in
-the same place whatever it is about. Everything else comes out when somebody
-asks:
+The strip is the only thing on the screen that folds, and that is the hierarchy.
+The dot and the word are always out. How big the vault is sits at the far end,
+pushed there rather than following the word so the eye finds the word in the
+same place whatever it is about. Everything else comes out when somebody asks:
 
 | Behind the fold | When |
 |---|---|
-| The instruction for this word | Whenever the word carries one |
-| To the cloud vault, To this device | While either direction has something in it, naming notes and attachments separately |
+| Leave Obsidian open until it finishes | Under *Initializing*, and no other word |
+| Uploading, Downloading | While either direction has something in it, naming notes and attachments separately |
 | Could not sync, *N* changes | When something failed and stayed failed |
+| **Total** | Whenever the tree has been read, ruled off from the rows above it |
 | **Try again** | Only under *Problem* and *Offline*, the two words a person can act on |
 
 Nothing deeper is kept here at all. What went wrong in detail is the server's;
 this device only ever tells it four content-free facts (ADR-0071).
 
-**The fold holds nothing the head already carries, and where it would hold
-nothing at all the head does not open.** Under *Up to date* there is no
-instruction and, with nothing stuck, no rows and no button, so the bar is a
-line rather than a control: a head that opens onto an empty strip is worse than
-a head that does not open. The vault and its note count used to be behind it as
-well as on it, which put the vault's name on one phone screen three times, in
-the head, behind the fold and again on the Cloud vault row (#125). A desktop
-width spreads those three far enough apart to hide it. Stacked into one column
-they are within a thumb of each other.
+**Every word's instruction went on 2026-09-02 except one.** They told somebody
+to wait, over rows that now say what is being waited for, in numbers. What
+Initializing asks for is different in kind: leave Obsidian open, which is not
+what a person would otherwise do (ADR-0090). *Signed out* keeps its sentence
+where it is still read, which is the corner of the window rather than here: this
+strip only exists over a link, and a link needs an account.
+
+**Total is the line that is there when nothing is moving.** It is what the cloud
+vault holds, counted off the tree, and it is the one number on this screen that
+can be held against what Knap's own page says about the same vault. That is why
+it survives *Up to date*, where the fold used to hold nothing at all and the
+head stopped being a control.
+
+**The fold holds nothing the head already carries.** The vault's name used to
+be behind it as well as on it, which put that name on one phone screen three
+times, in the head, behind the fold and again on the Cloud vault row (#125). It
+is now on the row and nowhere else, which is what moving the strip under that
+row cost and bought at once.
 
 **The chevron is not decoration.** A touch screen has no hover, so without it
-there is nothing on a phone saying the bar opens at all.
+there is nothing on a phone saying the strip opens at all.
 
 ### On a phone
 
-The bar was drawn for a width it does not always have, and #125 was the bill.
+The strip was drawn for a width it does not always have, and #125 was the bill.
 Three rules keep it honest on a narrow window:
 
 - **The row shrinks rather than overflowing.** Without `min-width: 0` the flex
@@ -139,10 +160,10 @@ Three rules keep it honest on a narrow window:
   claimed off a screenshot before anybody measured it.
   [`scripts/spikes/status_bar_on_a_phone/`](../scripts/spikes/status_bar_on_a_phone/README.md)
   is where that was settled, and it fails against the stylesheet as it stood.
-- **The name gives way before the count.** They are two spans rather than one
-  string precisely so they can shrink differently. A vault name is a name, and
-  it is spelled out in full on the Cloud vault row a thumb below; *1,368 notes*
-  is what somebody opened the screen for.
+- **The head carries a count and not a name.** It used to carry both, in two
+  spans, so the name could give way first on a narrow window. The name is on the
+  Cloud vault row directly above now, so the head has one thing at its far end
+  and nothing to choose between.
 - **Hover only where there is a pointer.** On iOS `:hover` sticks after the tap
   and the head sat shaded, reading as jammed down.
 
@@ -309,10 +330,15 @@ cannot be read until the tree has synced. Every number is true at the moment its
 step is reported, and the far side is read first because it is the side a person
 cannot see.
 
+**Under the heading, one sentence**: deleting a note here deletes it in the
+cloud vault too, and the other way round. It sat on the Cloud vault row in
+Settings until 2026-09-02 (#116), which is a row somebody reads every week about
+a decision they took once. This is the screen that takes it.
+
 **It closes itself on the last step**, and the last step is said before the fill
 rather than after it. That is the fix: the link exists once both bindings stand
-over a synced tree, and what follows is the first sync, which the bar behind has
-a word for. A modal held open over minutes of downloading would be a second
+over a synced tree, and what follows is the first sync, which the strip behind
+has a word for. A modal held open over minutes of downloading would be a second
 place saying the same thing, over a vault a person cannot use while it is up.
 
 A step that fails stops the list where it stood, with that step marked and the
@@ -365,8 +391,8 @@ variables and the accent is whichever one the person picked, because a settings
 tab that looks like our website is the one tab in the list that looks wrong.
 Ours is how short the sentences are, not what colour they sit on.
 
-The classes are in `styles.css` under `.knap-`: the host line, the bar and its
-fold, the four dots, the picker's way out. All of them are built from
+The classes are in `styles.css` under `.knap-`: the host line, the vault block,
+the strip and its fold, the four dots, the picker's way out. All of them are built from
 `--background-*`, `--text-*`, `--size-*` and `--color-green|yellow|red`.
 
 ## The words a person sees
