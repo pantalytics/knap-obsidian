@@ -13,9 +13,18 @@
  *
  * **Offline and Problem were added on 2026-09-01**, because four words could
  * not say that something is wrong. Signed out held the only error dot, so a
- * refused upload had to present itself as a missing account. The rule for
- * adding one is that a word earns its place when the reader's next move is
+ * refused upload had to present itself as a missing account. The test for
+ * adding one was that a word earns its place when the reader's next move is
  * different: Offline is wait, Problem is act.
+ *
+ * **Uploading and Downloading came the same day, and they fail that test**
+ * (ADR-0089, which supersedes ADR-0088 on this one point). Both mean wait,
+ * exactly as Syncing does. They are here because the reader's next move is not
+ * the only thing a word is for: *Uploading* over the notes somebody wrote this
+ * morning tells them their own work is the thing in flight, and *Downloading*
+ * over a vault they have just joined tells them the wait is somebody else's
+ * notes arriving. Syncing said neither, and a person watching a first sync for
+ * an hour wants to know which of the two it is.
  *
  * The header used to say this list mirrored `status.py` in the admin
  * repository. That file went with the 2026-08-18 rebuild and the panel now
@@ -24,6 +33,8 @@
  */
 
 export const SYNCING = "Syncing";
+export const UPLOADING = "Uploading";
+export const DOWNLOADING = "Downloading";
 export const UP_TO_DATE = "Up to date";
 export const PAUSED = "Paused";
 export const OFFLINE = "Offline";
@@ -33,6 +44,8 @@ export const PROBLEM = "Problem";
 /** In the order a vault moves through them, trouble last. */
 export const SYNC_WORDS = [
 	SYNCING,
+	UPLOADING,
+	DOWNLOADING,
 	UP_TO_DATE,
 	PAUSED,
 	OFFLINE,
@@ -53,6 +66,8 @@ export type SyncDot = "ok" | "working" | "wait" | "error";
 
 const DOTS: Record<SyncWord, SyncDot> = {
 	[SYNCING]: "working",
+	[UPLOADING]: "working",
+	[DOWNLOADING]: "working",
 	[UP_TO_DATE]: "ok",
 	[PAUSED]: "wait",
 	[OFFLINE]: "wait",
@@ -77,6 +92,14 @@ export interface VaultState {
 	paused: boolean;
 	/** A share exists and its documents are still going up or coming down. */
 	syncing: boolean;
+	/**
+	 * Notes and attachments still to reach the cloud vault, and still to
+	 * reach this device. They pick which of the three moving words is said
+	 * (ADR-0089). Left out by callers that cannot split their queue, which
+	 * read as both and get Syncing.
+	 */
+	up?: number;
+	down?: number;
 	/**
 	 * A socket is up. Left out by callers that cannot tell, which read as
 	 * connected: a status that cries Offline because nobody asked is worse
@@ -117,8 +140,28 @@ export function syncWord(state: VaultState): SyncWord {
 	if (state.lost) return PROBLEM;
 	if (state.connected === false) return OFFLINE;
 	if ((state.stuck ?? 0) > 0) return PROBLEM;
-	if (state.syncing) return SYNCING;
+	if (state.syncing) return movingWord(state.up, state.down);
 	return UP_TO_DATE;
+}
+
+/**
+ * Which of the three moving words this vault is doing.
+ *
+ * One direction gets its own word, because that is the one a person can
+ * check against what they just did: *Uploading* over the notes they wrote
+ * this morning, *Downloading* over a vault they have just joined. Both at
+ * once is Syncing, and so is a vault whose queue cannot say which way it is
+ * going, because a word that guesses is worse than the general one.
+ */
+export function movingWord(up = 0, down = 0): SyncWord {
+	if (up > 0 && down <= 0) return UPLOADING;
+	if (down > 0 && up <= 0) return DOWNLOADING;
+	return SYNCING;
+}
+
+/** Whether this word is one of the three that mean notes are on the move. */
+export function isMoving(word: SyncWord): boolean {
+	return word === SYNCING || word === UPLOADING || word === DOWNLOADING;
 }
 
 /**
@@ -169,6 +212,8 @@ export function syncInstruction(word: SyncWord): string {
 		case PROBLEM:
 			return "Everything else is up to date, and nothing was lost.";
 		case SYNCING:
+		case UPLOADING:
+		case DOWNLOADING:
 			return "Leave Obsidian open until it finishes. It picks up where it left off if you close it.";
 		default:
 			return "";

@@ -15,11 +15,13 @@
  */
 
 import {
+	DOWNLOADING,
 	OFFLINE,
 	PAUSED,
 	PROBLEM,
 	SIGNED_OUT,
 	SYNCING,
+	UPLOADING,
 	UP_TO_DATE,
 	syncDot,
 } from "../src/syncStatus";
@@ -416,6 +418,41 @@ describe("the corner, split by direction", () => {
 			const paint = statusBarPaint({ ...syncing, word, dot: syncDot(word) }, STILL);
 			expect(paint.dot).not.toBe("ok");
 			expect(paint.count).toBe("\u2191 412 \u2193 2,567");
+		}
+	});
+});
+
+describe("the word the corner says out loud", () => {
+	// ADR-0089: the direction is in the word now, not only in the arrows.
+	const moving = {
+		dot: "working" as const,
+		done: 0,
+		total: 0,
+		counts: "",
+		progress: undefined,
+	};
+	const running = { moving: true, since: null, peak: 3000 };
+
+	test("one direction names itself in the tooltip", () => {
+		expect(
+			statusBarPaint({ ...moving, word: UPLOADING, up: 412, down: 0 }, running).label,
+		).toBe("Knap: uploading, 412 to the cloud vault");
+		expect(
+			statusBarPaint({ ...moving, word: DOWNLOADING, up: 0, down: 2567 }, running).label,
+		).toBe("Knap: downloading, 2,567 to this device");
+	});
+
+	test("both directions keep the word they had", () => {
+		expect(
+			statusBarPaint({ ...moving, word: SYNCING, up: 412, down: 2567 }, running).label,
+		).toBe("Knap: syncing, 412 to the cloud vault, 2,567 to this device");
+	});
+
+	test("the delay holds all three back, not only the one it was written for", () => {
+		for (const word of [SYNCING, UPLOADING, DOWNLOADING] as const) {
+			const paint = statusBarPaint({ ...moving, word, up: 412, down: 0 }, STILL);
+			expect(paint.dot).toBe("ok");
+			expect(paint.label).toBe("Knap: up to date");
 		}
 	});
 });

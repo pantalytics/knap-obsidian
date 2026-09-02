@@ -170,6 +170,12 @@ export class KnapSync {
 			syncing:
 				(Boolean(this.client) && !this.client?.settled) ||
 				backlog.up + backlog.down + files.up + files.down > 0,
+			// Which way the notes are going, so the word can say Uploading or
+			// Downloading rather than the general Syncing (ADR-0089). Notes
+			// and attachments together, because the word is about direction
+			// and both kinds travel the same road.
+			up: backlog.up + files.up,
+			down: backlog.down + files.down,
 			// Not linked is not offline: there is no socket because there is
 			// nothing to open one to, and saying Offline would send somebody
 			// to check their wifi over a vault they never linked.
