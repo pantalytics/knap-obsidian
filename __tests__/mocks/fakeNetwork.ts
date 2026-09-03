@@ -35,6 +35,13 @@ export class FakeNetwork {
 	peak = 0;
 	/** Sockets that asked for a connection above the ceiling and got silence. */
 	refused = 0;
+	/**
+	 * Whether the server is reachable. Down, every handshake fails the way a
+	 * refused connection does: an error, then a close, no open in between.
+	 * That is what a laptop that starts on a train sees, and what a deploy
+	 * in progress looks like from the plugin.
+	 */
+	down = false;
 	/** How many times a room has been connected to, ever. */
 	opens = new Map<string, number>();
 	/** What the room's document held when its last socket closed. */
@@ -95,6 +102,16 @@ export class FakeSocket {
 		if (network.live > SOCKET_CEILING) {
 			// The bug this file is about: no error, no close, no handshake.
 			network.refused += 1;
+			return;
+		}
+		if (network.down) {
+			setTimeout(() => {
+				if (this.readyState !== 0) return;
+				this.readyState = 3;
+				network.live -= 1;
+				this.onerror?.({});
+				this.onclose?.({ code: 1006 });
+			}, 0);
 			return;
 		}
 		const room = network.sockets.get(this.room) ?? new Set<FakeSocket>();

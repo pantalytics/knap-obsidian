@@ -396,7 +396,7 @@ happened and what is now true.
 | A file too large | *path*: This file is 24 MB, and the cloud vault takes attachments up to 10 MB. It stays on this device. Both numbers, because *too large* leaves somebody guessing by how much. Refused here rather than uploaded and refused there, so nobody spends their upstream first |
 | A vault that is full | *path*: The cloud vault is full. Remove some attachments from it, or use a second vault. |
 | A sign-in that started elsewhere | That sign-in did not start here. Run sign in (beta) and try again. |
-| A link that cannot come back up | Knap could not reach your cloud vault. It will retry when you sign in again. |
+| A link that cannot come back up | Knap could not bring your cloud vault up. Your notes are safe here; open Settings and press Try again. A server that is merely away is not this: the start waits for it and the status says Offline. |
 
 Two shapes to copy. **Say what is still true**, because the fear behind most of
 these is losing notes: *nothing was deleted, anywhere*, *your notes are safe
