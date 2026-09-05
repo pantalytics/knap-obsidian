@@ -616,8 +616,16 @@ export class VaultBinding {
 			const fileText = await this.files.read(path);
 			let conflict: string | null = null;
 
-			if (fileText === null) {
-				await this.files.write(path, docText);
+			if (fileText === null || fileText === "") {
+				// No file, or a file with nothing in it. An empty file is what
+				// a fill that was killed halfway leaves behind, and a copy of
+				// nothing preserves nothing: on 2026-09-05 a phone whose fill
+				// kept dying turned 57 of them into 57 empty notes, first in
+				// the cloud vault and then on every device. So an empty file
+				// takes the same route as no file at all, and the branch below
+				// keeps the case it was written for, which is two sides that
+				// both actually wrote something.
+				if (docText !== fileText) await this.files.write(path, docText);
 			} else if (fileText !== docText) {
 				if (docText === "") {
 					// A minted note nobody typed in yet: the local text is the

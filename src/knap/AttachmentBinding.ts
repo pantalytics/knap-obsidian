@@ -343,12 +343,18 @@ export class AttachmentBinding {
 	 */
 	private async pull(path: string, entry: AttachmentEntry): Promise<void> {
 		const local = await this.files.readBinary(path);
-		if (local !== null) {
+		if (local !== null && local.byteLength > 0) {
 			if ((await generateHash(local)) === entry.hash) return; // already here
 			// Both sides have bytes, and they differ. There is no merge for a
 			// binary and no text to rebuild it from, so nothing is thrown
 			// away: the cloud copy takes the path and this device's copy
 			// survives beside it, named for what happened.
+			//
+			// Zero bytes is not a copy of anything. It is what a download that
+			// was cut off leaves at the path, and keeping it beside the real
+			// file would add an empty attachment to the vault for every one
+			// that failed. The note side hit exactly that on 2026-09-05, 57
+			// times over.
 			const copy = buildConflictCopyPath(path, this.conflictLabel());
 			await this.files.writeBinary(copy, local);
 			await this.push(copy);
