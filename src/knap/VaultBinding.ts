@@ -377,12 +377,33 @@ export class VaultBinding {
 		return this.queue;
 	}
 
-	/** Write down the tree this device now agrees with. Failing is survivable. */
+	/**
+	 * Write down the tree this device now agrees with. Failing is survivable.
+	 *
+	 * Agreed with means on this disk, and the two are not the same thing. This
+	 * used to save the tree whole, so a device whose fill did not finish wrote
+	 * down every path in it, the notes it had not managed to download
+	 * included. `reconcileAll` reads that back as "the file is gone and the
+	 * record says I had it", which is its sentence for a note somebody deleted
+	 * while the plugin was off, and deletes it in the cloud vault and on every
+	 * other device. Measured 2026-09-05: a phone whose first fill kept dying
+	 * deleted the four newest notes in the vault, the ones made after it last
+	 * got anywhere, off every device. They came back off an hourly backup.
+	 *
+	 * So the record is the tree narrowed to what is actually here. A path this
+	 * device never fetched is simply not in it, and the next pass downloads it
+	 * rather than deleting it, which is the safe direction and the true one.
+	 */
 	private async rememberTree(): Promise<void> {
 		if (!this.seenDirty || !this.seen) return;
 		this.seenDirty = false;
 		try {
-			await this.seen.save(this.docs.tree().entries());
+			const onDisk = new Set((await this.files.listNotes()).map(normalize));
+			const agreed = new Map<string, string>();
+			for (const [path, docId] of this.docs.tree().entries()) {
+				if (onDisk.has(path)) agreed.set(path, docId);
+			}
+			await this.seen.save(agreed);
 		} catch {
 			// A record that could not be written is a record that stays
 			// older than it is, and older is the safe direction: every
