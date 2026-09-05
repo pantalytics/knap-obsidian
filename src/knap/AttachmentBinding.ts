@@ -102,8 +102,8 @@ export class AttachmentBinding {
 		await this.enqueue(() => this.reconcileAll());
 		this.stopFileEvents = this.files.onChange((event) => {
 			if (isNote(event.path)) return; // VaultBinding's half
-			// Obsidian's own settings and plugins are not the vault's
-			// contents, and the server refuses them anyway (ADR-0067). Quiet
+			// Obsidian's own settings and plugins are `ConfigBinding`'s, and
+			// the rest of what is hidden travels nowhere (ADR-0094). Quiet
 			// rather than refused: the person did not put these here.
 			if (isHidden(event.path)) return;
 			void this.enqueue(() => this.onFileEvent(event));
@@ -111,6 +111,11 @@ export class AttachmentBinding {
 		this.stopTreeEvents = this.docs.tree().onAttachmentChange((change) => {
 			void this.enqueue(async () => {
 				for (const [path, entry] of change.added) {
+					// Settings share this map and are not ours: they live
+					// under the config directory, which Obsidian keeps out
+					// of the file index, so `files` cannot read or write
+					// one and would fetch every settings file forever.
+					if (isHidden(path)) continue;
 					// An attachment this device already has is the echo of its
 					// own upload arriving back through the tree.
 					const here = (await this.files.readBinary(path)) !== null;
@@ -118,6 +123,7 @@ export class AttachmentBinding {
 					else await this.carry("down", () => this.pull(path, entry));
 				}
 				for (const [path] of change.removed) {
+					if (isHidden(path)) continue; // ConfigBinding's
 					// A path in both halves is an attachment whose bytes
 					// changed, not one that left. Removing the file there
 					// would delete what the added half just fetched.
@@ -191,7 +197,12 @@ export class AttachmentBinding {
 			TREE_SYNC_FAILED,
 		);
 		const tree = this.docs.tree();
-		const recorded = tree.attachments();
+		// The settings half of the map is `ConfigBinding`'s, and this pass
+		// would otherwise count every settings file as an attachment missing
+		// from a device that has it.
+		const recorded = new Map(
+			[...tree.attachments()].filter(([path]) => !isHidden(path)),
+		);
 		const local = new Set((await this.files.listAttachments()).map(normalize));
 		// Sorted before any of it runs, so the gauge says how many files are
 		// still to come rather than how many are in flight right now.
