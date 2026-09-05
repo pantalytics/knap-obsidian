@@ -101,6 +101,12 @@ class Hub {
 	borrowed = new Set<string>();
 
 	/**
+	 * Documents whose socket refuses to come up, by id. A fill that dies
+	 * halfway is the ordinary case on a phone, and this is how a test says so.
+	 */
+	broken = new Set<string>();
+
+	/**
 	 * What the server's markdown mirror does after every flush: a sha256 per
 	 * note, in the tree's third map, keyed by document id.
 	 */
@@ -190,6 +196,7 @@ class Hub {
 			tree: () => (tree ??= new TreeDoc(open("tree").doc)),
 			treeSynced: () => open("tree").synced,
 			withNote: async <T,>(docId: string, use: (note: { doc: Y.Doc }) => Promise<T>) => {
+				if (this.broken.has(docId)) throw new Error("This note did not sync in time.");
 				this.borrowed.add(docId);
 				const entry = open(docId);
 				await entry.synced;
@@ -584,6 +591,40 @@ describe("VaultBinding", () => {
 		expect(b.files.map.get("nota.md")).toBe("cloudversie");
 		expect([...b.files.map].filter(([path]) => path.includes("conflict"))).toHaveLength(0);
 		expect([...a.files.map].filter(([path]) => path.includes("conflict"))).toHaveLength(0);
+	});
+
+	it("a fill that did not finish deletes nothing it never downloaded", async () => {
+		// Measured 2026-09-05: a phone whose fill kept dying wrote down the
+		// whole tree as notes it agreed with, and on the next start read its
+		// own missing files as deletions. Four notes went off every device.
+		const hub = new Hub();
+		const a = await device(hub, { "komt.md": "aangekomen", "komt-niet.md": "kostbaar" });
+		await settle(a.binding);
+
+		// One note's socket never comes up, so the fill gets part of the way.
+		hub.broken.add(hub.treeOf().get("komt-niet.md") as string);
+		const seen = new MemorySeen();
+		const b = await device(hub, {}, seen);
+		await settle(a.binding, b.binding);
+		expect(b.files.map.get("komt.md")).toBe("aangekomen");
+		expect(b.files.map.has("komt-niet.md")).toBe(false);
+
+		// Anything at all happening in the tree writes the record, which is
+		// how a fill that is still limping along commits what it has not done.
+		await a.files.write("later.md", "iets anders");
+		await settle(a.binding, b.binding);
+
+		// The record may not claim a note this device has not got.
+		expect(seen.entries?.has("komt-niet.md") ?? false).toBe(false);
+
+		// And the restart downloads it rather than deleting it everywhere.
+		hub.broken.clear();
+		const again = await restart(hub, b.files, seen);
+		await settle(a.binding, again);
+
+		expect(a.files.map.get("komt-niet.md")).toBe("kostbaar");
+		expect(b.files.map.get("komt-niet.md")).toBe("kostbaar");
+		expect(hub.treeOf().has("komt-niet.md")).toBe(true);
 	});
 
 	it("its own writes do not echo", async () => {
