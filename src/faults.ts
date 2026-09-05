@@ -17,6 +17,15 @@
  * retry: a fault reporter that hammers a struggling server is a second bug on
  * top of the first.
  *
+ * **Signed in, a fault says more (ADR-0095).** A device holding a Knap token
+ * is a member of a vault whose notes are already sitting on that server, so
+ * the error's own message and one line of where it happened go with it, and
+ * the server writes them into the log for that vault. Without a token
+ * nothing changes: four facts, no message, because an anonymous device is an
+ * unknown person's vault. The credential is the switch and it is checked at
+ * the moment of sending, so a fault queued while signed in and sent after
+ * signing out loses its message on the way out.
+ *
  * On by default, with the off switch in settings (main.ts wires the setting to
  * `setFaultReporting`). Off means no queueing and no network at all.
  */
@@ -38,6 +47,11 @@ export const FAULT_COMPONENTS = [
 	"settings",
 	"startup",
 	"attachments",
+	// The rebuilt sync layer (src/knap). It had no call sites at all until
+	// ADR-0095, which is to say the code that actually runs reported nothing.
+	"tree",
+	"link",
+	"mirror",
 ] as const;
 
 export type FaultComponent = (typeof FAULT_COMPONENTS)[number];
@@ -50,13 +64,24 @@ export type FaultPlatform =
 	| "mobile-android"
 	| "unknown";
 
-/** The whole of what one fault says. Four keys, and nothing else ever. */
+/**
+ * The whole of what one fault says. Four keys always, and two more only when
+ * a credential went with it.
+ */
 export interface Fault {
 	type: string;
 	component: FaultComponent;
 	version: string;
 	platform: FaultPlatform;
+	/** The error's own message. Only ever set on a signed-in report. */
+	message?: string;
+	/** One frame of where it happened. Same condition. */
+	where?: string;
 }
+
+/** How long each of the two extra fields may be. The server has its own. */
+const MAX_MESSAGE = 400;
+const MAX_WHERE = 200;
 
 /** One entry on the wire: a fault, folded with how often it happened. */
 export interface QueuedFault extends Fault {
@@ -104,17 +129,55 @@ function faultType(error: unknown): string {
 }
 
 /**
- * Reduce an error to the four facts that may leave the device. This is the
- * one gate: `report` calls it and nothing else builds a fault, so a message
- * cannot reach the wire through any call site.
+ * One line of the error's own message, or "". Newlines go: a fault becomes a
+ * log line on the server, and a message that can carry a newline can carry a
+ * whole fake log line after it.
  */
-export function scrubFault(component: FaultComponent, error: unknown): Fault {
-	return {
+function faultMessage(error: unknown): string {
+	const raw = error instanceof Error ? error.message : "";
+	return raw.split(/\s+/).join(" ").trim().slice(0, MAX_MESSAGE);
+}
+
+/**
+ * The top frame of the stack, as one short string.
+ *
+ * Where in *the plugin*, never where in the vault: a stack frame names a
+ * bundled module and a line number, which is exactly what is worth having and
+ * carries nothing about anybody's notes. Missing on a thrown non-Error and on
+ * platforms that do not fill `stack` in, and missing is fine.
+ */
+function faultWhere(error: unknown): string {
+	const stack = error instanceof Error ? error.stack : "";
+	if (!stack) return "";
+	const frame = stack.split("\n").find((line) => /^\s*at\s/.test(line));
+	return frame ? frame.trim().slice(0, MAX_WHERE) : "";
+}
+
+/**
+ * Reduce an error to the facts that may leave the device. This is the one
+ * gate: `report` calls it and nothing else builds a fault, so a message
+ * cannot reach the wire through any call site.
+ *
+ * `credentialed` is the whole of the difference ADR-0095 made. False is
+ * ADR-0071 unchanged.
+ */
+export function scrubFault(
+	component: FaultComponent,
+	error: unknown,
+	credentialed = false,
+): Fault {
+	const fault: Fault = {
 		type: faultType(error),
 		component,
 		version: GIT_TAG,
 		platform: faultPlatform(),
 	};
+	if (!credentialed) return fault;
+	const message = faultMessage(error);
+	const where = faultWhere(error);
+	if (message) fault.message = message;
+	if (where) fault.where = where;
+	return fault;
 }
 
 /**
@@ -126,8 +189,25 @@ export class FaultReporter {
 	private enabled = true;
 	private queue = new Map<string, QueuedFault>();
 	private timer: number | null = null;
+	/**
+	 * This device's Knap token, while it has one. Held so a report can prove
+	 * who is making it; never read for anything else, and never logged.
+	 */
+	private credential = "";
 
 	constructor(private readonly endpoint: string = faultsEndpoint()) {}
+
+	/**
+	 * Whose reports these are. Called on sign-in with the token and on sign
+	 * out with "".
+	 *
+	 * Signing out does not drop the queue the way turning reporting off does:
+	 * the faults are still worth having, they just stop saying more than an
+	 * anonymous one may.
+	 */
+	setCredential(token: string): void {
+		this.credential = token;
+	}
 
 	/**
 	 * The off switch. Off drops the queue and the pending send as well:
@@ -156,8 +236,17 @@ export class FaultReporter {
 	report(component: FaultComponent, error: unknown): void {
 		if (!this.enabled) return;
 		try {
-			const fault = scrubFault(component, error);
-			const key = `${fault.type}|${fault.component}|${fault.version}|${fault.platform}`;
+			const fault = scrubFault(component, error, this.credential !== "");
+			// The message is part of the key. Two failures with the same type
+			// and different messages are two failures, and folding them would
+			// throw away the half that says which.
+			const key = [
+				fault.type,
+				fault.component,
+				fault.version,
+				fault.platform,
+				fault.message ?? "",
+			].join("|");
 			const existing = this.queue.get(key);
 			if (existing) {
 				existing.count += 1;
@@ -182,13 +271,23 @@ export class FaultReporter {
 	 */
 	private async flush(): Promise<void> {
 		if (!this.enabled || this.queue.size === 0) return;
-		const faults = [...this.queue.values()];
+		const token = this.credential;
+		// Checked here rather than at report time: a fault queued while
+		// signed in and sent after signing out has nothing to prove itself
+		// with, so it goes out as an anonymous one instead of carrying a
+		// message the server would drop anyway.
+		const faults = [...this.queue.values()].map((fault) =>
+			token ? fault : { ...fault, message: undefined, where: undefined },
+		);
 		this.queue.clear();
 		try {
 			await requestUrl({
 				url: this.endpoint,
 				method: "POST",
-				headers: { "Content-Type": "application/json" },
+				headers: {
+					"Content-Type": "application/json",
+					...(token ? { Authorization: `Bearer ${token}` } : {}),
+				},
 				body: JSON.stringify({ faults }),
 				throw: false,
 			});
@@ -208,4 +307,12 @@ export function reportFault(component: FaultComponent, error: unknown): void {
 /** Wire the settings toggle through. Off means no queueing and no network. */
 export function setFaultReporting(enabled: boolean): void {
 	reporter.setEnabled(enabled);
+}
+
+/**
+ * Tell the reporter which device it is reporting for: the Knap token on sign
+ * in, "" on sign out. With one, a fault may carry its message (ADR-0095).
+ */
+export function setFaultCredential(token: string): void {
+	reporter.setCredential(token);
 }

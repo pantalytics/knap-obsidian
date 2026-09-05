@@ -44,6 +44,8 @@ import type { CloudVault, Fetch } from "./KnapServer";
 import { KnapServer } from "./KnapServer";
 import { KnapVaultClient } from "./KnapVaultClient";
 import type { WebSocketImpl } from "./KnapVaultClient";
+import { knapCredential, knapFault } from "./faultSink";
+import type { ServerNotice } from "./notices";
 import { SignInFlow } from "./SignInFlow";
 
 export interface KnapLink {
@@ -161,6 +163,14 @@ export interface KnapSyncOptions {
 	 * call.
 	 */
 	onLostVault?: (vaultName: string) => void;
+	/**
+	 * Told when the server says something went wrong on its side (ADR-0095):
+	 * a note whose name its search copy will not hold, an attachment it does
+	 * not have. Nothing local is broken when one of these arrives; what it
+	 * costs is that an AI cannot see that note, which is the whole reason
+	 * somebody put the vault on a server.
+	 */
+	onNotice?: (notice: ServerNotice) => void;
 }
 
 export class KnapSync {
@@ -394,6 +404,7 @@ export class KnapSync {
 			}
 		}
 		await this.options.save(null);
+		knapCredential("");
 		return { endedRemotely };
 	}
 
@@ -422,6 +433,9 @@ export class KnapSync {
 		// start rather than per label, and never fatal: an address we could
 		// not fetch leaves both falling back to the device name, which is
 		// what they said before this existed.
+		// Whose device this is, before anything can fail: a fault raised in
+		// this start may say more because of it (ADR-0095).
+		knapCredential(stored.token);
 		this.person = await this.whoAmI(stored.token);
 		this.lost = false;
 		// A link that has never finished a pass is still in its first one,
@@ -448,6 +462,7 @@ export class KnapSync {
 			this.options.webSocket,
 			() => this.loseVault(stored.cloudVaultName),
 			() => this.counts,
+			this.options.onNotice,
 		);
 		// The tree, before anything is counted against it. Both bindings make
 		// this same wait for the same reason, and making it here as well costs
@@ -464,6 +479,7 @@ export class KnapSync {
 			// out or a retry while the server was still away. None of those
 			// is a failure of this start, so none of them is reported as one.
 			if (this.client !== client) return;
+			knapFault("link", error);
 			throw error;
 		}
 		if (this.client !== client) return;
@@ -574,7 +590,8 @@ export class KnapSync {
 	private async whoAmI(token: string): Promise<string> {
 		try {
 			return (await this.server.me(token)).email;
-		} catch {
+		} catch (error) {
+			knapFault("auth", error);
 			return "";
 		}
 	}

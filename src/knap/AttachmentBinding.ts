@@ -29,6 +29,7 @@
 
 import { buildConflictCopyPath } from "../conflictCopyPath";
 import { generateHash } from "../hashing";
+import { knapFault } from "./faultSink";
 import { TREE_SYNC_FAILED, TREE_SYNC_TIMEOUT_MS, withTimeout } from "./deadline";
 import type { AttachmentEntry, TreeDoc } from "./TreeDoc";
 import { isHidden, isNote, normalize } from "./TreeDoc";
@@ -93,7 +94,8 @@ export class AttachmentBinding {
 	async start(): Promise<void> {
 		try {
 			this.limits = await this.transport.limits();
-		} catch {
+		} catch (error) {
+			knapFault("attachments", error);
 			// A link that cannot read the ceilings is still a link. The
 			// server enforces them regardless, so the cost of guessing here
 			// is one wasted upload, not a wrong outcome.
@@ -281,7 +283,7 @@ export class AttachmentBinding {
 		try {
 			await this.transport.upload(clean, content);
 		} catch (error) {
-			this.refused(clean, messageOf(error));
+			this.failed(clean, error);
 			return;
 		}
 		// Only now, because this entry is what sends every other device
@@ -309,7 +311,7 @@ export class AttachmentBinding {
 		try {
 			await this.transport.upload(to, content);
 		} catch (error) {
-			this.refused(to, messageOf(error));
+			this.failed(to, error);
 			return;
 		}
 		tree.moveAttachment(from, to);
@@ -363,7 +365,7 @@ export class AttachmentBinding {
 		try {
 			content = await this.transport.download(path);
 		} catch (error) {
-			this.refused(path, messageOf(error));
+			this.failed(path, error);
 			return;
 		}
 		await this.files.writeBinary(path, content);
@@ -378,8 +380,21 @@ export class AttachmentBinding {
 		try {
 			await this.transport.remove(path);
 		} catch (error) {
-			this.refused(path, messageOf(error));
+			this.failed(path, error);
 		}
+	}
+
+	/**
+	 * An attachment that would not travel: said on screen, and filed with
+	 * the server (ADR-0095).
+	 *
+	 * The sentence is for the person whose photo is missing from their
+	 * phone. The fault is so that somebody can find out why without asking
+	 * them to open a console, which until now was the only way.
+	 */
+	private failed(path: string, error: unknown): void {
+		this.refused(path, messageOf(error));
+		knapFault("attachments", error);
 	}
 }
 

@@ -39,6 +39,7 @@ import * as Y from "yjs";
 
 import { buildConflictCopyPath } from "../conflictCopyPath";
 import { generateHash } from "../hashing";
+import { knapFault } from "./faultSink";
 import { TREE_SYNC_FAILED, TREE_SYNC_TIMEOUT_MS, withTimeout } from "./deadline";
 import { TreeDoc, isNote, normalize } from "./TreeDoc";
 
@@ -404,7 +405,8 @@ export class VaultBinding {
 				if (onDisk.has(path)) agreed.set(path, docId);
 			}
 			await this.seen.save(agreed);
-		} catch {
+		} catch (error) {
+			knapFault("tree", error);
 			// A record that could not be written is a record that stays
 			// older than it is, and older is the safe direction: every
 			// deletion below needs the record to positively say so.
@@ -535,8 +537,13 @@ export class VaultBinding {
 				const item = items[next++];
 				try {
 					await work(item);
-				} catch {
+				} catch (error) {
+					// The count is what the screen reads; the fault is what
+					// says which note and why, on a server somebody can look
+					// at. Before ADR-0095 a note that would not sync was a
+					// number on a card and nothing else, anywhere.
 					this.failures += 1;
+					knapFault("sync", error);
 				} finally {
 					// Done or failed, this piece is behind us either way.
 					this.pass.done += 1;
