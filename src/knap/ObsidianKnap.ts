@@ -15,8 +15,11 @@
 import { Notice, Platform, Plugin, SuggestModal, editorInfoField } from "obsidian";
 
 import { KNAP_PANEL_URL } from "../RelayOnPremConfig";
+import { reportFault, setFaultCredential } from "../faults";
+import { setFaultSink } from "./faultSink";
 
 import type { CloudVault } from "./KnapServer";
+import type { ServerNotice } from "./notices";
 import { knapLiveEditing } from "./knapEditor";
 import { KnapSync } from "./KnapSync";
 import type { KnapLink } from "./KnapSync";
@@ -156,6 +159,11 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 		return null;
 	}
 
+	// The sync layer files its faults through an injected sink so that nothing
+	// in src/knap has to import Obsidian (see faultSink.ts). This is the one
+	// place that connects the two, and it is set before anything can fail.
+	setFaultSink({ report: reportFault, credential: setFaultCredential });
+
 	const device = `${host.app.vault.getName()} on ${Platform.isMobileApp ? "phone" : "desktop"}`;
 	const sync = new KnapSync({
 		serverUrl,
@@ -165,6 +173,14 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 		load: () => host.getKnapLink(),
 		save: (value) => host.saveKnapLink(value),
 		onRefused: (path, reason) => new Notice(`${path}: ${reason}`),
+		// The server had a problem with something in this vault (ADR-0095).
+		// Nothing local is broken, so this is a sentence and not an alarm;
+		// info levels stay off screen, because a person opening Obsidian to
+		// write does not need this server's running commentary.
+		onNotice: (notice: ServerNotice) => {
+			if (notice.level === "info") return;
+			new Notice(notice.text, notice.level === "error" ? 0 : undefined);
+		},
 		// Somebody took this account out of the vault, or deleted it. Said
 		// once, and said plainly: the sentence has to answer "where did my
 		// notes go" before somebody goes looking for them, because the honest

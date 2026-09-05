@@ -145,3 +145,93 @@ describe("faults", () => {
 		expect(requestUrlMock).toHaveBeenCalledTimes(1);
 	});
 });
+
+/**
+ * ADR-0095 raised the ceiling for a device that can prove who it is. The
+ * anonymous half above is unchanged and stays the load-bearing promise; this
+ * half asserts that the message travels only when a credential does.
+ */
+describe("faults, signed in", () => {
+	beforeEach(() => {
+		jest.useFakeTimers();
+		requestUrlMock.mockReset();
+		requestUrlMock.mockResolvedValue({ status: 200 });
+	});
+
+	afterEach(() => {
+		jest.useRealTimers();
+	});
+
+	async function sendOne(
+		token: string,
+		error: unknown = PATHY,
+		after: (reporter: FaultReporter) => void = () => undefined,
+	) {
+		const reporter = new FaultReporter();
+		reporter.setCredential(token);
+		reporter.report("sync", error);
+		after(reporter);
+		await jest.advanceTimersByTimeAsync(SEND_EVERY_MS);
+		return requestUrlMock.mock.calls[0]?.[0];
+	}
+
+	it("carries the message and the top frame, with the token", async () => {
+		const params = await sendOne("knap_abc");
+		expect(params.headers.Authorization).toBe("Bearer knap_abc");
+		const fault = JSON.parse(params.body as string).faults[0];
+		expect(fault.message).toBe(PATHY.message);
+		expect(fault.where).toMatch(/^at /);
+	});
+
+	it("sends no Authorization header and no message without one", async () => {
+		const params = await sendOne("");
+		expect(params.headers.Authorization).toBeUndefined();
+		const fault = JSON.parse(params.body as string).faults[0];
+		expect(fault.message).toBeUndefined();
+		expect(params.body).not.toContain("Acme");
+	});
+
+	it("strips the message from a fault queued before signing out", async () => {
+		const params = await sendOne("knap_abc", PATHY, (reporter) =>
+			reporter.setCredential(""),
+		);
+		expect(params.headers.Authorization).toBeUndefined();
+		expect(params.body).not.toContain("Acme");
+	});
+
+	it("keeps a message to one line, so it cannot forge a second log line", async () => {
+		const params = await sendOne(
+			"knap_abc",
+			new Error("first\nWARNING forged second line"),
+		);
+		const fault = JSON.parse(params.body as string).faults[0];
+		expect(fault.message).toBe("first WARNING forged second line");
+	});
+
+	it("does not fold two failures that said different things", async () => {
+		const reporter = new FaultReporter();
+		reporter.setCredential("knap_abc");
+		reporter.report("sync", new Error("Acme.md is locked"));
+		reporter.report("sync", new Error("Beta.md is locked"));
+		await jest.advanceTimersByTimeAsync(SEND_EVERY_MS);
+		expect(JSON.parse(sentBodies()[0]).faults).toHaveLength(2);
+	});
+
+	it("says nothing at all when reporting is off, credential or not", async () => {
+		const reporter = new FaultReporter();
+		reporter.setCredential("knap_abc");
+		reporter.setEnabled(false);
+		reporter.report("sync", PATHY);
+		await jest.advanceTimersByTimeAsync(SEND_EVERY_MS * 3);
+		expect(requestUrlMock).not.toHaveBeenCalled();
+	});
+
+	it("scrubs to the four facts when asked without a credential", () => {
+		expect(Object.keys(scrubFault("sync", PATHY)).sort()).toEqual([
+			"component",
+			"platform",
+			"type",
+			"version",
+		]);
+	});
+});

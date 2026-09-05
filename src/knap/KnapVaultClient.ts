@@ -30,6 +30,7 @@ import { WebsocketProvider } from "y-websocket";
 
 import { withTimeout } from "./deadline";
 import type { KnapServer } from "./KnapServer";
+import { listenForNotices, type ServerNotice } from "./notices";
 import { TREE_DOC_ID, TreeDoc } from "./TreeDoc";
 
 /**
@@ -122,6 +123,14 @@ export class KnapVaultClient {
 		 * while the count has not been taken; sockets opened then say nothing.
 		 */
 		private readonly localCounts?: () => { notes: number; attachments: number } | null,
+		/**
+		 * Told when the server says something went wrong on its side
+		 * (ADR-0095). Only the tree socket carries these, so this is called
+		 * once per notice however many notes this vault has open. Last in the
+		 * list because everything before it was already being passed
+		 * positionally by callers that do not care about notices.
+		 */
+		private readonly onNotice?: (notice: ServerNotice) => void,
 	) {}
 
 	/**
@@ -398,6 +407,11 @@ export class KnapVaultClient {
 			disableBc: true,
 		});
 		provider.awareness.setLocalStateField("device", { name: this.deviceName });
+		// The server sends notices down the tree socket and nowhere else, so
+		// this is the one place that listens for them.
+		if (docId === TREE_DOC_ID && this.onNotice) {
+			listenForNotices(provider, this.onNotice);
+		}
 
 		// A refusal, not an outage. y-websocket treats every close the same and
 		// reconnects with backoff forever, which for somebody who was taken out

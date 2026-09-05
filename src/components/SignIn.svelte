@@ -853,11 +853,13 @@
 	     row, one honest sentence: exactly what is sent, and what never is. -->
 	<div class="setting-item mod-toggle">
 		<div class="setting-item-info">
-			<div class="setting-item-name">Send anonymous error reports</div>
+			<div class="setting-item-name">Send error reports</div>
 			<div class="setting-item-description">
 				When something breaks, Knap sends the kind of error, where in the
-				plugin it happened, the plugin version and your platform, and never a
-				note, a file name or anything that identifies you.
+				plugin it happened, the plugin version and your platform. While you
+				are signed in it also sends what the error said, which can name a
+				note. It goes to the server your vault is already on, and nowhere
+				else.
 			</div>
 		</div>
 		<div class="setting-item-control">
@@ -866,7 +868,7 @@
 				class:is-enabled={faultReporting}
 				role="checkbox"
 				aria-checked={faultReporting}
-				aria-label="Send anonymous error reports"
+				aria-label="Send error reports"
 				tabindex="0"
 				on:click={toggleFaultReporting}
 				on:keypress={(e) => {
