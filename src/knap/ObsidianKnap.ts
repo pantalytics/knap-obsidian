@@ -20,6 +20,7 @@ import type { CloudVault } from "./KnapServer";
 import { knapLiveEditing } from "./knapEditor";
 import { KnapSync } from "./KnapSync";
 import type { KnapLink } from "./KnapSync";
+import { ObsidianConfigStore } from "./ObsidianConfigStore";
 import { ObsidianFileStore } from "./ObsidianFileStore";
 import { ObsidianSeenTree } from "./ObsidianSeenTree";
 import { KnapSettingsTab, signOutNotice } from "./KnapSettingsTab";
@@ -175,6 +176,7 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 					`again, or unlink in settings.`,
 				0,
 			),
+		config: new ObsidianConfigStore(host.app),
 		makeSeen: (cloudVaultId) =>
 			new ObsidianSeenTree(
 				host.app.vault.adapter,

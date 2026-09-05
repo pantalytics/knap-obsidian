@@ -35,7 +35,7 @@
  * uninstalling the plugin, which leaves the token alive anyway.
  */
 
-import { Notice, type Plugin, PluginSettingTab, Setting, setIcon } from "obsidian";
+import { type App, Modal, Notice, type Plugin, PluginSettingTab, Setting, setIcon } from "obsidian";
 
 import {
 	DOWNLOADING,
@@ -320,6 +320,7 @@ export class KnapSettingsTab extends PluginSettingTab {
 			this.statusEl = block.createDiv({ cls: "knap-status-slot" });
 			this.paint();
 			this.startTick();
+			this.drawSettingsSync(block);
 			return;
 		}
 
@@ -334,6 +335,58 @@ export class KnapSettingsTab extends PluginSettingTab {
 						.catch((error: Error) => new Notice(error.message));
 				}),
 		);
+	}
+
+	/**
+	 * The settings switch, under the strip and inside the same block.
+	 *
+	 * A name, an info button and the switch, and no sentence under it. What
+	 * travels is most of a folder now (ADR-0094), and a description line
+	 * either lies by omission or runs to three lines on a phone. *Settings*
+	 * means plugins to the person reading it, so the honest answer is a list
+	 * rather than a summary, and a list belongs behind a button.
+	 *
+	 * It is inside the Cloud vault block because it is a fact about the link:
+	 * unlink, and there is nothing left for it to be about.
+	 */
+	private drawSettingsSync(block: HTMLElement): void {
+		if (!this.sync.canSyncSettings) return;
+		const row = new Setting(block).setName("Sync settings");
+		row.addExtraButton((button) =>
+			button
+				.setIcon("info")
+				.setTooltip("What travels")
+				.onClick(() => new WhatTravelsModal(this.app).open()),
+		);
+		row.addToggle((toggle) =>
+			toggle.setValue(this.sync.syncsSettings).onChange((on) => {
+				// Read back rather than trusted: the confirm below can be
+				// declined, and a toggle that already moved would then be
+				// showing something that is not true.
+				void this.changeSettingsSync(on).then(() => this.display());
+			}),
+		);
+	}
+
+	/**
+	 * Turn it on or off, asking first where turning it on costs something.
+	 *
+	 * The one moment in this feature where somebody loses work they did by
+	 * hand: a cloud vault that already carries settings replaces this
+	 * device's. Off is never asked about, because turning it off leaves both
+	 * sides exactly as they are.
+	 */
+	private async changeSettingsSync(on: boolean): Promise<void> {
+		if (on && this.sync.cloudHasSettings()) {
+			const vaultName = this.sync.linked?.cloudVaultName ?? "the cloud vault";
+			const go = await new ReplaceSettingsModal(this.app, vaultName).ask();
+			if (!go) return;
+		}
+		try {
+			await this.sync.setSyncSettings(on);
+		} catch (error) {
+			new Notice((error as Error).message);
+		}
 	}
 
 	/**
@@ -496,5 +549,112 @@ function hostOf(serverUrl: string): string {
 		return new URL(serverUrl).host;
 	} catch {
 		return serverUrl;
+	}
+}
+
+
+/**
+ * What settings sync carries, and the short list of what it does not.
+ *
+ * The second list is the interesting one and it is why this modal exists at
+ * all: two items, and both of them are things a person would otherwise
+ * discover by noticing something missing.
+ */
+export class WhatTravelsModal extends Modal {
+	onOpen(): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.createEl("h3", { text: "What travels with this vault" });
+
+		const lists = contentEl.createDiv({ cls: "knap-travels" });
+		this.list(lists, "Travels", [
+			"Theme, snippets and appearance",
+			"Hotkeys",
+			"Plugins, and their settings",
+			"Editor and graph settings",
+		]);
+		this.list(lists, "Stays on this device", [
+			"Which panes are open",
+			"Your Knap account and this link",
+		]);
+
+		contentEl.createDiv({
+			cls: "knap-travels-foot",
+			text:
+				"Two devices changing the same setting while both are offline: the newer " +
+				"one wins. A theme or a hotkey applies straight away. A plugin that " +
+				"arrives starts the next time you open Obsidian.",
+		});
+	}
+
+	private list(parent: HTMLElement, head: string, items: string[]): void {
+		const column = parent.createDiv({ cls: "knap-travels-column" });
+		column.createDiv({ cls: "knap-travels-head", text: head });
+		const list = column.createEl("ul", { cls: "knap-travels-list" });
+		for (const item of items) list.createEl("li", { text: item });
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+}
+
+/**
+ * The question turning the switch on asks when there is something to lose.
+ *
+ * Only when the cloud vault already carries settings, and it names the vault,
+ * because somebody with two of them needs to know which one is about to win.
+ * The sentence about notes is there because that is the fear the word
+ * *replace* creates, and it is unfounded.
+ */
+export class ReplaceSettingsModal extends Modal {
+	private answered = false;
+	private settle: ((go: boolean) => void) | null = null;
+
+	constructor(
+		app: App,
+		private readonly vaultName: string,
+	) {
+		super(app);
+	}
+
+	ask(): Promise<boolean> {
+		return new Promise<boolean>((resolve) => {
+			this.settle = resolve;
+			this.open();
+		});
+	}
+
+	onOpen(): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.createEl("h3", { text: "Use the cloud vault's settings?" });
+		contentEl.createEl("p", {
+			text:
+				`${this.vaultName} already carries a theme, hotkeys, snippets and plugins. ` +
+				"Turning this on replaces the ones on this device with those. Your notes " +
+				"are not touched.",
+		});
+		const buttons = contentEl.createDiv({ cls: "knap-modal-buttons" });
+		const cancel = buttons.createEl("button", { text: "Cancel" });
+		cancel.type = "button";
+		cancel.addEventListener("click", () => this.answer(false));
+		const go = buttons.createEl("button", { text: "Use the cloud vault's", cls: "mod-cta" });
+		go.type = "button";
+		go.addEventListener("click", () => this.answer(true));
+	}
+
+	private answer(go: boolean): void {
+		this.answered = true;
+		this.settle?.(go);
+		this.settle = null;
+		this.close();
+	}
+
+	/** Closing the dialog is an answer, and the answer is no. */
+	onClose(): void {
+		this.contentEl.empty();
+		if (!this.answered) this.settle?.(false);
+		this.settle = null;
 	}
 }

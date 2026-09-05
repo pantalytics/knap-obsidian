@@ -840,3 +840,49 @@
 .knap-link > .knap-link-say {
 	margin-bottom: var(--size-4-3);
 }
+
+/* The two lists behind the info button on the Sync settings row. Side by side
+   where there is room and stacked on a phone, because the second list is the
+   one worth reading and it must not fall off the bottom. */
+.knap-travels {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-4);
+	margin-bottom: var(--size-4-4);
+}
+
+.knap-travels-column {
+	flex: 1 1 200px;
+	min-width: 0;
+}
+
+.knap-travels-head {
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	margin-bottom: var(--size-4-2);
+}
+
+.knap-travels-list {
+	margin: 0;
+	padding-left: var(--size-4-4);
+}
+
+.knap-travels-list li {
+	margin-bottom: var(--size-4-1);
+}
+
+.knap-travels-foot {
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: var(--size-4-3);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.knap-modal-buttons {
+	display: flex;
+	gap: var(--size-4-2);
+	justify-content: flex-end;
+	margin-top: var(--size-4-4);
+}

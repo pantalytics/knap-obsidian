@@ -18,7 +18,16 @@ import {
 } from "../../src/knap/KnapSettingsTab";
 import { INITIALIZING, OFFLINE, PROBLEM, SYNCING, UP_TO_DATE } from "../../src/syncStatus";
 
-type Row = { name: string; desc: string; buttons: string[]; press?: () => void };
+type Row = {
+	name: string;
+	desc: string;
+	buttons: string[];
+	press?: () => void;
+	/** The info button beside the switch, if the row has one. */
+	extras?: string[];
+	/** The switch itself: what it shows, and how to flip it. */
+	toggle?: { value: boolean; flip: (on: boolean) => void };
+};
 
 /** What the plugin said in the corner. `var` so the mock factory can hoist it. */
 var notices: string[] = [];
@@ -95,7 +104,7 @@ function find(root: FakeEl, cls: string): FakeEl | undefined {
 
 jest.mock("obsidian", () => {
 	class Setting {
-		private row: Row = { name: "", desc: "", buttons: [] };
+		private row: Row = { name: "", desc: "", buttons: [], extras: [] };
 		constructor(container: { rows?: Row[] }) {
 			container.rows?.push(this.row);
 		}
@@ -125,6 +134,35 @@ jest.mock("obsidian", () => {
 			build(button);
 			return this;
 		}
+		addExtraButton(build: (b: unknown) => void) {
+			const button = {
+				setIcon: (icon: string) => {
+					this.row.extras?.push(icon);
+					return button;
+				},
+				setTooltip: () => button,
+				onClick: (run: () => void) => {
+					this.row.press = run;
+					return button;
+				},
+			};
+			build(button);
+			return this;
+		}
+		addToggle(build: (t: unknown) => void) {
+			const toggle = {
+				setValue: (value: boolean) => {
+					this.row.toggle = { value, flip: () => undefined };
+					return toggle;
+				},
+				onChange: (run: (on: boolean) => void) => {
+					if (this.row.toggle) this.row.toggle.flip = run;
+					return toggle;
+				},
+			};
+			build(toggle);
+			return this;
+		}
 	}
 	class PluginSettingTab {
 		containerEl: unknown;
@@ -143,6 +181,12 @@ jest.mock("obsidian", () => {
 		},
 		App: class {},
 		setIcon: () => {},
+		Modal: class {
+			contentEl = { empty: () => undefined };
+			constructor(public app: unknown) {}
+			open() {}
+			close() {}
+		},
 	};
 });
 
@@ -150,6 +194,10 @@ interface FakeState {
 	signedIn: boolean;
 	linked: null | { id: string; name: string };
 	status?: Partial<ReturnType<typeof baseStatus>>;
+	/** Whether settings sync is already on for this link. */
+	settingsOn?: boolean;
+	/** Whether the cloud vault already carries settings. */
+	cloudHasSettings?: boolean;
 }
 
 function baseStatus() {
@@ -182,6 +230,7 @@ function fakeSync(state: FakeState) {
 	const retried: string[] = [];
 	let settle: (() => void) | null = null;
 	let breaks: ((error: Error) => void) | null = null;
+	let settingsOn = state.settingsOn === true;
 	return {
 		retried,
 		/** Move the vault on, the way a socket does behind the screen's back. */
@@ -228,6 +277,16 @@ function fakeSync(state: FakeState) {
 			signedIn = false;
 			linked = null;
 			return { endedRemotely: true };
+		},
+		// The settings switch. `settingsOn` is what the row reads back, and
+		// `asked` records whether the person was warned before it moved.
+		canSyncSettings: true,
+		get syncsSettings() {
+			return settingsOn;
+		},
+		cloudHasSettings: () => state.cloudHasSettings === true,
+		setSyncSettings: async (on: boolean) => {
+			settingsOn = on;
 		},
 	};
 }
@@ -326,7 +385,9 @@ describe("the screen, signed in", () => {
 			signedIn: true,
 			linked: { id: "v1", name: "Work notes" },
 		});
-		expect(rows.map((r) => r.name)).toEqual(["Account", "Cloud vault"]);
+		// Account, then the vault, then what travels with it. The order is
+		// what each row depends on: who, which vault, and how much of it.
+		expect(rows.map((r) => r.name)).toEqual(["Account", "Cloud vault", "Sync settings"]);
 		// Inside the vault's own block rather than beside it: one border round
 		// both, so the strip cannot be read as a third subject.
 		const block = find(container, "knap-vault");
@@ -341,7 +402,7 @@ describe("the screen, signed in", () => {
 				linked: { id: "v1", name: "Work notes" },
 				status: { problems, word: problems ? PROBLEM : UP_TO_DATE, dot: "error" },
 			});
-			expect(rows.map((r) => r.name)).toEqual(["Account", "Cloud vault"]);
+			expect(rows.map((r) => r.name)).toEqual(["Account", "Cloud vault", "Sync settings"]);
 		}
 	});
 
@@ -362,6 +423,48 @@ describe("the screen, signed in", () => {
 
 		expect(rows.flatMap((r) => r.buttons)).toEqual(["Sign in"]);
 		expect(rows.map((r) => r.desc).join(" ")).not.toContain("Work notes");
+	});
+});
+
+describe("the settings switch", () => {
+	it("is not on the screen until there is a cloud vault to be about", () => {
+		const { rows } = drawWith(fakeSync({ signedIn: true, linked: null }));
+		expect(rows.map((row) => row.name)).not.toContain("Sync settings");
+	});
+
+	it("is a name, an info button and the switch, with nothing said under it", () => {
+		const { rows } = drawWith(
+			fakeSync({ signedIn: true, linked: { id: "v1", name: "Work notes" } }),
+		);
+		const row = rows.find((candidate) => candidate.name === "Sync settings");
+		expect(row).toBeDefined();
+		// The description line is the thing this row deliberately does not
+		// have: what travels is most of a folder, and one line either lies by
+		// omission or runs to three lines on a phone (ADR-0094).
+		expect(row?.desc).toBe("");
+		expect(row?.extras).toEqual(["info"]);
+		expect(row?.toggle?.value).toBe(false);
+	});
+
+	it("reads back on, once it is on", () => {
+		const { rows } = drawWith(
+			fakeSync({
+				signedIn: true,
+				linked: { id: "v1", name: "Work notes" },
+				settingsOn: true,
+			}),
+		);
+		const row = rows.find((candidate) => candidate.name === "Sync settings");
+		expect(row?.toggle?.value).toBe(true);
+	});
+
+	it("turns on without a question where there is nothing to replace", async () => {
+		const sync = fakeSync({ signedIn: true, linked: { id: "v1", name: "Work notes" } });
+		const { rows } = drawWith(sync);
+		rows.find((row) => row.name === "Sync settings")?.toggle?.flip(true);
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(sync.syncsSettings).toBe(true);
 	});
 });
 
