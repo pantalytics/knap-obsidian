@@ -570,6 +570,22 @@ describe("VaultBinding", () => {
 		expect(a.files.map.get("nota (conflict).md")).toBe("lokale versie");
 	});
 
+	it("an empty local file is filled, not copied beside itself", async () => {
+		// What a fill killed halfway leaves at a path. Measured on 2026-09-05:
+		// a phone made 57 of these, every copy nought bytes, and every one of
+		// them became a note in the cloud vault and on every other device.
+		const hub = new Hub();
+		const a = await device(hub, { "nota.md": "cloudversie" });
+		await settle(a.binding);
+
+		const b = await device(hub, { "nota.md": "" });
+		await settle(a.binding, b.binding);
+
+		expect(b.files.map.get("nota.md")).toBe("cloudversie");
+		expect([...b.files.map].filter(([path]) => path.includes("conflict"))).toHaveLength(0);
+		expect([...a.files.map].filter(([path]) => path.includes("conflict"))).toHaveLength(0);
+	});
+
 	it("its own writes do not echo", async () => {
 		const hub = new Hub();
 		const a = await device(hub, { "stil.md": "rust" });

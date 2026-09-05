@@ -347,6 +347,32 @@ describe("nothing is lost", () => {
 		alice.binding.stop();
 		bob.binding.stop();
 	});
+
+	it("does not keep a copy of nought bytes beside the real file", async () => {
+		// A download that was cut off leaves an empty file at the path, and
+		// the hash of nothing differs from every real hash, so the rule above
+		// used to file it as a second copy worth keeping. It is not a copy of
+		// anything, and the note side proved what that costs: 57 empty notes
+		// in one evening, 2026-09-05.
+		const hub = new Hub();
+		const transport = new MemoryTransport();
+		const alice = await device(hub, transport);
+
+		const bob = await device(hub, transport);
+		bob.binding.stop();
+		bob.files.blobs.set("foto.png", new ArrayBuffer(0));
+
+		await alice.files.writeBinary("foto.png", bytes("alice's photo"));
+		await settle(alice);
+		await bob.binding.start();
+		await settle(alice, bob);
+
+		expect(textOf(bob.files.blobs.get("foto.png") as ArrayBuffer)).toBe("alice's photo");
+		expect([...bob.files.blobs.keys()].filter((p) => p.includes("conflict"))).toHaveLength(0);
+		expect([...transport.stored.keys()].filter((p) => p.includes("conflict"))).toHaveLength(0);
+		alice.binding.stop();
+		bob.binding.stop();
+	});
 });
 
 describe("the ceilings", () => {
