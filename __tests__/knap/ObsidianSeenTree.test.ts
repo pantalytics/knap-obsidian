@@ -51,6 +51,29 @@ describe("ObsidianSeenTree", () => {
 		expect(await treeFor(adapter, "cloud-2").load()).toEqual(new Map());
 	});
 
+	it("says nothing about a record written before the tree was narrowed", async () => {
+		// Pre-#152 shape: the tree saved whole, no `narrowed` flag. On a device
+		// whose fill never finished it claims paths that never reached the
+		// disk, and reconcileAll reads such a claim as a deletion.
+		const adapter = new FakeAdapter();
+		adapter.files.set(
+			PATH,
+			JSON.stringify({ cloudVaultId: "cloud-1", files: { "Notes/plan.md": "doc-1" } }),
+		);
+
+		expect(await treeFor(adapter).load()).toEqual(new Map());
+	});
+
+	it("reads its own record back across the upgrade it survives", async () => {
+		// The flag is written, so the very next start trusts the record again
+		// and the refill is paid once rather than every time.
+		const adapter = new FakeAdapter();
+		await treeFor(adapter).save(new Map([["Notes/plan.md", "doc-1"]]));
+
+		expect(JSON.parse(adapter.files.get(PATH) as string).narrowed).toBe(true);
+		expect(await treeFor(adapter).load()).toEqual(new Map([["Notes/plan.md", "doc-1"]]));
+	});
+
 	it("a record that is not there, or not readable, is an empty one", async () => {
 		const adapter = new FakeAdapter();
 		expect(await treeFor(adapter).load()).toEqual(new Map());
