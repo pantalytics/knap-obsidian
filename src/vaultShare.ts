@@ -43,7 +43,11 @@ export interface ShareLike {
 	path: string;
 	/** When the vault was made on Knap. The one fact worth previewing. */
 	created_at?: string;
-	/** False when somebody else owns it and this account is a member of it. */
+	/**
+	 * False when somebody else made it. It says who created the vault and
+	 * nothing about what this account may do with it: everybody in a vault can
+	 * do everything to it (ADR-0073). Nothing on a screen reads it.
+	 */
 	is_owner?: boolean;
 }
 
@@ -160,12 +164,10 @@ export function vaultRowLines(vault: ShareLike): string[] {
 	if (made) {
 		lines.push(`Added to Knap on ${made}`);
 	}
-	if (vault.is_owner === false) {
-		// Not "shared with you". Share is the control plane's noun and stays
-		// off a screen (ADR-0038); what a person needs here is whose vault it
-		// is, which is the same fact in the words the rest of Knap uses.
-		lines.push("Someone else's vault");
-	}
+	// Nothing about who made it. It used to say "Someone else's vault" on a
+	// vault this account did not create, which was true and is now beside the
+	// point: one kind of person is in a vault and they can all do everything
+	// to it (ADR-0073), so the line said a difference that no longer exists.
 	return lines;
 }
 
