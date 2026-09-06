@@ -34,6 +34,20 @@ describe("what settings sync carries", () => {
 		// Which panes are open, on either kind of device.
 		[".obsidian/workspace.json", false],
 		[".obsidian/workspace-mobile.json", false],
+		// The rest of the family, seen on a real vault (#147): an older
+		// Obsidian's extensionless file, and a file syncer's duplicates.
+		[".obsidian/workspace", false],
+		[".obsidian/workspace 2.json", false],
+		[".obsidian/workspace 3.json", false],
+		// Dropped with them on purpose: the core plugin's saved layouts.
+		[".obsidian/workspaces.json", false],
+		// A plugin named after them lives a directory down and travels.
+		[".obsidian/plugins/workspaces-plus/main.js", true],
+		// What the operating system left lying around, at any depth.
+		[".obsidian/.DS_Store", false],
+		[".obsidian/plugins/.DS_Store", false],
+		[".obsidian/plugins/dataview/.ds_store", false],
+		[".obsidian/Thumbs.db", false],
 		// Hidden, and not settings.
 		[".trash/gone.md", false],
 		[".git/config", false],

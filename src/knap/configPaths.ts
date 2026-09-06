@@ -52,7 +52,7 @@ export const OUR_PLUGIN_ID = "synced-vaults";
 const REFUSED_PREFIXES = [`plugins/${OUR_PLUGIN_ID}`];
 
 /**
- * Files inside the config directory that stay on the device.
+ * The workspace family, matched on how the name starts rather than listed.
  *
  * Which panes are open, on each of the two kinds of device Obsidian runs on.
  * Obsidian keeps them apart itself, `workspace.json` on desktop and
@@ -60,8 +60,28 @@ const REFUSED_PREFIXES = [`plugins/${OUR_PLUGIN_ID}`];
  * at six writes in twenty-five idle seconds against zero for every other file
  * in the directory, so two devices syncing one would never settle. Obsidian
  * Sync does not carry them either.
+ *
+ * Listing the two names by hand held until one vault broke it: `workspace`
+ * with no extension from an older Obsidian, and `workspace 2.json` and
+ * `workspace 3.json` from a file syncer that had duplicated it (#147). Every
+ * one of those is one device's pane layout under a name nobody predicted, so
+ * the rule is the stem instead, and only at the top of the directory: the
+ * `workspaces-plus` plugin lives a directory down and travels like any other
+ * plugin. Dropped on purpose: `workspaces.json`, the core plugin's saved
+ * layouts, which is closer to a setting than to a pane -- worth carrying, not
+ * worth a second rule to separate it from the file it is named after.
  */
-const REFUSED_FILES = ["workspace.json", "workspace-mobile.json"];
+const WORKSPACE_STEM = "workspace";
+
+/**
+ * What the operating system left lying around, at any depth.
+ *
+ * `.DS_Store` under `plugins/` is a Finder artefact of looking at the folder,
+ * not a setting, and a device that offers one gets it refused rather than
+ * stored. Matched by basename, lowercased, because these names come from
+ * whichever machine wrote them.
+ */
+const REFUSED_NAMES = [".ds_store", "thumbs.db", "desktop.ini"];
 
 /**
  * Is this path one settings sync carries?
@@ -79,8 +99,12 @@ export function isSyncedConfig(vaultPath: string): boolean {
 	}
 	const parts = clean.split("/").filter(Boolean);
 	if (parts.length < 2 || parts[0] !== CONFIG_DIR) return false;
+	const name = parts[parts.length - 1].toLowerCase();
+	if (REFUSED_NAMES.includes(name)) return false;
+	if (parts.length === 2 && parts[1].toLowerCase().startsWith(WORKSPACE_STEM)) {
+		return false;
+	}
 	const inside = parts.slice(1).join("/");
-	if (REFUSED_FILES.includes(inside)) return false;
 	return !REFUSED_PREFIXES.some(
 		(prefix) => inside === prefix || inside.startsWith(prefix + "/"),
 	);
