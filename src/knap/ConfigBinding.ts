@@ -16,9 +16,12 @@
  * - **No conflict copy.** Notes and attachments keep both sides. A file called
  *   `appearance (conflict from iPhone).json` inside `.obsidian` is litter in a
  *   folder a person cannot open from Obsidian, so the newer write simply wins.
- * - **The switch.** Off by default, and off means this binding is not started
- *   at all. Turning it off later leaves both sides exactly as they are: the
- *   files stay in the cloud vault, this device stops listening.
+ * - **Nothing to turn on.** This binding starts wherever the host has a config
+ *   directory at all, so a vault is its notes and how it is set up on every
+ *   device that holds it (ADR-0096). One consequence is worth knowing before
+ *   reading the rest: the settings belong to the vault, so everybody in a
+ *   shared vault gets the same theme, hotkeys and plugins, and the carve-outs
+ *   in `configPaths.ts` are the whole of what stays personal.
  * - **`manifest.json` goes last** when a plugin folder arrives, so a folder
  *   whose `main.js` is still in flight is not a plugin that half exists.
  * - **Nothing is enabled here.** A plugin that arrives is on disk and in the
@@ -27,7 +30,8 @@
  *   plugins too, and running somebody else's code the instant it lands is a
  *   decision no sync client should make on its own.
  * - **Our own folder never travels**, in either direction, and that is in
- *   `configPaths.ts` rather than here so the server can hold the same list.
+ *   `configPaths.ts` rather than here so the server can hold the same list. It
+ *   is what keeps a second person in a vault from being signed in as the first.
  */
 
 import { generateHash } from "../hashing";
