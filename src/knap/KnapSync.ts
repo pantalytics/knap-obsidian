@@ -34,7 +34,6 @@ import type { AttachmentTransport, Refusal } from "./AttachmentBinding";
 import { AttachmentBinding } from "./AttachmentBinding";
 import type { ConfigStore } from "./ConfigBinding";
 import { ConfigBinding } from "./ConfigBinding";
-import { isSyncedConfig } from "./configPaths";
 import type { LiveNoteHandle } from "./knapEditor";
 import { conflictLabelFor, personLabel } from "./person";
 import { normalize } from "./TreeDoc";
@@ -66,15 +65,6 @@ export interface KnapLink {
 	 * vault falls quiet.
 	 */
 	initialized?: boolean;
-	/**
-	 * Whether this vault's settings travel with the cloud vault.
-	 *
-	 * Off unless somebody turned it on, and stored beside the link rather
-	 * than in the plugin's own settings because it is a fact about this
-	 * link: unlinking ends it, and linking somewhere else starts the
-	 * question again (ADR-0094).
-	 */
-	syncSettings?: boolean;
 }
 
 /**
@@ -518,8 +508,11 @@ export class KnapSync {
 			this.options.onRefused,
 			() => conflictLabelFor(this.person, this.options.deviceName, new Date()),
 		);
+		// No condition beyond whether this host can carry settings at all.
+		// A vault is its notes and how it is set up, and a device that had
+		// one without the other was a device somebody had to be told about.
 		this.settings =
-			this.options.config && stored.syncSettings
+			this.options.config
 				? new ConfigBinding(
 						this.options.config,
 						this.client,
@@ -616,64 +609,6 @@ export class KnapSync {
 		this.attachments = null;
 		this.settings = null;
 		this.options.onLostVault?.(vaultName);
-	}
-
-	// -- settings sync -------------------------------------------------------
-
-	/** Whether this link carries Obsidian's own settings. Off by default. */
-	get syncsSettings(): boolean {
-		return this.options.load()?.syncSettings === true;
-	}
-
-	/** Whether this host can carry settings at all. False in a bare test. */
-	get canSyncSettings(): boolean {
-		return this.options.config !== undefined;
-	}
-
-	/**
-	 * Whether the cloud vault already holds settings.
-	 *
-	 * The screen asks before turning the switch on, because a cloud vault
-	 * that has them replaces this device's, and that is the one moment in
-	 * this feature where somebody can lose something they set up by hand.
-	 * False while there is no socket, which reads as nothing to replace: the
-	 * binding's own reconciliation is the thing that decides in the end, and
-	 * it compares hashes rather than trusting this.
-	 */
-	cloudHasSettings(): boolean {
-		if (!this.client) return false;
-		for (const path of this.client.tree().attachments().keys()) {
-			if (isSyncedConfig(path)) return true;
-		}
-		return false;
-	}
-
-	/**
-	 * Turn settings sync on or off for this link.
-	 *
-	 * Takes effect now rather than at the next start, because a switch that
-	 * needs Obsidian restarted to mean anything is a switch somebody presses
-	 * twice. Turning it off stops this device listening and leaves both sides
-	 * as they are: the files stay in the cloud vault, and the files here stay
-	 * here.
-	 */
-	async setSyncSettings(on: boolean): Promise<void> {
-		const stored = this.options.load();
-		if (!stored) return;
-		await this.options.save({ ...stored, syncSettings: on });
-		if (!on) {
-			this.settings?.stop();
-			this.settings = null;
-			return;
-		}
-		if (this.settings || !this.options.config || !this.client) return;
-		this.settings = new ConfigBinding(
-			this.options.config,
-			this.client,
-			this.transportFor(stored.token, stored.cloudVaultId),
-			this.options.onRefused,
-		);
-		await this.settings.start();
 	}
 
 	/** The file routes, bound to one vault and one token. */
