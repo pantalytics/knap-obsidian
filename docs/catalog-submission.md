@@ -67,9 +67,9 @@ Verified against the live repo and the live catalog on 2026-08-11, not assumed.
 | Repository is public | Public. This was the blocker in the previous draft and it is gone. |
 | `README.md`, `LICENSE`, `manifest.json` in the repo root | Present. CI checks they stay present. |
 | Default branch carries the Knap manifest and README | `main` is the default branch and holds both, so there is nothing to merge first. It was renamed from `knap/fork-base` on 2026-08-13; GitHub redirects the old name, and the directory reads whatever is default at the time it looks. |
-| Plugin id unique across published plugins | `synced-vaults` is free: re-checked against all 6582 entries in `community-plugins.json` on 2026-08-12, after the rename off `knap-sync`. The id stayed there when the name went back to Knap (ADR-0045). The name was checked separately on 2026-08-12 against all 6588 entries then published: no plugin is called Knap and none carries the word in its name. |
+| Plugin id unique across published plugins | `synced-vaults` is free: re-checked against all 6582 entries in `community-plugins.json` on 2026-08-12, after the rename off `knap-sync`. The id stayed there when the name went back to Knap (ADR-0045). The name was checked separately on 2026-08-12 against all 6588 entries then published: no plugin is called Knap and none carries the word in its name, and that was still true of all 7371 entries on 2026-09-07. Uniqueness was never the problem; see below. |
 | Plugin id does not contain `obsidian` | `synced-vaults`. CI checks it. |
-| Name does not read as a first-party Obsidian product | Knap. It is the product's own name and says nothing about Obsidian. CI checks for "Obsidian". |
+| Name does not read as a first-party Obsidian product | Pantalytics Knap. It says nothing about Obsidian, and CI checks for the word. The name was `Knap` until 2026-09-07; see *The directory refused the name* below. |
 | `manifest.json` carries id, name, version, minAppVersion, description, author, `isDesktopOnly` | All set. `isDesktopOnly: false`, so the phone is a supported target and the scan will hold it to that. |
 | Semantic version, matching across manifest, package.json, versions.json, manifest-beta.json | CI fails the build when any two disagree. |
 | Release tagged bare semver, equal to `manifest.version` | Tags are bare semver and `cd.yml` stamps the manifest it publishes to match. **Since 2026-09-01 the version files in git deliberately lag the releases**, so this row needs the files brought back in step before submission. |
@@ -77,6 +77,39 @@ Verified against the live repo and the live catalog on 2026-08-11, not assumed.
 | Licence and attribution for forked code | `LICENSE` carries all three copyright lines, `NOTICE` records the fork point and every vendored dependency. |
 | Required disclosures in the README | Network use was already there. 1.1.43 adds that an account is required, that a relay can charge and where its billing screen lives, and that signing in through Google, GitHub, Microsoft or Discord loads that provider's page. |
 | No client-side telemetry | None. The policy prohibits it outright, and nothing in `src/` reaches an analytics service. |
+
+## The directory refused the name
+
+Measured, not inferred. The 2026-09-01 submission passed its scan at 1.13.6 --
+the scorecard reads *Completed* and the release checks pass -- and the entry was
+hidden anyway, with a banner of its own:
+
+> **Name not allowed in the directory.** The name "Knap" is not allowed in the
+> directory. Your entry has been hidden until you change the name in your
+> `manifest.json`.
+
+What that is not: it is not the duplicate-name error, which reads *an entry with
+this name already exists*, and no published entry is called Knap or carries the
+word (re-checked against all 7371 entries on 2026-09-07). It is not the scan
+either, which the same page reports as passed. Obsidian publishes no rule about
+allowed names beyond the ban on "Obsidian", so **why the bare word is refused is
+not something we can read anywhere**, and guessing at it would be a design on
+unmeasured behaviour.
+
+The answer is to stop submitting a bare word. **The manifest name is
+`Pantalytics Knap`**: the author field already says Pantalytics, the pair reads
+as a vendor and a product rather than as a dictionary entry, and it stays short
+enough to sit in the settings sidebar. It is the one thing that changed. The id
+is still `synced-vaults`, so the plugin updates in place, and everything the
+plugin says about itself is still Knap. Obsidian draws two strings from the
+manifest that a person sees, the Community plugins row and the settings tab
+heading, and both now read *Pantalytics Knap*.
+
+If the resubmission comes back refused again, the word itself is on a list we
+cannot see, and the next name has to drop it. That is a fact worth having before
+picking one, which is why this section records the attempt. The decision is
+[ADR-0097](https://github.com/pantalytics/knap-mcp-admin/blob/main/docs/adr/0097-the-plugin-is-pantalytics-knap-in-the-directory.md),
+which amends ADR-0045's name and leaves its id and its screen alone.
 
 ## What was done for the scan, in 1.1.43
 
