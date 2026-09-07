@@ -110,6 +110,14 @@ export class ConfigBinding {
 		private readonly docs: ConfigDocs,
 		private readonly transport: ConfigTransport,
 		private readonly refused: Refusal = () => undefined,
+		/**
+		 * True on the pass that makes a link, false on every later start.
+		 * It is the whole difference between joining a cloud vault and
+		 * coming back to one, and only the first of those may adopt.
+		 */
+		private readonly linking = false,
+		/** Told once when this device took the cloud vault's settings. */
+		private readonly adopted: () => void = () => undefined,
 	) {}
 
 	async start(): Promise<void> {
@@ -222,8 +230,28 @@ export class ConfigBinding {
 		);
 		const local = (await this.store.list()).filter((path) => isSyncedConfig(path));
 
-		const up = local.filter((path) => !recorded.has(normalize(path)));
-		const down = manifestLast([...recorded.keys()].filter((path) => !local.includes(path)));
+		// **A device joining a cloud vault that already has settings adopts
+		// them, and sends nothing of its own** (ADR-0099). Overlapping files
+		// were always the cloud's, because every recorded path is pulled
+		// below; what leaked was the rest. A joiner with Templater installed
+		// pushed Templater onto everybody in the vault at link time, because
+		// a file the tree had never heard of counted as new work from here
+		// rather than as this device's own arrangements.
+		//
+		// Only on the pass that makes the link. On a later start a file that
+		// is here and not up there is one somebody made, and removing it
+		// would be this binding deleting settings for a living.
+		const adopt = this.linking && recorded.size > 0;
+		if (adopt) {
+			for (const path of local) {
+				if (!recorded.has(normalize(path))) await this.store.remove(path);
+			}
+			this.adopted();
+		}
+		const up = adopt ? [] : local.filter((path) => !recorded.has(normalize(path)));
+		const down = manifestLast(
+			[...recorded.keys()].filter((path) => !local.includes(path)),
+		);
 
 		this.outstanding.up += up.length;
 		this.outstanding.down += down.length;

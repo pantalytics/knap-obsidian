@@ -161,6 +161,14 @@ export interface KnapSyncOptions {
 	 * somebody put the vault on a server.
 	 */
 	onNotice?: (notice: ServerNotice) => void;
+
+	/**
+	 * Told when linking took the cloud vault's settings over this device's
+	 * own, which is what joining a vault that already has some does. It
+	 * replaces a theme, hotkeys and plugins, so it is said out loud rather
+	 * than found later (ADR-0099).
+	 */
+	onAdopted?: (cloudVaultName: string) => void;
 }
 
 export class KnapSync {
@@ -416,7 +424,7 @@ export class KnapSync {
 	 * its own the whole time, so the honest thing is to wait on it, and the
 	 * word on screen says Offline while it does.
 	 */
-	async start(report?: LinkReporter, checkMerge = false): Promise<void> {
+	async start(report?: LinkReporter, linking = false): Promise<void> {
 		const stored = this.linked;
 		if (!stored || this.binding) {
 			return;
@@ -494,7 +502,7 @@ export class KnapSync {
 		// merged (ADR-0098): the link comes off again, every file on this disk
 		// is untouched, and the modal keeps the counts on screen with the
 		// reason under them.
-		if (checkMerge && isMerge(facts)) {
+		if (linking && isMerge(facts)) {
 			await this.unlink();
 			throw new Error(mergeRefusal(stored.cloudVaultName, facts));
 		}
@@ -531,6 +539,8 @@ export class KnapSync {
 						this.client,
 						this.transportFor(stored.token, stored.cloudVaultId),
 						this.options.onRefused,
+						linking,
+						() => this.options.onAdopted?.(stored.cloudVaultName),
 					)
 				: null;
 		// Set before the screen is told, so a status read on the back of that

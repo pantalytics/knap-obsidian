@@ -415,6 +415,18 @@ cannot see from here:
 The link is taken off again on the way out, so the screen behind reads *Not
 linked* rather than pointing at a cloud vault this device never joined.
 
+**Obsidian's own settings run the same arrow, and it is the one part of linking
+that replaces something a person set up.** A cloud vault that already carries
+settings is the source: its theme, hotkeys and plugins land on this device, and
+nothing of this device's goes up. A cloud vault with none is seeded from here.
+ADR-0099. Because it changes something nobody asked about in the picker, it is
+said in a notice that stays until it is dismissed, names the vault, and says the
+notes were not touched:
+
+> This device now uses Work notes' settings: its theme, hotkeys and plugins.
+> Your notes were not touched. Plugins that arrived start the next time you open
+> Obsidian.
+
 ## The commands
 
 Four, all still labelled *(beta)*, which is a name that has outlived its
