@@ -31,7 +31,7 @@ One settings tab. Obsidian's own `setting-item` rows, so it reads like the pages
 either side of it rather than like a panel we built.
 
 ```
-  Settings → Knap
+  Settings → Pantalytics Knap
   ┌──────────────────────────────────────────────────────────────┐
   │ next.knap.pantalytics.com                                    │  ← the host,
   │                                                              │    once, quietly

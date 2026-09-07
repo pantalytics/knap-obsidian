@@ -42,7 +42,7 @@ from GitHub and keeps them updated.
 1. Install and enable **BRAT** from *Settings → Community plugins → Browse*
 2. *Settings → BRAT → Add beta plugin*
 3. Paste `pantalytics/knap-obsidian`, pick the latest version, **Add plugin**
-4. Enable **Knap** in *Settings → Community plugins*
+4. Enable **Pantalytics Knap** in *Settings → Community plugins*
 
 BRAT's updates replace `main.js`, `manifest.json` and `styles.css` and leave
 the rest of the plugin's folder alone, so an update keeps you signed in, keeps
@@ -55,14 +55,16 @@ has finished, because that pass really is unfinished.
 1. Download `main.js`, `manifest.json` and `styles.css` from the
    [latest release](https://github.com/pantalytics/knap-obsidian/releases/latest)
 2. Put all three in `<your vault>/.obsidian/plugins/synced-vaults/`
-3. Reload Obsidian and enable **Knap**
+3. Reload Obsidian and enable **Pantalytics Knap**
 
 ### Coming from an older version
 
 The plugin was called Knap Sync up to 1.4.0 and Synced Vaults from 1.5.0 to
-1.7.0. The name is Knap again from 1.8.0, and this time only the name changed:
-the identifier stays `synced-vaults`, so the plugin updates in place and there
-is nothing to delete and nothing to sign in to again.
+1.7.0. The name is Knap from 1.8.0, and **Pantalytics Knap** since Obsidian's
+directory refused the bare word. Only the name changed each time: the identifier
+stays `synced-vaults`, so the plugin updates in place and there is nothing to
+delete and nothing to sign in to again. The product is still Knap, and every
+screen inside the plugin still says so.
 
 Coming from Knap Sync is the upgrade that does cost something, because Obsidian
 keys a plugin by its identifier and that one did change. Delete
@@ -74,9 +76,9 @@ and add `pantalytics/knap-obsidian` again.
 
 ## Sign in
 
-*Settings → Knap → Sign in.* A browser opens, you sign in with your Knap
-account, and Obsidian picks it up from there. There is no address to type and no
-code to paste, on a laptop or on a phone.
+*Settings → Pantalytics Knap → Sign in.* A browser opens, you sign in with your
+Knap account, and Obsidian picks it up from there. There is no address to type
+and no code to paste, on a laptop or on a phone.
 
 That button is the only way in. There is nothing else to try and nothing behind
 it to choose.
