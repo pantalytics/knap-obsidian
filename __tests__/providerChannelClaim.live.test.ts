@@ -106,7 +106,7 @@ live("YSweetProvider against a relay with the channel claim on", () => {
 					data: frame.buffer.slice(
 						frame.byteOffset,
 						frame.byteOffset + frame.byteLength,
-					) as ArrayBuffer,
+					),
 				}),
 			).not.toThrow();
 

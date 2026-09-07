@@ -164,7 +164,7 @@ export class FakeSocket {
 				data: bytes.buffer.slice(
 					bytes.byteOffset,
 					bytes.byteOffset + bytes.byteLength,
-				) as ArrayBuffer,
+				),
 			});
 		}, 0);
 	}

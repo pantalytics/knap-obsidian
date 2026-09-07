@@ -12,7 +12,7 @@
 	function toggleFlag(flagName: keyof FeatureFlags) {
 		const flagValue = !settings[flagName];
 		settings[flagName] = flagValue;
-		flagManager.setFlag(flagName as keyof FeatureFlags, settings[flagName]);
+		flagManager.setFlag(flagName, settings[flagName]);
 	}
 
 	onMount(() => {

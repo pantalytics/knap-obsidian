@@ -8,6 +8,10 @@
  * stays where it is. That is the switch phase 2's plan asks for, and it is
  * build-time on purpose: no screen offers a server field (ADR-0033).
  *
+ * Every release ships with it set and no local build does, which is why the
+ * Obsidian wire end to end has never driven the plugin people install. Issue
+ * #167 carries that, and the measurement behind it.
+ *
  * The screen words hold: sign in, cloud vault, link, unlink, sync. Nothing
  * here says server, relay or share to a person.
  */
