@@ -20,14 +20,5 @@ export default tseslint.config(
       "@typescript-eslint/no-unsafe-argument": "error",
     },
   },
-  {
-    files: ["src/storage/y-indexeddb.js"],
-    rules: {
-      "@typescript-eslint/no-unsafe-assignment": "off",
-      "@typescript-eslint/no-unsafe-argument": "off",
-      "@typescript-eslint/no-unsafe-return": "off",
-      "@typescript-eslint/no-unsafe-call": "off",
-    },
-  },
   { ignores: ["node_modules/", "main.js", "*.config.mjs"] }
 );

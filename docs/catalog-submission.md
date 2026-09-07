@@ -146,6 +146,52 @@ One thing this does not settle: the directory runs its own configuration, so our
 naming "Knap sync", that is the reason, and the product name is the right answer
 rather than the lint's.
 
+## The 1.13.6 scorecard, and what it took
+
+The 1.13.6 entry scored Health *Excellent* and Review *Satisfactory*, with one
+hard failure and a list of warnings. The failure was the one worth having:
+
+> Build verification failed while running the build script
+
+Two separate causes, both now fixed, and the fix is verified rather than
+assumed: a source tree with `.git` and `node_modules` removed, built with
+`npm run build` and no environment variables at all, produces a `main.js`
+byte-identical to the one attached to the 1.13.6 release.
+
+1. **`git describe` was unguarded.** `esbuild.config.mjs` opened with
+   `execSync("git describe --tags --always")`. The directory unpacks a
+   release's source and builds it with no `.git` beside it, so that call threw
+   and the build died before esbuild started. It falls back to the manifest
+   version now, which is the value it was already computing for a tagless
+   checkout. `notify-send` on a failed build is wrapped for the same reason.
+
+2. **The release could not be reproduced from its own source.** `cd.yml` builds
+   with `KNAP_SERVER_URL` set from a repository variable, and the define
+   defaulted to the empty string. `npm run build` therefore produced a plugin
+   with the whole `src/knap` path switched off, while every shipped release had
+   it on -- two different plugins from one source tree, and nothing for a
+   verifier to compare. The define now defaults to the same one server address
+   as the rest of the file (ADR-0033), which is what the repository variable
+   holds. The environment still overrides it.
+
+The warnings that were worth acting on:
+
+| Finding | What was done |
+|---|---|
+| 13 unsafe values (5 returns, 3 arguments, 3 assignments, 2 calls) | All 13 were in `src/storage/y-indexeddb.js`, from lib0's untyped `getAll`, `getLastKey`, `count` and `promise.create`, plus a `get()` whose JSDoc advertised `\| any`. Typed in place, no runtime change except one: `destroy()` dropped its close promise, so `clearData()` called `.then` on `undefined` and would have thrown. `destroy()` returns the promise again, as upstream does. The file's exemption in `eslint.config.unsafe-check.mjs` is gone with it. |
+| 2 `This assertion is unnecessary since it does not change the type` | Two `as ArrayBuffer` casts on `ArrayBuffer.prototype.slice` in the test mocks, and one `as keyof FeatureFlags` on a parameter already declared that way. Removed. |
+| 12 `This assertion is unnecessary since the receiver accepts the original type` | Not reproducible here against any configuration we can construct -- our own tsconfig, a strict one, one that includes the tests, one that includes the `.svelte` files. Tracked rather than guessed at. |
+| 2 `PluginSettingTab does not implement getSettingDefinitions()` | Left. The declarative settings API arrived in Obsidian 1.13 and is not in the `obsidian` typings this repo builds against, so the shape would be guesswork. Tracked. |
+| `super`/`Observable` deprecated, 3 | Left, for the reason recorded above: lib0's `ObservableV2` migration retypes every event on the core sync class, and this is vendored y-websocket code kept close to upstream. |
+
+Two disclosures the scorecard shows publicly and which are by design: the
+plugin encodes and decodes base64 at runtime (JWT claims, and the binary
+frames the sync protocol carries), and it reads and writes `window.localStorage`
+directly in the PocketBase auth store and its on-prem sibling. The latter is
+where a session token lives, which is browser storage on purpose: it is
+vault-local, it is not vault content, and it must not travel into the plugin
+data file that syncs.
+
 ## What is left
 
 ### 1. Click through a vault

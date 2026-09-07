@@ -18,7 +18,7 @@ export const RUNTIME_TRIM_SIZE = 50
  */
 export const fetchUpdates = (idbPersistence, beforeApplyUpdatesCallback = () => {}, afterApplyUpdatesCallback = () => {}) => {
   const [updatesStore] = idb.transact(/** @type {IDBDatabase} */ (idbPersistence.db), [updatesStoreName]) // , 'readonly')
-  return idb.getAll(updatesStore, idb.createIDBKeyRangeLowerBound(idbPersistence._dbref, false)).then(updates => {
+  return idb.getAll(updatesStore, idb.createIDBKeyRangeLowerBound(idbPersistence._dbref, false)).then(/** @param {Uint8Array[]} updates */ updates => {
     if (!idbPersistence._destroyed) {
       beforeApplyUpdatesCallback(updatesStore)
       Y.transact(idbPersistence.doc, () => {
@@ -26,8 +26,8 @@ export const fetchUpdates = (idbPersistence, beforeApplyUpdatesCallback = () => 
       }, idbPersistence, false)
     }
   })
-    .then(() => idb.getLastKey(updatesStore).then(lastKey => { idbPersistence._dbref = lastKey + 1 }))
-    .then(() => idb.count(updatesStore).then(cnt => { idbPersistence._dbsize = cnt }))
+    .then(() => idb.getLastKey(updatesStore).then(/** @param {number} lastKey */ lastKey => { idbPersistence._dbref = lastKey + 1 }))
+    .then(() => idb.count(updatesStore).then(/** @param {number} cnt */ cnt => { idbPersistence._dbsize = cnt }))
     .then(() => {
       if (!idbPersistence._destroyed) {
         afterApplyUpdatesCallback(updatesStore)
@@ -75,7 +75,13 @@ export class IndexeddbPersistence extends Observable {
      */
     this.db = null
     this.synced = false
+    /**
+     * @type {boolean|undefined}
+     */
     this._serverSynced = undefined
+    /**
+     * @type {"local" | "remote" | undefined}
+     */
     this._origin = undefined
     this._db = idb.openDB(name, db =>
       idb.createStores(db, [
@@ -86,7 +92,7 @@ export class IndexeddbPersistence extends Observable {
     /**
      * @type {Promise<IndexeddbPersistence>}
      */
-    this.whenSynced = promise.create(resolve => this.on('synced', () => resolve(this)))
+    this.whenSynced = promise.create(/** @param {(value: IndexeddbPersistence) => void} resolve */ resolve => this.on('synced', () => { resolve(this) }))
 
     void this._db.then(db => {
       this.db = db
@@ -106,7 +112,7 @@ export class IndexeddbPersistence extends Observable {
      */
     this._storeTimeout = 1000
     /**
-     * @type {any}
+     * @type {number|null}
      */
     this._storeTimeoutId = null
     /**
@@ -138,7 +144,7 @@ export class IndexeddbPersistence extends Observable {
   /**
    * Override once to handle race condition where event might have already fired
    * @param {string} name
-   * @param {function} f
+   * @param {(...args: any[]) => void} f
    */
   once (name, f) {
     if (name === 'synced' && this.synced) {
@@ -156,7 +162,7 @@ export class IndexeddbPersistence extends Observable {
     this.doc.off('update', this._storeUpdate)
     this.doc.off('destroy', this.destroy)
     this._destroyed = true
-    void this._db.then(db => {
+    return this._db.then(db => {
       db.close()
     })
   }
@@ -174,7 +180,7 @@ export class IndexeddbPersistence extends Observable {
 
   /**
    * @param {String | number | ArrayBuffer | Date} key
-   * @return {Promise<String | number | ArrayBuffer | Date | any>}
+   * @return {Promise<unknown>}
    */
   get (key) {
     return this._db.then(db => {
@@ -271,7 +277,8 @@ export class IndexeddbPersistence extends Observable {
     if (this._origin !== undefined) {
       return this._origin
     }
-    this._origin = await this.get("origin")
+    const stored = await this.get("origin")
+    this._origin = stored === "local" || stored === "remote" ? stored : undefined
     return this._origin
   }
 

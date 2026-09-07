@@ -36,15 +36,30 @@ that ships beside this one and in the repository's NOTICE.
 // "this build is not the release" meant nothing. A describe that carries no
 // tag falls back to the manifest's version, which is what the release is
 // about to be named.
-const described = execSync("git describe --tags --always", {
-	encoding: "utf8",
-}).trim();
+//
+// The directory's build verification is the second thing this has to survive.
+// It unpacks the release's source and runs `npm run build` with no `.git`
+// beside it, so an unguarded `git describe` throws EEXIT and the whole build
+// fails before esbuild starts. That is what the 1.13.6 scorecard reported as
+// "Build verification failed while running the build script". No git, no
+// describe, no problem: fall back to the manifest, which is the version the
+// release is named after anyway.
 const manifestVersion = JSON.parse(
 	fs.readFileSync("manifest.json", "utf8"),
 ).version;
-const gitTag = /^[0-9a-f]{7,40}$/.test(described)
-	? manifestVersion
-	: described;
+let described = "";
+try {
+	described = execSync("git describe --tags --always", {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	}).trim();
+} catch {
+	described = "";
+}
+const gitTag =
+	described === "" || /^[0-9a-f]{7,40}$/.test(described)
+		? manifestVersion
+		: described;
 
 const develop = process.argv[2] === "develop";
 const staging = process.argv[2] === "staging";
@@ -86,11 +101,19 @@ const panelUrl = process.env.KNAP_PANEL_URL || `${knapUrl}/sync`;
 console.log("knap:", knapUrl);
 console.log("git tag:", gitTag);
 
+// Desktop notification on a failed watch build. notify-send does not exist on
+// CI or on the directory's verifier, where a failing build would otherwise
+// fail twice and report the wrong reason, so the notification is best effort.
 const NotifyPlugin = {
 	name: "on-end",
 	setup(build) {
 		build.onEnd((result) => {
-			if (result.errors.length > 0) execSync(`notify-send "Build Failed"`);
+			if (result.errors.length === 0) return;
+			try {
+				execSync(`notify-send "Build Failed"`, { stdio: "ignore" });
+			} catch {
+				// no notification daemon here; the esbuild error is the signal
+			}
 		});
 	},
 };
@@ -150,10 +173,15 @@ const context = await esbuild.context({
 		AUTH_URL: `"${authUrl}"`,
 		CONTROL_PLANE_URL: JSON.stringify(controlPlaneUrl),
 		PANEL_URL: JSON.stringify(panelUrl),
-		// The rebuild's beta switch (src/knap/ObsidianKnap.ts): empty in every
-		// ordinary build, set via the environment to point one test build at
-		// the new server. No screen ever offers a server field (ADR-0033).
-		KNAP_SERVER_URL: JSON.stringify(process.env.KNAP_SERVER_URL || ""),
+		// The address src/knap/ObsidianKnap.ts registers against. It used to
+		// default to empty, so `npm run build` produced a plugin with the whole
+		// rebuild path switched off while the release, built with the repository
+		// variable set, shipped it on. The directory rebuilds a release from its
+		// source with no repository variables, so those two builds could never
+		// match and build verification had nothing to verify. It defaults to the
+		// same one server as everything else here (ADR-0033); the environment
+		// still overrides it to point a test build somewhere else.
+		KNAP_SERVER_URL: JSON.stringify(knapUrl),
 		REPOSITORY: `"pantalytics/knap-obsidian"`,
 	},
 	treeShaking: true,
