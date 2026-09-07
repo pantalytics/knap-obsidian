@@ -382,6 +382,39 @@ sentence under it. The modal stays, because a modal that vanished would leave
 the failure to a notice in the corner over a screen that still says *Not linked*
 and does not say why.
 
+**One of the two move rows is always *Nothing*, because a link with notes on
+both sides is refused.** The check runs on the four counts above it, at the last
+moment nothing has been written, and it is the only thing those counts do
+besides being read. ADR-0098: a cloud vault made in the panel takes what is on
+this device, a vault somebody was added to comes down onto a device that has
+nothing yet, and notes on both sides is somebody linking the wrong pair. The
+refusal is a failure like any other, marked on the *To download* row, and it
+names both counts, because what is in the cloud vault is the one thing a person
+cannot see from here:
+
+```
+  ┌ Linking to Work notes ────────────────────────────────┐
+  │ ✓ Notes in the cloud vault                        318 │
+  │ ✓ Attachments in the cloud vault                    0 │
+  │ ✓ Notes on this device                          1,204 │
+  │ ✓ Attachments on this device                        7 │
+  │ ✗ To download                                         │
+  │                                                       │
+  │ This device holds 1,204 notes, 7 attachments and Work │
+  │ notes holds 318 notes. Linking two vaults that both   │
+  │ hold notes would merge them, and there is no undo for │
+  │ that, so it does not happen. Make a new cloud vault   │
+  │ for the notes on this device, or open an empty local  │
+  │ vault to take this cloud vault down.                  │
+  │                                                       │
+  │ Nothing was changed. Your notes are all still on this │
+  │ device.                                               │
+  └───────────────────────────────────────────────────────┘
+```
+
+The link is taken off again on the way out, so the screen behind reads *Not
+linked* rather than pointing at a cloud vault this device never joined.
+
 ## The commands
 
 Four, all still labelled *(beta)*, which is a name that has outlived its

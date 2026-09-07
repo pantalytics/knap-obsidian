@@ -29,7 +29,7 @@ import type { SyncDot, SyncWord } from "../syncStatus";
 import { UP_TO_DATE, syncDot, syncWord } from "../syncStatus";
 import { TREE_SYNC_FAILED, TREE_SYNC_TIMEOUT_MS, withTimeout } from "./deadline";
 import type { LinkFacts, LinkReporter } from "./linkSteps";
-import { linkCounts } from "./linkSteps";
+import { isMerge, linkCounts, mergeRefusal } from "./linkSteps";
 import type { AttachmentTransport, Refusal } from "./AttachmentBinding";
 import { AttachmentBinding } from "./AttachmentBinding";
 import type { ConfigStore } from "./ConfigBinding";
@@ -354,7 +354,11 @@ export class KnapSync {
 			// last vault this device was linked to had been through.
 			initialized: false,
 		});
-		await this.start(report);
+		// The one entry point that checks: a link is being made here, so
+		// this is the only moment comparing the two sides means anything.
+		// Every later start runs over a link that was already allowed, and
+		// by then both sides hold the same notes on purpose (ADR-0098).
+		await this.start(report, true);
 	}
 
 	/** End the link. Stops the syncing, deletes nothing on either side. */
@@ -412,7 +416,7 @@ export class KnapSync {
 	 * its own the whole time, so the honest thing is to wait on it, and the
 	 * word on screen says Offline while it does.
 	 */
-	async start(report?: LinkReporter): Promise<void> {
+	async start(report?: LinkReporter, checkMerge = false): Promise<void> {
 		const stored = this.linked;
 		if (!stored || this.binding) {
 			return;
@@ -485,6 +489,15 @@ export class KnapSync {
 		tell("localNotes", facts);
 		facts.localAttachments = localAttachments.length;
 		tell("localAttachments", facts);
+		// The four counts are in, and this is the last moment nothing has been
+		// written. A link with notes on both sides is refused here rather than
+		// merged (ADR-0098): the link comes off again, every file on this disk
+		// is untouched, and the modal keeps the counts on screen with the
+		// reason under them.
+		if (checkMerge && isMerge(facts)) {
+			await this.unlink();
+			throw new Error(mergeRefusal(stored.cloudVaultName, facts));
+		}
 		const plan = linkCounts(
 			{ notes: cloudNotes.keys(), attachments: cloudAttachments.keys() },
 			{ notes: localNotes, attachments: localAttachments },

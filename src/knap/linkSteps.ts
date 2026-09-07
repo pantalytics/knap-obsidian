@@ -184,3 +184,35 @@ function missing(from: Set<string>, here: Set<string>): number {
 	for (const path of from) if (!here.has(path)) count += 1;
 	return count;
 }
+
+/**
+ * Whether linking these two would merge two vaults, which it refuses to do.
+ *
+ * The two journeys a link is for both have an empty side: a cloud vault made
+ * in the panel takes what is on this device, and a vault somebody was added to
+ * comes down onto a device that has nothing yet. Notes on both sides is the
+ * third case, and it is the only one that can duplicate a path or leave a
+ * conflict copy behind, at the moment somebody trusts the plugin least. A side
+ * counts as holding something if it has a note or an attachment, because a
+ * vault of nothing but PNGs is still somebody's vault (ADR-0098).
+ */
+export function isMerge(facts: LinkFacts): boolean {
+	const cloud = (facts.cloudNotes ?? 0) + (facts.cloudAttachments ?? 0);
+	const local = (facts.localNotes ?? 0) + (facts.localAttachments ?? 0);
+	return cloud > 0 && local > 0;
+}
+
+/**
+ * Why the link stopped, and what to do instead. Both counts, because what is
+ * in the cloud vault is the one thing a person cannot see from Obsidian.
+ */
+export function mergeRefusal(vaultName: string, facts: LinkFacts): string {
+	const local = movePhrase(facts.localNotes, facts.localAttachments);
+	const cloud = movePhrase(facts.cloudNotes, facts.cloudAttachments);
+	return (
+		`This device holds ${local} and ${vaultName} holds ${cloud}. ` +
+		"Linking two vaults that both hold notes would merge them, and there is no " +
+		"undo for that, so it does not happen. Make a new cloud vault for the notes " +
+		"on this device, or open an empty local vault to take this cloud vault down."
+	);
+}

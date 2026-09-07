@@ -11,7 +11,9 @@ import {
 	BOTH_WAYS,
 	LINK_STEPS,
 	linkCounts,
+	isMerge,
 	linkRows,
+	mergeRefusal,
 	movePhrase,
 	type LinkFacts,
 } from "../../src/knap/linkSteps";
@@ -116,5 +118,38 @@ describe("what linking means, said where somebody is choosing", () => {
 	it("says a delete goes both ways, in both directions", () => {
 		expect(BOTH_WAYS).toContain("deletes it in the cloud vault");
 		expect(BOTH_WAYS).toContain("the other way round");
+	});
+});
+
+describe("a link with notes on both sides", () => {
+	// Both journeys a link is for have an empty side. The third case is
+	// somebody linking the wrong pair, and merging is what that used to do
+	// to them (ADR-0098).
+	it("is a merge, and an empty side is not", () => {
+		expect(isMerge({ cloudNotes: 3, localNotes: 4 })).toBe(true);
+		expect(isMerge({ cloudNotes: 0, localNotes: 4 })).toBe(false);
+		expect(isMerge({ cloudNotes: 3, localNotes: 0 })).toBe(false);
+		expect(isMerge({})).toBe(false);
+	});
+
+	// A vault of nothing but PNGs is still somebody's vault, and a check
+	// that only counted notes would quietly merge two of them.
+	it("counts attachments as something a side holds", () => {
+		expect(isMerge({ cloudNotes: 0, cloudAttachments: 2, localNotes: 5 })).toBe(true);
+		expect(isMerge({ cloudNotes: 4, localNotes: 0, localAttachments: 1 })).toBe(true);
+	});
+
+	// What is in the cloud vault is the one thing a person cannot see from
+	// Obsidian, so the refusal says both counts and names the vault.
+	it("is refused with both counts and a way forward", () => {
+		const said = mergeRefusal("Work notes", {
+			cloudNotes: 318,
+			cloudAttachments: 0,
+			localNotes: 1204,
+			localAttachments: 7,
+		});
+		expect(said).toContain("Work notes holds 318 notes");
+		expect(said).toContain("1,204 notes, 7 attachments");
+		expect(said).toContain("Make a new cloud vault");
 	});
 });

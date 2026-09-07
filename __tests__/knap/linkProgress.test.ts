@@ -59,9 +59,10 @@ describe("linking says what it is doing", () => {
 	it("reports the eight steps in order, with what each one found", async () => {
 		const network = new FakeNetwork();
 		fillCloud(network, "v1", ["Cloud/a.md", "Shared/b.md"], ["Cloud/photo.png"]);
+		// Empty on this side, which is joining a cloud vault somebody added
+		// you to. One of the two move rows is always Nothing now (ADR-0098),
+		// and this is the half where everything comes down.
 		const files = new MemoryFiles();
-		files.map.set("Cloud/a.md", "# A\n");
-		files.map.set("Here/only.md", "# Only here\n");
 		const { sync, held } = syncOver(network, files, {
 			token: "knap_abc",
 			cloudVaultId: "",
@@ -87,18 +88,75 @@ describe("linking says what it is doing", () => {
 		expect(last).toEqual({
 			cloudNotes: 2,
 			cloudAttachments: 1,
-			localNotes: 2,
+			localNotes: 0,
 			localAttachments: 0,
-			// Shared/b.md is up there and not here; the photo likewise.
-			downloadNotes: 1,
+			// Everything up there is up there and not here, the photo too.
+			downloadNotes: 2,
 			downloadAttachments: 1,
-			// Here/only.md is here and not up there.
-			uploadNotes: 1,
+			uploadNotes: 0,
 			uploadAttachments: 0,
 		});
 		// And the link is recorded as one that has not been through a pass.
 		expect(held()?.cloudVaultId).toBe("v1");
 		expect(held()?.initialized).toBe(false);
+
+		sync.stop();
+	});
+
+	it("counts the other half the same way, when the cloud vault is the empty one", async () => {
+		const network = new FakeNetwork();
+		const files = new MemoryFiles();
+		files.map.set("Here/only.md", "# Only here\n");
+		files.map.set("Here/second.md", "# Second\n");
+		const { sync } = syncOver(network, files, {
+			token: "knap_abc",
+			cloudVaultId: "",
+			cloudVaultName: "",
+		});
+
+		let last: LinkFacts = {};
+		await sync.link({ id: "v1", name: "Work notes" }, (_step, facts) => {
+			last = { ...facts };
+		});
+
+		expect(last.uploadNotes).toBe(2);
+		expect(last.downloadNotes).toBe(0);
+
+		sync.stop();
+	});
+
+	// The third case, and the only one that could lose work: two vaults that
+	// both hold notes used to be merged, conflict copies and all (ADR-0098).
+	it("refuses a link with notes on both sides, and leaves both of them alone", async () => {
+		const network = new FakeNetwork();
+		fillCloud(network, "v1", ["Cloud/a.md", "Shared/b.md"], []);
+		const files = new MemoryFiles();
+		files.map.set("Here/only.md", "# Only here\n");
+		const { sync, held } = syncOver(network, files, {
+			token: "knap_abc",
+			cloudVaultId: "",
+			cloudVaultName: "",
+		});
+
+		const seen: LinkStep[] = [];
+		await expect(
+			sync.link({ id: "v1", name: "Work notes" }, (step) => seen.push(step)),
+		).rejects.toThrow(/both hold notes/);
+
+		// The counts are all reported, because they are what the refusal is
+		// made of and what the person reads. Nothing past them happens.
+		expect(seen).toEqual([
+			"connecting",
+			"cloudNotes",
+			"cloudAttachments",
+			"localNotes",
+			"localAttachments",
+		]);
+		// Nothing moved, either way, and the link is off again. The sign-in
+		// is not: a refused link is not a reason to sign somebody out.
+		expect([...files.map.keys()]).toEqual(["Here/only.md"]);
+		expect(held()?.cloudVaultId).toBe("");
+		expect(held()?.token).toBe("knap_abc");
 
 		sync.stop();
 	});
