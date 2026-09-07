@@ -161,6 +161,34 @@ describe("linking says what it is doing", () => {
 		sync.stop();
 	});
 
+	// The flag that tells a first link from an ordinary start, and the reason
+	// it is written down rather than held in memory: quitting Obsidian in the
+	// middle of the first pass would otherwise come back as an ordinary
+	// start, and push the settings this device was about to give up into
+	// everybody else's vault (ADR-0099).
+	it("marks the settings pass pending at link time and done at the end of it", async () => {
+		const network = new FakeNetwork();
+		fillCloud(network, "v1", ["Cloud/a.md"], []);
+		const files = new MemoryFiles();
+		const { sync, held } = syncOver(network, files, {
+			token: "knap_abc",
+			cloudVaultId: "",
+			cloudVaultName: "",
+		});
+
+		let pendingWhenLinked: boolean | undefined;
+		await sync.link({ id: "v1", name: "Work notes" }, (step) => {
+			if (step === "linked") pendingWhenLinked = held()?.settingsInitialized;
+		});
+
+		// False while the fill runs, so a quit in the middle comes back to a
+		// first link rather than to a start that uploads.
+		expect(pendingWhenLinked).toBe(false);
+		expect(held()?.settingsInitialized).toBe(true);
+
+		sync.stop();
+	});
+
 	it("says the link is established before the fill, not after it", async () => {
 		const network = new FakeNetwork();
 		fillCloud(

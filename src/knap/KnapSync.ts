@@ -65,6 +65,23 @@ export interface KnapLink {
 	 * vault falls quiet.
 	 */
 	initialized?: boolean;
+	/**
+	 * Whether the settings pass that makes a link has run over this link.
+	 *
+	 * It is what tells a first link from an ordinary start, and the two are
+	 * opposites: a link takes the cloud vault's settings and sends none of
+	 * its own, while a start sends up whatever somebody changed here
+	 * (ADR-0099). Held in the settings rather than in memory because
+	 * quitting Obsidian in the middle of a first pass would otherwise come
+	 * back as an ordinary start, and push the settings this device was
+	 * about to give up into everybody else's vault.
+	 *
+	 * **Absent means done, and only `false` means pending.** A link made
+	 * before this existed has been running as an ordinary start for weeks,
+	 * so reading it as a first link would adopt over somebody's own
+	 * arrangements on the next restart. `link()` writes the `false`.
+	 */
+	settingsInitialized?: boolean;
 }
 
 /**
@@ -361,6 +378,7 @@ export class KnapSync {
 			// A fresh link has not been through a first pass, whatever the
 			// last vault this device was linked to had been through.
 			initialized: false,
+			settingsInitialized: false,
 		});
 		// The one entry point that checks: a link is being made here, so
 		// this is the only moment comparing the two sides means anything.
@@ -539,7 +557,10 @@ export class KnapSync {
 						this.client,
 						this.transportFor(stored.token, stored.cloudVaultId),
 						this.options.onRefused,
-						linking,
+						// Not the `linking` argument: a link whose first pass
+						// died halfway is still a first link on the next
+						// start, and this is the flag that survives the quit.
+						stored.settingsInitialized === false,
 						() => this.options.onAdopted?.(stored.cloudVaultName),
 					)
 				: null;
@@ -567,6 +588,9 @@ export class KnapSync {
 			// for their notes, and a plugin folder is megabytes in front of
 			// the note they opened Obsidian to read.
 			await this.settings?.start();
+			// The settings half is over, whichever way it ran, so every later
+			// start over this link is an ordinary one.
+			await this.rememberSettingsInitialized();
 		} finally {
 			this.filling = false;
 		}
@@ -592,6 +616,25 @@ export class KnapSync {
 			// See above.
 		} finally {
 			this.settling = false;
+		}
+	}
+
+	/**
+	 * Write down that the settings pass is behind this link.
+	 *
+	 * Once, at the end of the first pass, and never fatal for the same
+	 * reason `rememberInitialized` is not. Losing this write costs one more
+	 * pass that reads the cloud vault as the source, which is the same
+	 * outcome the first one reached.
+	 */
+	private async rememberSettingsInitialized(): Promise<void> {
+		try {
+			const stored = this.options.load();
+			if (stored?.cloudVaultId && stored.settingsInitialized === false) {
+				await this.options.save({ ...stored, settingsInitialized: true });
+			}
+		} catch {
+			// See above.
 		}
 	}
 
