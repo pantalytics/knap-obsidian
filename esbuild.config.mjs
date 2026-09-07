@@ -63,25 +63,27 @@ const obsidianPluginDir = process.env.OBSIDIAN_PLUGIN_DIR || "";
 const apiUrl = "";
 const authUrl = "";
 
-// The one Knap server (ADR-0033). There is no server field and no second
-// server, so the address is build configuration rather than user input, and it
-// lives here rather than in a source file that ships. Set
-// KNAP_CONTROL_PLANE_URL to build against something else, a staging control
-// plane for instance.
-const controlPlaneUrl =
-	process.env.KNAP_CONTROL_PLANE_URL || "https://cp.knap.pantalytics.com";
-console.log("control plane:", controlPlaneUrl);
-
-// Knap's own page, which the Dashboard button opens. Build configuration for
-// the same reason the control plane is: there is one of it, and a person never
-// types an address here.
+// The one Knap server (ADR-0033), and therefore one address. There is no
+// server field and no second server, so it is build configuration rather than
+// user input, and it lives here rather than in a source file that ships.
 //
-// It is app.knap.pantalytics.com, not knap.pantalytics.com. The app moved there
-// on 13 August 2026 and the bare domain is the marketing site on another box, so
-// a build carrying the old address sends the Dashboard button to a page that
-// knows nothing about anybody's vault.
-const panelUrl = process.env.KNAP_PANEL_URL || "https://app.knap.pantalytics.com/sync";
-console.log("panel:", panelUrl);
+// It was three addresses, and that is what broke. The server moved to the app
+// host on 13 August 2026, where Caddy serves exactly one name; the control
+// plane kept pointing at cp.knap.pantalytics.com, which from then on answered
+// every TLS handshake with an internal error. The health poll asked it every
+// ten seconds, failed, and put "You're offline" over a vault that was
+// syncing perfectly well. Deriving the other two from the address the client
+// actually syncs with is what stops that returning, rather than repairing it
+// once.
+//
+// KNAP_SERVER_URL doubles as the rebuild's beta switch below, so it stays
+// empty in an ordinary build. The fallback here is the address a release
+// carries. The bare domain is the marketing site on another box, so it is
+// app.knap.pantalytics.com and not knap.pantalytics.com.
+const knapUrl = process.env.KNAP_SERVER_URL || "https://app.knap.pantalytics.com";
+const controlPlaneUrl = process.env.KNAP_CONTROL_PLANE_URL || knapUrl;
+const panelUrl = process.env.KNAP_PANEL_URL || `${knapUrl}/sync`;
+console.log("knap:", knapUrl);
 console.log("git tag:", gitTag);
 
 const NotifyPlugin = {

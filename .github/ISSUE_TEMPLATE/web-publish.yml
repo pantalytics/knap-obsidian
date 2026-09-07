@@ -19,7 +19,7 @@ body:
       label: Deployment
       options:
         - Self-hosted
-        - Hosted (cp.knap.pantalytics.com)
+        - Hosted (app.knap.pantalytics.com)
     validations:
       required: true
   - type: textarea

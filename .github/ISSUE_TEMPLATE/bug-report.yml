@@ -34,7 +34,7 @@ body:
       label: Deployment
       options:
         - Self-hosted (docker compose)
-        - Hosted (cp.knap.pantalytics.com)
+        - Hosted (app.knap.pantalytics.com)
         - Local development
     validations:
       required: true

@@ -178,7 +178,7 @@ Not blockers, but cheaper to have an answer ready than to be surprised:
   option, and an OAuth callback over `obsidian://` instead of a loopback port,
   which is what makes sign-in work on a phone and against an identity provider
   that matches redirect URIs exactly.
-- **It ships with a server configured.** `cp.knap.pantalytics.com` is a default,
+- **It ships with a server configured.** `app.knap.pantalytics.com` is a default,
   not a lock-in: the settings let you remove it and point anywhere. The README
   says so in the network section, which is where a reviewer looks.
 - **Mobile.** `isDesktopOnly: false` is a promise. The loopback HTTP server that
