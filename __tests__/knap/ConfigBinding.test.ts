@@ -114,16 +114,38 @@ interface Device {
 	config: MemoryConfig;
 	binding: ConfigBinding;
 	refusals: { path: string; reason: string }[];
+	adoptions: number;
 }
 
-async function device(hub: Hub, transport: MemoryTransport, seed?: MemoryConfig): Promise<Device> {
+async function device(
+	hub: Hub,
+	transport: MemoryTransport,
+	seed?: MemoryConfig,
+	/** True for a device making the link, which is the only one that adopts. */
+	linking = false,
+): Promise<Device> {
 	const config = seed ?? new MemoryConfig();
 	const refusals: { path: string; reason: string }[] = [];
-	const binding = new ConfigBinding(config, hub.join(), transport, (path, reason) =>
-		refusals.push({ path, reason }),
+	const counted = { n: 0 };
+	const binding = new ConfigBinding(
+		config,
+		hub.join(),
+		transport,
+		(path, reason) => refusals.push({ path, reason }),
+		linking,
+		() => {
+			counted.n += 1;
+		},
 	);
 	await binding.start();
-	return { config, binding, refusals };
+	return {
+		config,
+		binding,
+		refusals,
+		get adoptions() {
+			return counted.n;
+		},
+	};
 }
 
 /** Let the settle timer fire and the queue behind it drain. */
@@ -372,5 +394,100 @@ describe("two devices, one cloud vault", () => {
 		jest.advanceTimersByTime(2000);
 		await laptop.binding.flush();
 		expect(transport.uploads).toBe(0);
+	});
+});
+
+describe("joining a cloud vault that already has settings", () => {
+	/** A vault with somebody else's arrangements already in it. */
+	async function occupied(hub: Hub, transport: MemoryTransport): Promise<Device> {
+		const seeded = new MemoryConfig();
+		await seeded.put(".obsidian/appearance.json", '{"accentColor":"#ff0055"}');
+		await seeded.put(".obsidian/hotkeys.json", '{"app:go-back":[]}');
+		const first = await device(hub, transport, seeded);
+		keep(first);
+		await settle(first);
+		return first;
+	}
+
+	// The leak this closes: a file the tree had never heard of counted as
+	// new work from this device, so a joiner's own plugins landed on
+	// everybody in the vault at link time (ADR-0099).
+	it("sends none of this device's own settings up", async () => {
+		const hub = new Hub();
+		const transport = new MemoryTransport();
+		const first = await occupied(hub, transport);
+
+		const mine = new MemoryConfig();
+		await mine.put(".obsidian/appearance.json", '{"accentColor":"#00ff00"}');
+		await mine.put(".obsidian/plugins/templater/main.js", "mine");
+		const joiner = await device(hub, transport, mine, true);
+		keep(joiner);
+		await settle(joiner, first);
+
+		expect(first.config.files.has(".obsidian/plugins/templater/main.js")).toBe(false);
+		expect(textOf(first.config.files.get(".obsidian/appearance.json") as ArrayBuffer)).toBe(
+			'{"accentColor":"#ff0055"}',
+		);
+	});
+
+	it("takes the cloud vault's settings, and says so once", async () => {
+		const hub = new Hub();
+		const transport = new MemoryTransport();
+		await occupied(hub, transport);
+
+		const mine = new MemoryConfig();
+		await mine.put(".obsidian/appearance.json", '{"accentColor":"#00ff00"}');
+		await mine.put(".obsidian/plugins/templater/main.js", "mine");
+		const joiner = await device(hub, transport, mine, true);
+		keep(joiner);
+		await settle(joiner);
+
+		expect(textOf(joiner.config.files.get(".obsidian/appearance.json") as ArrayBuffer)).toBe(
+			'{"accentColor":"#ff0055"}',
+		);
+		expect(joiner.config.files.has(".obsidian/hotkeys.json")).toBe(true);
+		// Not left on disk to be pushed up by the next edit to it.
+		expect(joiner.config.files.has(".obsidian/plugins/templater/main.js")).toBe(false);
+		expect(joiner.adoptions).toBe(1);
+	});
+
+	// The other half of the link, and the reason adopting is not simply
+	// "the cloud always wins": a first device has to be able to seed one.
+	it("seeds an empty cloud vault from this device instead", async () => {
+		const hub = new Hub();
+		const transport = new MemoryTransport();
+		const mine = new MemoryConfig();
+		await mine.put(".obsidian/appearance.json", '{"accentColor":"#00ff00"}');
+		const first = await device(hub, transport, mine, true);
+		keep(first);
+		await settle(first);
+
+		expect(first.config.files.has(".obsidian/appearance.json")).toBe(true);
+		expect(first.adoptions).toBe(0);
+
+		const second = await device(hub, transport);
+		keep(second);
+		await settle(second);
+		expect(textOf(second.config.files.get(".obsidian/appearance.json") as ArrayBuffer)).toBe(
+			'{"accentColor":"#00ff00"}',
+		);
+	});
+
+	// A restart is not a link. A settings file made here while the server
+	// was away is somebody's work, and it goes up like any other.
+	it("does not adopt on an ordinary start", async () => {
+		const hub = new Hub();
+		const transport = new MemoryTransport();
+		const first = await occupied(hub, transport);
+
+		const mine = new MemoryConfig();
+		await mine.put(".obsidian/plugins/templater/main.js", "mine");
+		const restarted = await device(hub, transport, mine);
+		keep(restarted);
+		await settle(restarted, first);
+
+		expect(restarted.config.files.has(".obsidian/plugins/templater/main.js")).toBe(true);
+		expect(first.config.files.has(".obsidian/plugins/templater/main.js")).toBe(true);
+		expect(restarted.adoptions).toBe(0);
 	});
 });

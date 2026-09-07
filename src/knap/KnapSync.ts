@@ -29,7 +29,7 @@ import type { SyncDot, SyncWord } from "../syncStatus";
 import { UP_TO_DATE, syncDot, syncWord } from "../syncStatus";
 import { TREE_SYNC_FAILED, TREE_SYNC_TIMEOUT_MS, withTimeout } from "./deadline";
 import type { LinkFacts, LinkReporter } from "./linkSteps";
-import { linkCounts } from "./linkSteps";
+import { isMerge, linkCounts, mergeRefusal } from "./linkSteps";
 import type { AttachmentTransport, Refusal } from "./AttachmentBinding";
 import { AttachmentBinding } from "./AttachmentBinding";
 import type { ConfigStore } from "./ConfigBinding";
@@ -65,6 +65,23 @@ export interface KnapLink {
 	 * vault falls quiet.
 	 */
 	initialized?: boolean;
+	/**
+	 * Whether the settings pass that makes a link has run over this link.
+	 *
+	 * It is what tells a first link from an ordinary start, and the two are
+	 * opposites: a link takes the cloud vault's settings and sends none of
+	 * its own, while a start sends up whatever somebody changed here
+	 * (ADR-0099). Held in the settings rather than in memory because
+	 * quitting Obsidian in the middle of a first pass would otherwise come
+	 * back as an ordinary start, and push the settings this device was
+	 * about to give up into everybody else's vault.
+	 *
+	 * **Absent means done, and only `false` means pending.** A link made
+	 * before this existed has been running as an ordinary start for weeks,
+	 * so reading it as a first link would adopt over somebody's own
+	 * arrangements on the next restart. `link()` writes the `false`.
+	 */
+	settingsInitialized?: boolean;
 }
 
 /**
@@ -161,6 +178,14 @@ export interface KnapSyncOptions {
 	 * somebody put the vault on a server.
 	 */
 	onNotice?: (notice: ServerNotice) => void;
+
+	/**
+	 * Told when linking took the cloud vault's settings over this device's
+	 * own, which is what joining a vault that already has some does. It
+	 * replaces a theme, hotkeys and plugins, so it is said out loud rather
+	 * than found later (ADR-0099).
+	 */
+	onAdopted?: (cloudVaultName: string) => void;
 }
 
 export class KnapSync {
@@ -353,8 +378,13 @@ export class KnapSync {
 			// A fresh link has not been through a first pass, whatever the
 			// last vault this device was linked to had been through.
 			initialized: false,
+			settingsInitialized: false,
 		});
-		await this.start(report);
+		// The one entry point that checks: a link is being made here, so
+		// this is the only moment comparing the two sides means anything.
+		// Every later start runs over a link that was already allowed, and
+		// by then both sides hold the same notes on purpose (ADR-0098).
+		await this.start(report, true);
 	}
 
 	/** End the link. Stops the syncing, deletes nothing on either side. */
@@ -412,7 +442,7 @@ export class KnapSync {
 	 * its own the whole time, so the honest thing is to wait on it, and the
 	 * word on screen says Offline while it does.
 	 */
-	async start(report?: LinkReporter): Promise<void> {
+	async start(report?: LinkReporter, linking = false): Promise<void> {
 		const stored = this.linked;
 		if (!stored || this.binding) {
 			return;
@@ -485,6 +515,15 @@ export class KnapSync {
 		tell("localNotes", facts);
 		facts.localAttachments = localAttachments.length;
 		tell("localAttachments", facts);
+		// The four counts are in, and this is the last moment nothing has been
+		// written. A link with notes on both sides is refused here rather than
+		// merged (ADR-0098): the link comes off again, every file on this disk
+		// is untouched, and the modal keeps the counts on screen with the
+		// reason under them.
+		if (linking && isMerge(facts)) {
+			await this.unlink();
+			throw new Error(mergeRefusal(stored.cloudVaultName, facts));
+		}
 		const plan = linkCounts(
 			{ notes: cloudNotes.keys(), attachments: cloudAttachments.keys() },
 			{ notes: localNotes, attachments: localAttachments },
@@ -518,6 +557,11 @@ export class KnapSync {
 						this.client,
 						this.transportFor(stored.token, stored.cloudVaultId),
 						this.options.onRefused,
+						// Not the `linking` argument: a link whose first pass
+						// died halfway is still a first link on the next
+						// start, and this is the flag that survives the quit.
+						stored.settingsInitialized === false,
+						() => this.options.onAdopted?.(stored.cloudVaultName),
 					)
 				: null;
 		// Set before the screen is told, so a status read on the back of that
@@ -544,6 +588,9 @@ export class KnapSync {
 			// for their notes, and a plugin folder is megabytes in front of
 			// the note they opened Obsidian to read.
 			await this.settings?.start();
+			// The settings half is over, whichever way it ran, so every later
+			// start over this link is an ordinary one.
+			await this.rememberSettingsInitialized();
 		} finally {
 			this.filling = false;
 		}
@@ -569,6 +616,25 @@ export class KnapSync {
 			// See above.
 		} finally {
 			this.settling = false;
+		}
+	}
+
+	/**
+	 * Write down that the settings pass is behind this link.
+	 *
+	 * Once, at the end of the first pass, and never fatal for the same
+	 * reason `rememberInitialized` is not. Losing this write costs one more
+	 * pass that reads the cloud vault as the source, which is the same
+	 * outcome the first one reached.
+	 */
+	private async rememberSettingsInitialized(): Promise<void> {
+		try {
+			const stored = this.options.load();
+			if (stored?.cloudVaultId && stored.settingsInitialized === false) {
+				await this.options.save({ ...stored, settingsInitialized: true });
+			}
+		} catch {
+			// See above.
 		}
 	}
 

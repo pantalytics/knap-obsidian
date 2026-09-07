@@ -176,6 +176,17 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 		load: () => host.getKnapLink(),
 		save: (value) => host.saveKnapLink(value),
 		onRefused: (path, reason) => new Notice(`${path}: ${reason}`),
+		// Joining a cloud vault that already has settings replaces the theme,
+		// hotkeys and plugins on this device with the ones up there. It is
+		// the one part of linking that changes something a person set up
+		// themselves, so it is said rather than discovered (ADR-0099).
+		onAdopted: (cloudVaultName) =>
+			new Notice(
+				`This device now uses ${cloudVaultName}'s settings: its theme, ` +
+					"hotkeys and plugins. Your notes were not touched. Plugins that " +
+					"arrived start the next time you open Obsidian.",
+				0,
+			),
 		// The server had a problem with something in this vault (ADR-0095).
 		// Nothing local is broken, so this is a sentence and not an alarm;
 		// info levels stay off screen, because a person opening Obsidian to
