@@ -50,6 +50,10 @@ either side of it rather than like a panel we built.
   │ │ Downloading                                 2,567 notes  │ │
   │ │ Total                       2,979 notes, 148 attachments │ │
   │ └──────────────────────────────────────────────────────────┘ │
+  │                                                              │
+  │ Knap dashboard                            (i)  [ Open ]      │  ← the way out
+  │ Opens next.knap.pantalytics.com in your browser. Invite      │    (i) pressed
+  │ your team, connect your AI over MCP.                         │
   └──────────────────────────────────────────────────────────────┘
 
   signed out:                        signed in, not linked yet:
@@ -61,10 +65,12 @@ either side of it rather than like a panel we built.
   └────────────────────────────┘
 ```
 
-Each of the three parts earns its place, and they are in the order they depend
+Each of the four parts earns its place, and they are in the order they depend
 on each other. **Account** is who. **Cloud vault** is what this vault syncs
 with. **The strip** under it is how that vault is going, and it is inside that
 row's block rather than beside it: one border round both, a hairline between.
+**Knap dashboard** is last, because it is the only control here that leaves
+Obsidian.
 
 **The strip belonged to nothing until 2026-09-02.** It sat above both rows, the
 first thing on the screen, which said it was a third subject on a screen with
@@ -80,6 +86,17 @@ device. The row above it says *Not linked*, which is truer and is also the way
 out of it. A vault with an account and no link reads **Paused** where it has to
 be said in one word, in the corner of the window: nothing is moving, and nothing
 is going to until somebody picks a cloud vault.
+
+**The dashboard row is a name, a button and an (i).** What is on the other side
+of it is two sentences, and two sentences under a row somebody reads every week
+is two sentences they read every week, so they sit behind the (i): *Opens
+next.knap.pantalytics.com in your browser. Invite your team, connect your AI
+over MCP.* Those are the two things this side deliberately cannot do, which is
+the whole reason to leave for a browser. The (i) toggles rather than hovers,
+because settings get touched on a phone, and Open lands on the linked vault's
+own page (the one with the member list on it) rather than on the front door.
+There is no ribbon icon and no command for it: this screen is where somebody
+already is when they wonder how to let a colleague in.
 
 **The Cloud vault row is a name.** The sentence about a delete travelling both
 ways moved to the screen that links (#116 put it on this row, and a row read

@@ -687,6 +687,15 @@
 	color: var(--text-muted);
 }
 
+/* The way out to Knap's own page: a row, and the two sentences the (i)
+   folds away under it. Muted and small, like the sentence on the status
+   strip, because it is the same kind of thing: text somebody asked for. */
+.knap-dash-help {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	padding-bottom: var(--size-4-2);
+}
+
 .knap-status-retry {
 	align-self: flex-start;
 	margin-top: var(--size-2-2);

@@ -10,6 +10,8 @@
 import {
 	KnapSettingsTab,
 	barSentence,
+	dashboardHelp,
+	dashboardUrl,
 	hasFold,
 	hasRetry,
 	headCount,
@@ -25,6 +27,8 @@ type Row = {
 	press?: () => void;
 	/** The info button beside the switch, if the row has one. */
 	extras?: string[];
+	/** Pressing that info button, kept apart from the row's own button. */
+	pressExtra?: () => void;
 	/** The switch itself: what it shows, and how to flip it. */
 	toggle?: { value: boolean; flip: (on: boolean) => void };
 };
@@ -142,7 +146,7 @@ jest.mock("obsidian", () => {
 				},
 				setTooltip: () => button,
 				onClick: (run: () => void) => {
-					this.row.press = run;
+					this.row.pressExtra = run;
 					return button;
 				},
 			};
@@ -286,16 +290,18 @@ function drawWith(sync: ReturnType<typeof fakeSync>) {
 	});
 	const plugin = { app: {}, registerInterval: (id: number) => id };
 	const actions = { signIn: async () => {}, pickAndLink: async () => {} };
+	const opened: string[] = [];
 	const tab = new KnapSettingsTab(
 		plugin as never,
 		sync as never,
 		actions as never,
 		"https://next.knap.test",
+		(url: string) => opened.push(url),
 	);
 	tab.containerEl = container as never;
 	tab.display();
 	open.push(tab);
-	return { rows, container: container as unknown as FakeEl, tab };
+	return { rows, container: container as unknown as FakeEl, tab, opened };
 }
 
 /** Every screen a test opened, so its tick stops with the test. */
@@ -311,9 +317,12 @@ function drawFor(state: FakeState) {
 }
 
 describe("the screen, signed out", () => {
-	it("offers signing in and nothing else", () => {
+	it("offers signing in, and the way out to the dashboard", () => {
+		// Nothing about this vault, because there is no account to have one
+		// under yet. The dashboard is there because that is where a first
+		// cloud vault gets made.
 		const { rows } = drawFor({ signedIn: false, linked: null });
-		expect(rows.flatMap((r) => r.buttons)).toEqual(["Sign in"]);
+		expect(rows.flatMap((r) => r.buttons)).toEqual(["Sign in", "Open"]);
 	});
 
 	it("names the server this build talks to, without its scheme", () => {
@@ -370,10 +379,10 @@ describe("the screen, signed in", () => {
 			signedIn: true,
 			linked: { id: "v1", name: "Work notes" },
 		});
-		// Account, then the vault. The order is what each row depends on:
-		// who, then which vault. There is no third row, because there is no
-		// longer a question about how much of the vault travels.
-		expect(rows.map((r) => r.name)).toEqual(["Account", "Cloud vault"]);
+		// Account, then the vault, then the way out. The order is what each
+		// row depends on: who, then which vault, then the page that reports on
+		// it. There is still no row about how much of the vault travels.
+		expect(rows.map((r) => r.name)).toEqual(["Account", "Cloud vault", "Knap dashboard"]);
 		// Inside the vault's own block rather than beside it: one border round
 		// both, so the strip cannot be read as a third subject.
 		const block = find(container, "knap-vault");
@@ -388,7 +397,11 @@ describe("the screen, signed in", () => {
 				linked: { id: "v1", name: "Work notes" },
 				status: { problems, word: problems ? PROBLEM : UP_TO_DATE, dot: "error" },
 			});
-			expect(rows.map((r) => r.name)).toEqual(["Account", "Cloud vault"]);
+			expect(rows.map((r) => r.name)).toEqual([
+				"Account",
+				"Cloud vault",
+				"Knap dashboard",
+			]);
 		}
 	});
 
@@ -407,7 +420,7 @@ describe("the screen, signed in", () => {
 		await Promise.resolve();
 		await Promise.resolve();
 
-		expect(rows.flatMap((r) => r.buttons)).toEqual(["Sign in"]);
+		expect(rows.flatMap((r) => r.buttons)).toEqual(["Sign in", "Open"]);
 		expect(rows.map((r) => r.desc).join(" ")).not.toContain("Work notes");
 	});
 });
@@ -764,5 +777,69 @@ describe("the breakdown behind the fold", () => {
 		expect(
 			statusFacts({ ...baseStatus(), notes: 12, attachments: 4, vaultName: "Work" } as never),
 		).toEqual([["Total", "12 notes, 4 attachments"]]);
+	});
+});
+
+describe("the dashboard row", () => {
+	it("is one name, one button, and nothing else out loud", () => {
+		const { rows } = drawFor({ signedIn: true, linked: { id: "v1", name: "Work" } });
+		const row = rows.find((r) => r.name === "Knap dashboard");
+		expect(row?.desc).toBe("");
+		expect(row?.buttons).toEqual(["Open"]);
+		expect(row?.extras).toEqual(["info"]);
+	});
+
+	it("keeps the two sentences folded away until the (i) is pressed", () => {
+		const { rows, container } = drawFor({
+			signedIn: true,
+			linked: { id: "v1", name: "Work" },
+		});
+		const help = find(container, "knap-dash-help");
+		expect(help?.hidden).toBe(true);
+		expect(help?.text).toBe(
+			"Opens next.knap.test in your browser. Invite your team, connect your AI over MCP.",
+		);
+		rows.find((r) => r.name === "Knap dashboard")?.pressExtra?.();
+		expect(help?.hidden).toBe(false);
+	});
+
+	it("stays open across a redraw, because closing it was nobody's decision", () => {
+		const { rows, container, tab } = drawFor({
+			signedIn: true,
+			linked: { id: "v1", name: "Work" },
+		});
+		rows.find((r) => r.name === "Knap dashboard")?.pressExtra?.();
+		tab.display();
+		expect(find(container, "knap-dash-help")?.hidden).toBe(false);
+	});
+
+	it("opens the linked vault's own page, which is where the invite field is", () => {
+		const { rows, opened } = drawFor({
+			signedIn: true,
+			linked: { id: "v 1", name: "Work" },
+		});
+		rows.find((r) => r.name === "Knap dashboard")?.press?.();
+		expect(opened).toEqual(["https://next.knap.test/vaults/v%201"]);
+	});
+
+	it("opens the front door when there is no vault to open", () => {
+		const { rows, opened } = drawFor({ signedIn: true, linked: null });
+		rows.find((r) => r.name === "Knap dashboard")?.press?.();
+		expect(opened).toEqual(["https://next.knap.test/"]);
+	});
+
+	it("names the host it is about to open, and never a note or a path", () => {
+		// The row leaves Obsidian, so it owes somebody the address. Nothing
+		// else: no vault name, no folder (ADR-0003 is about telemetry, and the
+		// same discipline is why this sentence is fixed).
+		expect(dashboardHelp("https://next.knap.test/")).toBe(
+			"Opens next.knap.test in your browser. Invite your team, connect your AI over MCP.",
+		);
+	});
+
+	it("does not double the slash a server address may come with", () => {
+		expect(dashboardUrl("https://next.knap.test/", "v1")).toBe(
+			"https://next.knap.test/vaults/v1",
+		);
 	});
 });

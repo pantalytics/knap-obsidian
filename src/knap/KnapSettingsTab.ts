@@ -8,9 +8,10 @@
  * button, and in a beta build the relay's own tab is hidden, so they found
  * nothing at all.
  *
- * **Two rows and a strip, in the order they depend on each other**: Account is
- * who, Cloud vault is what this vault syncs with, and the strip under it is how
- * that vault is going. The strip was the first thing on the screen until
+ * **Three rows and a strip, in the order they depend on each other**: Account is
+ * who, Cloud vault is what this vault syncs with, the strip under it is how
+ * that vault is going, and Knap dashboard is the way out to the page where a
+ * colleague gets let in and an AI gets connected. The strip was the first thing on the screen until
  * 2026-09-02, floating above the two rows as if it were a third subject; it is
  * a fact about one cloud vault, so it now sits inside that row's block, sharing
  * its border, and it appears only where there is a link.
@@ -197,6 +198,33 @@ export function hasRetry(status: KnapStatus): boolean {
 	return status.word === PROBLEM || status.word === OFFLINE;
 }
 
+/**
+ * Where Open lands, which is the page the person came for rather than a front
+ * door they then have to navigate.
+ *
+ * A linked vault has a page of its own, and that page is the one with the
+ * member list and the invite field on it, so somebody who presses Open while
+ * looking at a vault's name arrives at that vault. Without a link there is no
+ * such page, and Home is where the walk through connecting an AI starts.
+ */
+export function dashboardUrl(serverUrl: string, cloudVaultId: string): string {
+	const base = serverUrl.replace(/\/+$/, "");
+	return cloudVaultId ? `${base}/vaults/${encodeURIComponent(cloudVaultId)}` : `${base}/`;
+}
+
+/**
+ * The two sentences behind the (i), and everything this row says beyond its
+ * own name.
+ *
+ * It names the address because the button leaves Obsidian, and a button that
+ * opens a browser owes somebody the host it is about to open. The rest is what
+ * is worth going there for: the two things Obsidian deliberately cannot do
+ * (ADR-0031, ADR-0034).
+ */
+export function dashboardHelp(serverUrl: string): string {
+	return `Opens ${hostOf(serverUrl)} in your browser. Invite your team, connect your AI over MCP.`;
+}
+
 /** The two acts the buttons perform, so the screen shares them with the commands. */
 export interface SignInActions {
 	/** Starts the browser half and resolves when the deep link comes back. */
@@ -212,6 +240,8 @@ export class KnapSettingsTab extends PluginSettingTab {
 	private statusEl: HTMLElement | null = null;
 	/** Whether the fold is open. A field, so a redraw does not close it. */
 	private open = false;
+	/** Whether the (i) under the dashboard row is showing. A field, for the same reason. */
+	private helpOpen = false;
 	/** What the bar last said, so a tick that changes nothing draws nothing. */
 	private said = "";
 	/** Set while a retry is in flight, so the button can say it is going. */
@@ -230,6 +260,10 @@ export class KnapSettingsTab extends PluginSettingTab {
 		private readonly sync: KnapSync,
 		private readonly actions: SignInActions,
 		private readonly serverUrl: string,
+		/** How a page gets opened. Injected so a test can watch where it went. */
+		private readonly openPage: (url: string) => void = (url) => {
+			window.open(url);
+		},
 	) {
 		super(plugin.app, plugin);
 		this.owner = plugin;
@@ -273,6 +307,10 @@ export class KnapSettingsTab extends PluginSettingTab {
 								.catch((error: Error) => new Notice(error.message));
 						}),
 				);
+			// The dashboard is worth a row even here: it is where somebody
+			// makes their first cloud vault, and where the sign-in they are
+			// about to do lands anyway.
+			this.drawDashboard(containerEl);
 			return;
 		}
 
@@ -320,6 +358,7 @@ export class KnapSettingsTab extends PluginSettingTab {
 			this.statusEl = block.createDiv({ cls: "knap-status-slot" });
 			this.paint();
 			this.startTick();
+			this.drawDashboard(containerEl);
 			return;
 		}
 
@@ -334,6 +373,51 @@ export class KnapSettingsTab extends PluginSettingTab {
 						.catch((error: Error) => new Notice(error.message));
 				}),
 		);
+		this.drawDashboard(containerEl);
+	}
+
+	/**
+	 * The way out to Knap's own page, as one row with one line of text on it.
+	 *
+	 * Last on the screen, because it is the only control here that leaves
+	 * Obsidian, and everything above it is about this vault. It is a row of
+	 * its own rather than a link hung off the address at the top: that line is
+	 * faint text nobody clicks, and hiding the one way to the invite field
+	 * behind it is how #158's beta testers ended up asking how to add a
+	 * colleague.
+	 *
+	 * **The (i) toggles, it does not hover.** Settings get touched on a phone,
+	 * where there is no hover to discover anything with, and the same reason
+	 * put a chevron on the status strip (#125).
+	 */
+	private drawDashboard(containerEl: HTMLElement): void {
+		const block = containerEl.createDiv({ cls: "knap-dash" });
+		new Setting(block)
+			// No description. What is on the other side of the button is two
+			// sentences, and two sentences under a row somebody reads every
+			// week is two sentences they read every week.
+			.setName("Knap dashboard")
+			.addExtraButton((button) =>
+				button
+					.setIcon("info")
+					.setTooltip("What the dashboard is for")
+					.onClick(() => {
+						this.helpOpen = !this.helpOpen;
+						help.hidden = !this.helpOpen;
+					}),
+			)
+			.addButton((button) =>
+				button.setButtonText("Open").onClick(() => {
+					this.openPage(
+						dashboardUrl(this.serverUrl, this.sync.linked?.cloudVaultId ?? ""),
+					);
+				}),
+			);
+		const help = block.createDiv({
+			cls: "knap-dash-help",
+			text: dashboardHelp(this.serverUrl),
+		});
+		help.hidden = !this.helpOpen;
 	}
 
 	/**
