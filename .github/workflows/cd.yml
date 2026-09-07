@@ -106,6 +106,22 @@ jobs:
             exit 1
           }
 
+      # One server, one address (ADR-0033). A second Knap host in the bundle is
+      # how the "You're offline" banner appeared over a syncing vault: the
+      # health poll kept asking cp.knap.pantalytics.com long after the server
+      # had moved. A release carrying two addresses cannot be told apart from a
+      # working one by looking at it, so it is caught here instead.
+      - name: Prove the bundle carries exactly one Knap address
+        env:
+          URL: ${{ vars.KNAP_SERVER_URL }}
+        run: |
+          hosts=$(grep -oE 'https://[a-z0-9.-]*pantalytics\.com' main.js | sort -u)
+          if [ "$hosts" != "$URL" ]; then
+            echo "::error::main.js names more than the one server. Found:"
+            echo "$hosts"
+            exit 1
+          fi
+
       # One patch above the highest version that has ever been released, so
       # BRAT sees an update whatever it last installed. Read from the releases
       # rather than from manifest.json, because the bump deliberately never
