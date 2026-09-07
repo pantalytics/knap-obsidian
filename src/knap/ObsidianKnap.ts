@@ -14,7 +14,6 @@
 
 import { Notice, Platform, Plugin, SuggestModal, editorInfoField } from "obsidian";
 
-import { KNAP_PANEL_URL } from "../RelayOnPremConfig";
 import { reportFault, setFaultCredential } from "../faults";
 import { setFaultSink } from "./faultSink";
 
@@ -26,7 +25,7 @@ import type { KnapLink } from "./KnapSync";
 import { ObsidianConfigStore } from "./ObsidianConfigStore";
 import { ObsidianFileStore } from "./ObsidianFileStore";
 import { ObsidianSeenTree } from "./ObsidianSeenTree";
-import { KnapSettingsTab, signOutNotice } from "./KnapSettingsTab";
+import { KnapSettingsTab, dashboardUrl, signOutNotice } from "./KnapSettingsTab";
 import { LinkProgressModal } from "./LinkProgressModal";
 import { SIGNIN_ACTION } from "./SignInFlow";
 import { obsidianFetch } from "./obsidianFetch";
@@ -258,7 +257,10 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 						});
 				},
 				() => {
-					window.open(new URL("/vaults", KNAP_PANEL_URL).toString());
+					// This build's own server, not the old stack's page: the
+					// panel that knows about these vaults is served by the
+					// process the plugin already talks to (ADR-0073).
+					window.open(dashboardUrl(serverUrl, ""));
 					new Notice("Make one in your browser, then choose it here.");
 					resolve();
 				},
