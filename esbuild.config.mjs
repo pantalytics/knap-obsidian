@@ -173,15 +173,19 @@ const context = await esbuild.context({
 		AUTH_URL: `"${authUrl}"`,
 		CONTROL_PLANE_URL: JSON.stringify(controlPlaneUrl),
 		PANEL_URL: JSON.stringify(panelUrl),
-		// The address src/knap/ObsidianKnap.ts registers against. It used to
-		// default to empty, so `npm run build` produced a plugin with the whole
-		// rebuild path switched off while the release, built with the repository
-		// variable set, shipped it on. The directory rebuilds a release from its
-		// source with no repository variables, so those two builds could never
-		// match and build verification had nothing to verify. It defaults to the
-		// same one server as everything else here (ADR-0033); the environment
-		// still overrides it to point a test build somewhere else.
-		KNAP_SERVER_URL: JSON.stringify(knapUrl),
+		// The rebuild's beta switch (src/knap/ObsidianKnap.ts): empty in every
+		// ordinary build, set via the environment to point one test build at
+		// the new server. No screen ever offers a server field (ADR-0033).
+		//
+		// This is also why a release cannot be rebuilt from its own source:
+		// cd.yml sets this from a repository variable, so `npm run build`
+		// produces a plugin with src/knap switched off while every shipped
+		// release has it on. Defaulting it to knapUrl closes that gap and was
+		// tried here; the Obsidian wire end to end then timed out driving the
+		// app, because the harness has only ever exercised a build with
+		// src/knap off. ADR-0068 says that job decides, so the default stays
+		// empty until the harness copes. See issue #167.
+		KNAP_SERVER_URL: JSON.stringify(process.env.KNAP_SERVER_URL || ""),
 		REPOSITORY: `"pantalytics/knap-obsidian"`,
 	},
 	treeShaking: true,

@@ -1,14 +1,16 @@
 /**
  * Where the rebuilt client meets Obsidian, behind the build-time switch.
  *
- * `KNAP_SERVER_URL` is an esbuild define carrying the one server address
- * (ADR-0033), and every build now has it: the release already shipped with it
- * set, and a plain `npm run build` that left it empty produced a different
- * plugin from the one users install, which is what made the release
- * unreproducible for the directory's build verification. Empty still means
- * this whole file registers nothing, which is what a build pointed at no
- * server does; set, it adds the protocol handler and four commands. It stays
- * build-time on purpose: no screen offers a server field.
+ * `KNAP_SERVER_URL` is an esbuild define, empty in every ordinary build.
+ * Empty means this whole file registers nothing and the plugin behaves
+ * exactly as before; set, it adds the protocol handler and four commands,
+ * and one test vault can point at the new server while everything else
+ * stays where it is. That is the switch phase 2's plan asks for, and it is
+ * build-time on purpose: no screen offers a server field (ADR-0033).
+ *
+ * Every release ships with it set and no local build does, which is why the
+ * Obsidian wire end to end has never driven the plugin people install. Issue
+ * #167 carries that, and the measurement behind it.
  *
  * The screen words hold: sign in, cloud vault, link, unlink, sync. Nothing
  * here says server, relay or share to a person.

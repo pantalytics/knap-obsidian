@@ -153,10 +153,8 @@ hard failure and a list of warnings. The failure was the one worth having:
 
 > Build verification failed while running the build script
 
-Two separate causes, both now fixed, and the fix is verified rather than
-assumed: a source tree with `.git` and `node_modules` removed, built with
-`npm run build` and no environment variables at all, produces a `main.js`
-byte-identical to the one attached to the 1.13.6 release.
+Two separate causes. The first is fixed here. The second is measured, and
+parked with the measurement, because fixing it breaks something else.
 
 1. **`git describe` was unguarded.** `esbuild.config.mjs` opened with
    `execSync("git describe --tags --always")`. The directory unpacks a
@@ -164,15 +162,25 @@ byte-identical to the one attached to the 1.13.6 release.
    and the build died before esbuild started. It falls back to the manifest
    version now, which is the value it was already computing for a tagless
    checkout. `notify-send` on a failed build is wrapped for the same reason.
+   Verified: a source tree with `.git` and `node_modules` removed builds
+   cleanly with `npm run build` and no environment variables at all.
 
-2. **The release could not be reproduced from its own source.** `cd.yml` builds
-   with `KNAP_SERVER_URL` set from a repository variable, and the define
-   defaulted to the empty string. `npm run build` therefore produced a plugin
-   with the whole `src/knap` path switched off, while every shipped release had
-   it on -- two different plugins from one source tree, and nothing for a
-   verifier to compare. The define now defaults to the same one server address
-   as the rest of the file (ADR-0033), which is what the repository variable
-   holds. The environment still overrides it.
+2. **The release still cannot be reproduced from its own source.** `cd.yml`
+   builds with `KNAP_SERVER_URL` set from a repository variable, and the define
+   defaults to the empty string, so `npm run build` produces a plugin with the
+   whole `src/knap` path switched off while every shipped release has it on.
+   Two different plugins from one source tree, and nothing for a verifier to
+   compare. Defaulting the define to the same one server address as the rest of
+   the file (ADR-0033) closes it exactly -- measured: that build is
+   byte-identical to the `main.js` attached to the 1.13.6 release -- and the
+   Obsidian wire end to end then times out driving the app, because the harness
+   has only ever exercised a build with `src/knap` off. ADR-0068 says that job
+   decides, so the default stays empty until the harness copes. Tracked in
+   [#167](https://github.com/pantalytics/knap-obsidian/issues/167).
+
+   What this means for the next scorecard: the build script now runs to
+   completion, so verification gets an artifact to compare rather than a crash.
+   It will not match until #167 lands.
 
 The warnings that were worth acting on:
 
