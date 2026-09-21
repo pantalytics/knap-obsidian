@@ -23,6 +23,11 @@
  * hand was written under the rule that only what is on this disk goes in it.
  * A record without the flag was written under the old rule and cannot be
  * told apart from an honest one by reading it, so it is not read at all.
+ *
+ * `bases` rides in the same file: per document id, the sha256 of the text
+ * this device last held on both sides. A record written before bases existed
+ * simply has none, and a note without a base settles the way linking always
+ * has, with a conflict copy rather than a guess (issues #142, #169).
  */
 
 import { normalizePath } from "obsidian";
@@ -35,6 +40,8 @@ interface Stored {
 	/** Written only by a version whose record is what is on this disk. */
 	narrowed?: boolean;
 	files: Record<string, string>;
+	/** Document id -> sha256 of the text last agreed with. */
+	bases?: Record<string, string>;
 }
 
 export class ObsidianSeenTree implements SeenTree {
@@ -57,22 +64,33 @@ export class ObsidianSeenTree implements SeenTree {
 	 * costs those notes, on every device and in the cloud vault.
 	 */
 	async load(): Promise<Map<string, string>> {
+		return new Map(Object.entries((await this.read())?.files ?? {}));
+	}
+
+	/** The bases, or none. None is safe: see the class comment. */
+	async loadBases(): Promise<Map<string, string>> {
+		return new Map(Object.entries((await this.read())?.bases ?? {}));
+	}
+
+	/** The record, if there is one this device can vouch for. */
+	private async read(): Promise<Stored | null> {
 		try {
 			const raw = await this.adapter.read(normalizePath(this.path));
 			const stored = JSON.parse(raw) as Stored;
-			if (stored.cloudVaultId !== this.cloudVaultId) return new Map();
-			if (stored.narrowed !== true) return new Map();
-			return new Map(Object.entries(stored.files ?? {}));
+			if (stored.cloudVaultId !== this.cloudVaultId) return null;
+			if (stored.narrowed !== true) return null;
+			return stored;
 		} catch {
-			return new Map();
+			return null;
 		}
 	}
 
-	async save(entries: Map<string, string>): Promise<void> {
+	async save(entries: Map<string, string>, bases: Map<string, string>): Promise<void> {
 		const stored: Stored = {
 			cloudVaultId: this.cloudVaultId,
 			narrowed: true,
 			files: Object.fromEntries(entries),
+			bases: Object.fromEntries(bases),
 		};
 		await this.adapter.write(normalizePath(this.path), JSON.stringify(stored));
 	}

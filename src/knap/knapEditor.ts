@@ -48,6 +48,12 @@ export interface LiveNoteHandle {
 export interface LiveNoteSource {
 	/** The live note for a vault path, or null if this vault is not linked. */
 	openNote(path: string): LiveNoteHandle | null;
+	/**
+	 * Call `ready` once the note behind `path` can be opened. Returns the
+	 * cancel. Optional: a source without it leaves the editor to ask again
+	 * on its next update.
+	 */
+	whenSynced?(path: string, ready: () => void): () => void;
 }
 
 /** A caret with a name on it, the way every collaborative editor draws one. */
@@ -146,6 +152,9 @@ class KnapEditorPlugin implements PluginValue {
 	private note: LiveNoteHandle | null = null;
 	private live: LiveNote | null = null;
 	private path: string | null = null;
+	/** The note this editor is waiting on, and how to stop waiting. */
+	private waitingFor: string | null = null;
+	private stopWaiting: (() => void) | null = null;
 	private onAwareness: () => void;
 	decorations: DecorationSet = Decoration.none;
 
@@ -165,12 +174,43 @@ class KnapEditorPlugin implements PluginValue {
 		if (!path || path === this.path) return;
 		this.unbind();
 		const note = this.source.openNote(path);
-		if (!note) return;
+		if (!note) {
+			this.waitFor(path);
+			return;
+		}
+		this.cancelWait();
 		this.path = path;
 		this.note = note;
 		this.live = new LiveNote(this.view, note.text, note.awareness, note.who);
 		note.awareness.on("change", this.onAwareness);
 		this.refresh();
+	}
+
+	/**
+	 * Bind the moment the note's socket has synced, not on whatever update
+	 * comes next. Until then the editor shows the file, and an empty file is
+	 * an empty page somebody may start typing in (issue #169). Binding lets
+	 * `LiveNote` fill it from the document before the first save.
+	 */
+	private waitFor(path: string): void {
+		if (this.waitingFor === path || !this.source.whenSynced) return;
+		this.cancelWait();
+		this.waitingFor = path;
+		this.stopWaiting = this.source.whenSynced(path, () => {
+			this.stopWaiting = null;
+			this.waitingFor = null;
+			if (this.pathOf(this.view.state) !== path) return;
+			this.bind();
+			// An empty transaction, so the decorations are drawn now rather
+			// than on the next keystroke.
+			if (this.live) this.view.dispatch({});
+		});
+	}
+
+	private cancelWait(): void {
+		this.stopWaiting?.();
+		this.stopWaiting = null;
+		this.waitingFor = null;
 	}
 
 	private unbind(): void {
@@ -209,6 +249,7 @@ class KnapEditorPlugin implements PluginValue {
 	}
 
 	destroy(): void {
+		this.cancelWait();
 		this.unbind();
 	}
 }

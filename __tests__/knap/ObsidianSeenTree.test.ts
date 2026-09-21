@@ -37,7 +37,7 @@ describe("ObsidianSeenTree", () => {
 	it("hands back what it wrote down", async () => {
 		const adapter = new FakeAdapter();
 		const seen = treeFor(adapter);
-		await seen.save(new Map([["Notes/plan.md", "doc-1"]]));
+		await seen.save(new Map([["Notes/plan.md", "doc-1"]]), new Map());
 
 		expect(await treeFor(adapter).load()).toEqual(new Map([["Notes/plan.md", "doc-1"]]));
 	});
@@ -46,7 +46,7 @@ describe("ObsidianSeenTree", () => {
 		// Reading one vault's record as another's is how linking to a second
 		// cloud vault would start by deleting notes out of it.
 		const adapter = new FakeAdapter();
-		await treeFor(adapter, "cloud-1").save(new Map([["Notes/plan.md", "doc-1"]]));
+		await treeFor(adapter, "cloud-1").save(new Map([["Notes/plan.md", "doc-1"]]), new Map());
 
 		expect(await treeFor(adapter, "cloud-2").load()).toEqual(new Map());
 	});
@@ -68,7 +68,7 @@ describe("ObsidianSeenTree", () => {
 		// The flag is written, so the very next start trusts the record again
 		// and the refill is paid once rather than every time.
 		const adapter = new FakeAdapter();
-		await treeFor(adapter).save(new Map([["Notes/plan.md", "doc-1"]]));
+		await treeFor(adapter).save(new Map([["Notes/plan.md", "doc-1"]]), new Map());
 
 		expect(JSON.parse(adapter.files.get(PATH) as string).narrowed).toBe(true);
 		expect(await treeFor(adapter).load()).toEqual(new Map([["Notes/plan.md", "doc-1"]]));
@@ -82,10 +82,34 @@ describe("ObsidianSeenTree", () => {
 		expect(await treeFor(adapter).load()).toEqual(new Map());
 	});
 
+	it("keeps the bases beside the tree, for the same cloud vault only", async () => {
+		const adapter = new FakeAdapter();
+		await treeFor(adapter, "cloud-1").save(
+			new Map([["Notes/plan.md", "doc-1"]]),
+			new Map([["doc-1", "abc123"]]),
+		);
+
+		expect(await treeFor(adapter, "cloud-1").loadBases()).toEqual(new Map([["doc-1", "abc123"]]));
+		expect(await treeFor(adapter, "cloud-2").loadBases()).toEqual(new Map());
+	});
+
+	it("a record written before bases existed has none, and still has its tree", async () => {
+		// No base means the conflict-copy route, which is what every note took
+		// before the bases were written down. Never a guess that splices.
+		const adapter = new FakeAdapter();
+		adapter.files.set(
+			PATH,
+			JSON.stringify({ cloudVaultId: "cloud-1", narrowed: true, files: { "Notes/plan.md": "doc-1" } }),
+		);
+
+		expect(await treeFor(adapter).loadBases()).toEqual(new Map());
+		expect(await treeFor(adapter).load()).toEqual(new Map([["Notes/plan.md", "doc-1"]]));
+	});
+
 	it("forgetting leaves nothing behind, and forgetting twice is fine", async () => {
 		const adapter = new FakeAdapter();
 		const seen = treeFor(adapter);
-		await seen.save(new Map([["Notes/plan.md", "doc-1"]]));
+		await seen.save(new Map([["Notes/plan.md", "doc-1"]]), new Map());
 
 		await seen.forget();
 		await seen.forget();
