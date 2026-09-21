@@ -697,8 +697,8 @@ export class KnapSync {
 	 * is still syncing is empty, and an editor bound to an empty document
 	 * reads it as a note nobody has typed in and offers the file's text to
 	 * fill it, so the note would arrive a moment later and be merged with a
-	 * copy of itself. The editor asks again on its next update, and by then
-	 * the answer is a real document.
+	 * copy of itself. The editor asks again once `whenSynced` says the
+	 * document is there, and by then the answer is a real document.
 	 *
 	 * Pinning is what keeps the note out of the socket pool for as long as
 	 * the editor has it. A note that is already open in the pool, which is
@@ -733,6 +733,43 @@ export class KnapSync {
 				note.release();
 			},
 		};
+	}
+
+	/**
+	 * Call `ready` once the note behind `path` has finished its first sync, so
+	 * an editor that `openNote` turned away can ask again straight away.
+	 *
+	 * Waiting for the editor's next update was not enough. On 2026-09-20 a
+	 * phone opened a note whose socket synced a moment later, nothing updated
+	 * the editor in between, and the person typed into an empty page that
+	 * the document never filled (issue #169). Held open while it waits, so
+	 * the pool cannot close the socket it is waiting on. Returns the cancel,
+	 * which an editor that closes or moves to another note must call.
+	 */
+	whenSynced(path: string, ready: () => void): () => void {
+		const docId = this.client?.tree().docIdFor(normalize(path));
+		if (!this.client || !docId) return () => undefined;
+		const note = this.client.pin(docId);
+		let done = false;
+		const finish = () => {
+			if (done) return;
+			done = true;
+			note.provider.off("synced", onSynced);
+			note.release();
+		};
+		const onSynced = (synced: boolean) => {
+			if (!synced || done) return;
+			finish();
+			ready();
+		};
+		if (note.provider.synced) {
+			// Never inside the caller's own update: CodeMirror refuses a
+			// dispatch while one is running.
+			void Promise.resolve().then(() => onSynced(true));
+		} else {
+			note.provider.on("synced", onSynced);
+		}
+		return finish;
 	}
 
 	/**

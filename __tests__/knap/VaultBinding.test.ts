@@ -73,15 +73,21 @@ class MemoryFiles implements FileStore {
 /** The tree this device last agreed with, surviving a restart in memory. */
 class MemorySeen implements SeenTree {
 	entries: Map<string, string> | null = null;
+	bases: Map<string, string> | null = null;
 
 	async load(): Promise<Map<string, string>> {
 		return new Map(this.entries ?? []);
 	}
-	async save(entries: Map<string, string>): Promise<void> {
+	async loadBases(): Promise<Map<string, string>> {
+		return new Map(this.bases ?? []);
+	}
+	async save(entries: Map<string, string>, bases: Map<string, string>): Promise<void> {
 		this.entries = new Map(entries);
+		this.bases = new Map(bases);
 	}
 	async forget(): Promise<void> {
 		this.entries = null;
+		this.bases = null;
 	}
 }
 
@@ -625,6 +631,172 @@ describe("VaultBinding", () => {
 		expect(a.files.map.get("komt-niet.md")).toBe("kostbaar");
 		expect(b.files.map.get("komt-niet.md")).toBe("kostbaar");
 		expect(hub.treeOf().has("komt-niet.md")).toBe(true);
+	});
+
+	describe("three ways, against what this device last agreed with", () => {
+		const copiesOn = (files: MemoryFiles) =>
+			[...files.map].filter(([path]) => path.includes("conflict"));
+
+		it("an empty local file this device cannot vouch for never deletes the cloud text (#169)", async () => {
+			// Measured on production 2026-09-20: a phone whose copy of a note
+			// was empty, and whose editor had not bound yet, saved one typed
+			// character. The file binding diffed that against the full
+			// document and the difference was every character of the note.
+			const hub = new Hub();
+			const board = "---\ntype: board\n---\n" + "## Kolom\n- kaart\n".repeat(200);
+			const a = await device(hub, { "bord.md": board });
+			await settle(a.binding);
+			const docId = hub.treeOf().get("bord.md") as string;
+
+			// The phone's fill dies on this note and leaves an empty file.
+			hub.broken.add(docId);
+			const phone = await device(hub, { "bord.md": "" }, new MemorySeen());
+			await settle(a.binding, phone.binding);
+			hub.broken.clear();
+			expect(phone.files.map.get("bord.md")).toBe("");
+
+			// The person opens it and types one character before anything
+			// fills it. Obsidian saves the file.
+			await phone.files.write("bord.md", "H");
+			await settle(a.binding, phone.binding);
+
+			// The note is whole, everywhere.
+			expect(a.files.map.get("bord.md")).toBe(board);
+			expect(phone.files.map.get("bord.md")).toBe(board);
+			// And the character is not lost: it is a copy beside the note.
+			expect(copiesOn(phone.files)).toEqual([["bord (conflict).md", "H"]]);
+			expect(a.files.map.get("bord (conflict).md")).toBe("H");
+		});
+
+		it("an empty save with no base is filled from the cloud, not pushed as a deletion", async () => {
+			const hub = new Hub();
+			const a = await device(hub, { "nota.md": "cloudversie" });
+			await settle(a.binding);
+			hub.broken.add(hub.treeOf().get("nota.md") as string);
+			const phone = await device(hub, {}, new MemorySeen());
+			await settle(a.binding, phone.binding);
+			hub.broken.clear();
+
+			await phone.files.write("nota.md", "");
+			await settle(a.binding, phone.binding);
+
+			expect(a.files.map.get("nota.md")).toBe("cloudversie");
+			expect(phone.files.map.get("nota.md")).toBe("cloudversie");
+			expect(copiesOn(phone.files)).toHaveLength(0);
+		});
+
+		it("emptying a note on purpose still travels, because this device held it", async () => {
+			const hub = new Hub();
+			const a = await device(hub, { "weg-ermee.md": "oude inhoud" });
+			const b = await device(hub);
+			await settle(a.binding, b.binding);
+
+			await a.files.write("weg-ermee.md", "");
+			await settle(a.binding, b.binding);
+
+			expect(b.files.map.get("weg-ermee.md")).toBe("");
+			expect(copiesOn(a.files)).toHaveLength(0);
+		});
+
+		it("only the cloud moved: the old file is overwritten, no copy (#142)", async () => {
+			const hub = new Hub();
+			const seen = new MemorySeen();
+			const a = await device(hub, { "nota.md": "oud" }, seen);
+			const b = await device(hub);
+			await settle(a.binding, b.binding);
+			a.binding.stop();
+
+			await b.files.write("nota.md", "nieuw van B");
+			await settle(b.binding);
+
+			const again = await restart(hub, a.files, seen);
+			await settle(again, b.binding);
+
+			expect(a.files.map.get("nota.md")).toBe("nieuw van B");
+			expect(copiesOn(a.files)).toHaveLength(0);
+			expect(copiesOn(b.files)).toHaveLength(0);
+		});
+
+		it("only this device moved: the edit goes up as a difference, no copy (#142)", async () => {
+			const hub = new Hub();
+			const seen = new MemorySeen();
+			const a = await device(hub, { "nota.md": "regel1\nregel2\n" }, seen);
+			const b = await device(hub);
+			await settle(a.binding, b.binding);
+			a.binding.stop();
+			a.files.map.set("nota.md", "regel1\nregel2 hier\n"); // no event: the plugin was off
+
+			const again = await restart(hub, a.files, seen);
+			await settle(again, b.binding);
+
+			expect(b.files.map.get("nota.md")).toBe("regel1\nregel2 hier\n");
+			expect(a.files.map.get("nota.md")).toBe("regel1\nregel2 hier\n");
+			expect(copiesOn(a.files)).toHaveLength(0);
+			expect(copiesOn(b.files)).toHaveLength(0);
+		});
+
+		it("both moved: the cloud keeps the note, this device's text becomes a copy", async () => {
+			const hub = new Hub();
+			const seen = new MemorySeen();
+			const a = await device(hub, { "nota.md": "begin" }, seen);
+			const b = await device(hub);
+			await settle(a.binding, b.binding);
+			a.binding.stop();
+
+			await b.files.write("nota.md", "begin, en B");
+			await settle(b.binding);
+			a.files.map.set("nota.md", "begin, en A"); // edited while the plugin was off
+
+			const again = await restart(hub, a.files, seen);
+			await settle(again, b.binding);
+
+			expect(a.files.map.get("nota.md")).toBe("begin, en B");
+			expect(b.files.map.get("nota.md")).toBe("begin, en B");
+			expect(a.files.map.get("nota (conflict).md")).toBe("begin, en A");
+			expect(b.files.map.get("nota (conflict).md")).toBe("begin, en A");
+		});
+
+		it("a held note's own saves keep its base, so a restart after typing is not a conflict", async () => {
+			// The editor writes into the document directly and the binding never
+			// sees those keystrokes. Obsidian's save of the same text is the one
+			// moment it can tell the two sides agree.
+			const hub = new Hub();
+			const seen = new MemorySeen();
+			const a = await device(hub, { "open.md": "een" }, seen);
+			const b = await device(hub);
+			await settle(a.binding, b.binding);
+
+			const release = a.binding.hold("open.md");
+			await b.files.write("open.md", "een twee"); // arrives in a's editor
+			await settle(a.binding, b.binding);
+			a.files.map.set("open.md", "een twee"); // and Obsidian saves it
+			a.files.emit({ type: "modify", path: "open.md" });
+			await settle(a.binding, b.binding);
+			a.binding.stop();
+			release();
+
+			await b.files.write("open.md", "een twee drie");
+			await settle(b.binding);
+
+			const again = await restart(hub, a.files, seen);
+			await settle(again, b.binding);
+
+			expect(a.files.map.get("open.md")).toBe("een twee drie");
+			expect(copiesOn(a.files)).toHaveLength(0);
+		});
+
+		it("the bases are written down with the tree, and only for notes on this disk", async () => {
+			const hub = new Hub();
+			const seen = new MemorySeen();
+			const a = await device(hub, { "een.md": "1", "twee.md": "2" }, seen);
+			await settle(a.binding);
+
+			const ids = [hub.treeOf().get("een.md"), hub.treeOf().get("twee.md")];
+			expect([...(seen.bases?.keys() ?? [])].sort()).toEqual([...ids].sort());
+			expect(seen.bases?.get(ids[0] as string)).toBe(
+				await generateHash(new TextEncoder().encode("1")),
+			);
+		});
 	});
 
 	it("its own writes do not echo", async () => {

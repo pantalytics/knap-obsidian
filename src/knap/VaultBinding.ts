@@ -17,10 +17,13 @@
  * - Both directions are idempotent instead of bookkept: an event that finds
  *   file and document already equal does nothing, which is what breaks
  *   every echo loop without a ledger of "writes that were ours".
- * - At link time nothing is guessed: local-only notes upload, remote-only
- *   notes download, and a note that exists on both sides with different
- *   text keeps the cloud text while the local text survives as a conflict
- *   copy beside it. Nothing is ever silently lost.
+ * - A note that differs on the two sides is settled three ways, against the
+ *   text this device last agreed with (its base). Only the file moved: it is
+ *   spliced into the document. Only the document moved: it is written to the
+ *   file. Both moved, or no base: the cloud text keeps the path and the local
+ *   text survives beside it as a conflict copy. A file is never diffed
+ *   against a document it never held, because that diff deletes everything
+ *   the file does not have (issue #169). Nothing is ever silently lost.
  * - A note's document is borrowed and handed back, never held. Only the tree
  *   and the notes an editor has open keep a socket of their own, and every
  *   other note takes its turn in a small pool, because a browser has 255
@@ -120,7 +123,13 @@ export interface VaultDocs {
  */
 export interface SeenTree {
 	load(): Promise<Map<string, string>>;
-	save(entries: Map<string, string>): Promise<void>;
+	/**
+	 * Document id -> sha256 of the text this device last agreed with for that
+	 * note: the base of the three-way comparison in `converge`. A note with no
+	 * base is one this device cannot vouch for, and that never splices.
+	 */
+	loadBases(): Promise<Map<string, string>>;
+	save(entries: Map<string, string>, bases: Map<string, string>): Promise<void>;
 	forget(): Promise<void>;
 }
 
@@ -172,6 +181,11 @@ function textOf(content: Y.Text): string {
 	return content.toString();
 }
 
+/** The same sha256 the server's mirror writes into the tree. */
+function hashOf(text: string): Promise<string> {
+	return generateHash(new TextEncoder().encode(text));
+}
+
 export class VaultBinding {
 	private stopFileEvents: (() => void) | null = null;
 	private stopTreeEvents: (() => void) | null = null;
@@ -187,6 +201,14 @@ export class VaultBinding {
 	private held = new Set<string>();
 	/** Set whenever this device changed the tree, cleared when it is saved. */
 	private seenDirty = false;
+	/**
+	 * Per document id, the sha256 of the text file and document last held
+	 * together on this device. Kept for the life of the binding and written
+	 * down beside the tree, so a restart still knows which side moved.
+	 */
+	private bases = new Map<string, string>();
+	/** Set whenever a base changed, cleared when it is saved. */
+	private basesDirty = false;
 
 	constructor(
 		private readonly files: FileStore,
@@ -354,6 +376,40 @@ export class VaultBinding {
 			if ((await this.files.read(at)) !== text) {
 				await this.files.write(at, text);
 			}
+			await this.agree(docId, text);
+		});
+	}
+
+	/**
+	 * Record that file and document hold `text` together on this device.
+	 *
+	 * Called only at a moment where that is known, never guessed: after a
+	 * write from the document, after a splice into it, and wherever the two
+	 * were compared and found equal. A base that is older than it could be is
+	 * safe, because it only ever sends a note down the conflict-copy route.
+	 */
+	private async agree(docId: string, text: string): Promise<void> {
+		this.agreeHash(docId, await hashOf(text));
+	}
+
+	private agreeHash(docId: string, hash: string): void {
+		if (this.bases.get(docId) === hash) return;
+		this.bases.set(docId, hash);
+		this.basesDirty = true;
+	}
+
+	/**
+	 * A held note was saved by Obsidian. The editor already put every keystroke
+	 * into the document, so there is nothing to push, but when the file and the
+	 * document are equal that is a base worth keeping: without it, a restart
+	 * after an evening of typing in an open note would find both sides moved.
+	 */
+	private async agreeIfSame(path: string): Promise<void> {
+		const docId = this.docs.tree().docIdFor(path);
+		if (!docId) return;
+		await this.docs.withNote(docId, async ({ doc }) => {
+			const text = textOf(doc.getText(CONTENT));
+			if ((await this.files.read(path)) === text) await this.agree(docId, text);
 		});
 	}
 
@@ -396,21 +452,31 @@ export class VaultBinding {
 	 * rather than deleting it, which is the safe direction and the true one.
 	 */
 	private async rememberTree(): Promise<void> {
-		if (!this.seenDirty || !this.seen) return;
+		if ((!this.seenDirty && !this.basesDirty) || !this.seen) return;
+		const treeWas = this.seenDirty;
 		this.seenDirty = false;
+		this.basesDirty = false;
 		try {
 			const onDisk = new Set((await this.files.listNotes()).map(normalize));
 			const agreed = new Map<string, string>();
+			const bases = new Map<string, string>();
 			for (const [path, docId] of this.docs.tree().entries()) {
-				if (onDisk.has(path)) agreed.set(path, docId);
+				if (!onDisk.has(path)) continue;
+				agreed.set(path, docId);
+				// Only notes that are here keep a base, so the record does
+				// not grow with every note this vault ever held.
+				const base = this.bases.get(docId);
+				if (base !== undefined) bases.set(docId, base);
 			}
-			await this.seen.save(agreed);
+			await this.seen.save(agreed, bases);
 		} catch (error) {
 			knapFault("tree", error);
 			// A record that could not be written is a record that stays
 			// older than it is, and older is the safe direction: every
-			// deletion below needs the record to positively say so.
-			this.seenDirty = true;
+			// deletion below needs the record to positively say so, and a
+			// stale base only ever ends in a conflict copy.
+			this.seenDirty = treeWas;
+			this.basesDirty = true;
 		}
 	}
 
@@ -435,6 +501,9 @@ export class VaultBinding {
 		const local = new Set((await this.files.listNotes()).map(normalize));
 		const remote = tree.entries();
 		const seen = (await this.seen?.load()) ?? new Map<string, string>();
+		for (const [docId, hash] of (await this.seen?.loadBases()) ?? new Map<string, string>()) {
+			if (!this.bases.has(docId)) this.bases.set(docId, hash);
+		}
 
 		// A vault whose files have not been indexed yet reads exactly like a
 		// vault somebody emptied, and only one of those two is worth acting
@@ -517,7 +586,11 @@ export class VaultBinding {
 		if (cloud === undefined) return false;
 		const text = await this.files.read(path);
 		if (text === null) return false;
-		return (await generateHash(new TextEncoder().encode(text))) === cloud;
+		if ((await hashOf(text)) !== cloud) return false;
+		// The file is a text the cloud held, so it is a base: whatever moves
+		// on either side from here is a move from this.
+		this.agreeHash(docId, cloud);
+		return true;
 	}
 
 	/**
@@ -587,7 +660,10 @@ export class VaultBinding {
 		}
 		// A note an editor is holding writes itself, keystroke by keystroke;
 		// the save event that arrives a second later says nothing newer.
-		if (this.held.has(normalize(event.path))) return;
+		if (this.held.has(normalize(event.path))) {
+			await this.agreeIfSame(normalize(event.path));
+			return;
+		}
 		// create and modify converge: bring the document to the file's text.
 		await this.pushCounted(event.path);
 	}
@@ -604,25 +680,108 @@ export class VaultBinding {
 		return this.carry("up", () => this.pushNote(path));
 	}
 
+	/**
+	 * Bring the document to what this device holds, if this device is the one
+	 * that moved. `converge` decides; see there.
+	 */
 	private async pushNote(path: string): Promise<void> {
 		const clean = normalize(path);
 		// Belt and braces: the event stream is filtered already, but
 		// reconcileAll and the conflict-copy path both call in directly.
 		if (!isNote(clean)) return;
-		const text = await this.files.read(clean);
-		if (text === null) return; // gone again before we got to it
+		if ((await this.files.read(clean)) === null) return; // gone again before we got to it
 
 		const tree = this.docs.tree();
 		const known = tree.docIdFor(clean);
 		const docId = tree.ensureNote(clean);
 		if (known === undefined) this.seenDirty = true;
-		await this.docs.withNote(docId, async ({ doc }) => {
+		const copy = await this.docs.withNote(docId, async ({ doc }) => {
 			const content = doc.getText(CONTENT);
-			if (textOf(content) !== text) {
-				splice(content, textOf(content), text, doc);
-			}
+			// Read inside the borrow, not before it: the wait for a socket can
+			// be long, and the file that decides is the file as it is now.
+			const fileText = await this.files.read(clean);
+			const conflict =
+				fileText === null ? null : await this.converge(clean, docId, doc, fileText);
 			this.observeNote(clean, docId, content);
+			return conflict;
 		});
+		if (copy) await this.pushNote(copy);
+	}
+
+	/**
+	 * Settle one note whose file and document may differ, three ways.
+	 *
+	 * The base is the text this device last held on both sides. Against it:
+	 *
+	 * | file vs base | document vs base | what happens                        |
+	 * |--------------|------------------|-------------------------------------|
+	 * | same         | moved            | the document is written to the file |
+	 * | moved        | same             | the file is spliced into the document |
+	 * | moved        | moved, or no base | the document keeps the path, the file becomes a conflict copy |
+	 *
+	 * The third row never splices, and that is the fix for issue #169: an
+	 * empty file on a phone was diffed against a full document it had never
+	 * held, and the difference was every character of the note. Two cases in
+	 * that row do not make a copy, because a copy of them keeps nothing: an
+	 * empty file is filled from the document, and an empty document is filled
+	 * from the file, which is what a note minted a moment ago looks like.
+	 *
+	 * Returns the conflict copy's path when one was written, for the caller
+	 * to push once it has handed this note's socket back.
+	 */
+	private async converge(
+		path: string,
+		docId: string,
+		doc: Y.Doc,
+		fileText: string,
+	): Promise<string | null> {
+		const content = doc.getText(CONTENT);
+		const docText = textOf(content);
+		if (fileText === docText) {
+			await this.agree(docId, docText);
+			return null;
+		}
+		const base = this.bases.get(docId);
+		if (base !== undefined) {
+			if ((await hashOf(docText)) === base) {
+				// Only this device moved: its edit goes up as a difference.
+				splice(content, docText, fileText, doc);
+				await this.agree(docId, fileText);
+				return null;
+			}
+			if ((await hashOf(fileText)) === base) {
+				// Only the cloud moved: this file is just old.
+				await this.files.write(path, docText);
+				await this.agree(docId, docText);
+				return null;
+			}
+		}
+		if (fileText === "") {
+			// An empty file this device cannot vouch for is what a fill that
+			// was killed halfway leaves behind, and on 2026-09-05 a phone
+			// turned 57 of them into 57 empty notes. It is filled, never
+			// pushed, and a copy of nothing preserves nothing.
+			await this.files.write(path, docText);
+			await this.agree(docId, docText);
+			return null;
+		}
+		if (docText === "") {
+			// A minted note nobody typed in yet: the local text is the note. A
+			// note somebody deliberately emptied looks exactly the same from
+			// here and nothing can tell them apart, so this goes the way that
+			// cannot lose anything.
+			splice(content, "", fileText, doc);
+			await this.agree(docId, fileText);
+			return null;
+		}
+		// Both sides wrote, or this device cannot say which one did. The
+		// cloud text wins the path; the local text survives beside it, named
+		// for what happened.
+		const conflict = buildConflictCopyPath(path, this.conflictLabel());
+		await this.files.write(conflict, fileText);
+		await this.files.write(path, docText);
+		await this.agree(docId, docText);
+		return conflict;
 	}
 
 	// -- remote to local ------------------------------------------------------
@@ -640,34 +799,14 @@ export class VaultBinding {
 	private async bindNote(path: string, docId: string): Promise<void> {
 		const copy = await this.docs.withNote(docId, async ({ doc }) => {
 			const content = doc.getText(CONTENT);
-			const docText = textOf(content);
 			const fileText = await this.files.read(path);
 			let conflict: string | null = null;
-
-			if (fileText === null || fileText === "") {
-				// No file, or a file with nothing in it. An empty file is what
-				// a fill that was killed halfway leaves behind, and a copy of
-				// nothing preserves nothing: on 2026-09-05 a phone whose fill
-				// kept dying turned 57 of them into 57 empty notes, first in
-				// the cloud vault and then on every device. So an empty file
-				// takes the same route as no file at all, and the branch below
-				// keeps the case it was written for, which is two sides that
-				// both actually wrote something.
-				if (docText !== fileText) await this.files.write(path, docText);
-			} else if (fileText !== docText) {
-				if (docText === "") {
-					// A minted note nobody typed in yet: the local text is the
-					// note. A note somebody deliberately emptied looks exactly
-					// the same from here and nothing can tell them apart, so
-					// this goes the way that cannot lose anything.
-					splice(content, "", fileText, doc);
-				} else {
-					// Both sides wrote. The cloud text wins the path; the local
-					// text survives beside it, named for what happened.
-					conflict = buildConflictCopyPath(path, this.conflictLabel());
-					await this.files.write(conflict, fileText);
-					await this.files.write(path, docText);
-				}
+			if (fileText === null) {
+				const docText = textOf(content);
+				await this.files.write(path, docText);
+				await this.agree(docId, docText);
+			} else {
+				conflict = await this.converge(path, docId, doc, fileText);
 			}
 			this.observeNote(path, docId, content);
 			return conflict;
@@ -696,9 +835,26 @@ export class VaultBinding {
 				const current = this.docs.tree().pathFor(docId) ?? path;
 				// An open editor already has this change and owns the file.
 				if (this.held.has(current)) return;
-				if ((await this.files.read(current)) !== text) {
-					await this.files.write(current, text);
+				const fileText = await this.files.read(current);
+				if (fileText === text) {
+					await this.agree(docId, text);
+					return;
 				}
+				const base = this.bases.get(docId);
+				if (
+					fileText !== null &&
+					fileText !== "" &&
+					base !== undefined &&
+					(await hashOf(fileText)) !== base
+				) {
+					// This device changed the file and the change has not reached
+					// the document yet. Its own modify event is in this queue and
+					// settles the note three ways; writing the cloud text here
+					// first would put it over that edit.
+					return;
+				}
+				await this.files.write(current, text);
+				await this.agree(docId, text);
 			});
 		};
 		content.observe(observer);

@@ -44,14 +44,20 @@ function fillCloud(network: FakeNetwork, vaultId: string, notes: string[]): void
 /** `knap-seen.json`, which lives beside the plugin and outlives its bundle. */
 class MemorySeen implements SeenTree {
 	entries = new Map<string, string>();
+	bases = new Map<string, string>();
 	async load(): Promise<Map<string, string>> {
 		return new Map(this.entries);
 	}
-	async save(entries: Map<string, string>): Promise<void> {
+	async loadBases(): Promise<Map<string, string>> {
+		return new Map(this.bases);
+	}
+	async save(entries: Map<string, string>, bases: Map<string, string>): Promise<void> {
 		this.entries = new Map(entries);
+		this.bases = new Map(bases);
 	}
 	async forget(): Promise<void> {
 		this.entries = new Map();
+		this.bases = new Map();
 	}
 }
 

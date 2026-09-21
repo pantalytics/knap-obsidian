@@ -147,7 +147,7 @@ At link time nothing is guessed:
 | yes | no | uploads |
 | no | yes | downloads |
 | yes, same text | yes | nothing. Both directions are idempotent, which is what breaks the echo loop without a ledger |
-| yes, different text | yes | the cloud text takes the path, the local text survives beside it as a conflict copy |
+| yes, different text | yes | settled three ways, see below |
 | no, and it was there last time | no | a delete somebody made, which travels |
 
 That last row is what `ObsidianSeenTree` exists for. Without a record of what
@@ -155,6 +155,22 @@ this device last agreed with, a file that is gone and a note that never arrived
 look identical, and every restart undid both sides' deletes. The record lives in
 the plugin's own directory, never in settings, because it is a fact about one
 device and may never ride along with anything that syncs.
+
+The same record carries a **base** per note: the sha256 of the text file and
+document last held together on this device. A note whose two sides differ is
+settled against it, at link time, on every save and whenever the cloud moves:
+
+| File vs base | Document vs base | What happens |
+|---|---|---|
+| same | moved | the document is written to the file |
+| moved | same | the file is spliced into the document |
+| moved | moved, or no base | the document keeps the path, the file becomes a conflict copy. Never a splice |
+
+Two cases in the last row make no copy, because a copy of them keeps nothing:
+an empty file is filled from the document, and an empty document is filled from
+the file. A file is never diffed against a document it never held. Before the
+base, an empty file on a phone was, and the difference was every character of
+the note (issue #169).
 
 The binding starts only on `workspace.onLayoutReady`. The first thing it does is
 ask Obsidian which notes this vault holds, and a vault that has not finished
