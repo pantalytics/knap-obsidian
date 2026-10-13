@@ -254,9 +254,9 @@
 			remote = (await clients.listShares(KNAP_SERVER_ID)) as ShareLike[];
 		} catch (e: unknown) {
 			// The list is the screen, so there is nothing to draw without it.
-			// Say Knap could not be reached rather than showing an empty
+			// Say Pantalytics could not be reached rather than showing an empty
 			// account, which is a different thing and has a button on it.
-			error = e instanceof Error ? e.message : "Could not reach Knap";
+			error = e instanceof Error ? e.message : "Could not reach Pantalytics";
 			return;
 		}
 

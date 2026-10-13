@@ -1098,7 +1098,7 @@ export default class Live extends Plugin {
 				[DOWNLOADING]: "Your vault is downloading.",
 				[UP_TO_DATE]: "Your vault is up to date.",
 				[PAUSED]: "Sync is paused on this device.",
-				[OFFLINE]: "Knap is out of reach. Your notes are safe here.",
+				[OFFLINE]: "Pantalytics is out of reach. Your notes are safe here.",
 				[SIGNED_OUT]: "Sign in to resume sync.",
 				[PROBLEM]: "Something could not sync. Open Knap in settings.",
 			};

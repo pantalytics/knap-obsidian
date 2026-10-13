@@ -10,7 +10,7 @@
  *
  * **Three rows and a strip, in the order they depend on each other**: Account is
  * who, Cloud vault is what this vault syncs with, the strip under it is how
- * that vault is going, and Knap dashboard is the way out to the page where a
+ * that vault is going, and Pantalytics dashboard is the way out to the page where a
  * colleague gets let in and an AI gets connected. The strip was the first thing on the screen until
  * 2026-09-02, floating above the two rows as if it were a third subject; it is
  * a fact about one cloud vault, so it now sits inside that row's block, sharing
@@ -199,17 +199,14 @@ export function hasRetry(status: KnapStatus): boolean {
 }
 
 /**
- * Where Open lands, which is the page the person came for rather than a front
- * door they then have to navigate.
- *
- * A linked vault has a page of its own, and that page is the one with the
- * member list and the invite field on it, so somebody who presses Open while
- * looking at a vault's name arrives at that vault. Without a link there is no
- * such page, and Home is where the walk through connecting an AI starts.
+ * Where Open lands: the Vaults page of the Pantalytics dashboard, which lists
+ * every cloud vault of the workspace with its devices. Since the cutover of
+ * 2026-10-13 a vault has no page of its own there, so the link is the same
+ * whether this vault is linked or not.
  */
-export function dashboardUrl(serverUrl: string, cloudVaultId: string): string {
+export function dashboardUrl(serverUrl: string): string {
 	const base = serverUrl.replace(/\/+$/, "");
-	return cloudVaultId ? `${base}/vaults/${encodeURIComponent(cloudVaultId)}` : `${base}/`;
+	return `${base}/admin/vaults`;
 }
 
 /**
@@ -222,7 +219,7 @@ export function dashboardUrl(serverUrl: string, cloudVaultId: string): string {
  * (ADR-0031, ADR-0034).
  */
 export function dashboardHelp(serverUrl: string): string {
-	return `Opens ${hostOf(serverUrl)} in your browser. Invite your team, connect your AI over MCP.`;
+	return `Opens ${hostOf(serverUrl)} in your browser. Add people to your workspace, connect your AI over MCP.`;
 }
 
 /** The two acts the buttons perform, so the screen shares them with the commands. */
@@ -396,7 +393,7 @@ export class KnapSettingsTab extends PluginSettingTab {
 			// No description. What is on the other side of the button is two
 			// sentences, and two sentences under a row somebody reads every
 			// week is two sentences they read every week.
-			.setName("Knap dashboard")
+			.setName("Pantalytics dashboard")
 			.addExtraButton((button) =>
 				button
 					.setIcon("info")
@@ -408,9 +405,7 @@ export class KnapSettingsTab extends PluginSettingTab {
 			)
 			.addButton((button) =>
 				button.setButtonText("Open").onClick(() => {
-					this.openPage(
-						dashboardUrl(this.serverUrl, this.sync.linked?.cloudVaultId ?? ""),
-					);
+					this.openPage(dashboardUrl(this.serverUrl));
 				}),
 			);
 		const help = block.createDiv({

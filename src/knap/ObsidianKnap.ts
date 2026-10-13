@@ -73,16 +73,16 @@ export function vaultChoices(vaults: CloudVault[], query: string): VaultChoice[]
  * What the box at the top says while the list is being fetched, and after.
  *
  * The state of the fetch goes in the placeholder rather than into the list,
- * because a row that says *Asking Knap* is a row somebody can select. This
- * way there is never an unselectable entry, and the list is only ever things
- * that can be chosen.
+ * because a row that says *Asking Pantalytics* is a row somebody can select.
+ * This way there is never an unselectable entry, and the list is only ever
+ * things that can be chosen.
  */
 export function pickerPlaceholder(state: "loading" | "ready" | "failed"): string {
 	switch (state) {
 		case "loading":
-			return "Asking Knap...";
+			return "Asking Pantalytics...";
 		case "failed":
-			return "Could not reach Knap. Your notes are safe here.";
+			return "Could not reach Pantalytics. Your notes are safe here.";
 		default:
 			return "Search cloud vaults...";
 	}
@@ -275,7 +275,7 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 					// This build's own server, not the old stack's page: the
 					// panel that knows about these vaults is served by the
 					// process the plugin already talks to (ADR-0073).
-					window.open(dashboardUrl(serverUrl, ""));
+					window.open(dashboardUrl(serverUrl));
 					new Notice("Make one in your browser, then choose it here.");
 					resolve();
 				},

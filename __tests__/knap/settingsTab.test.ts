@@ -382,7 +382,7 @@ describe("the screen, signed in", () => {
 		// Account, then the vault, then the way out. The order is what each
 		// row depends on: who, then which vault, then the page that reports on
 		// it. There is still no row about how much of the vault travels.
-		expect(rows.map((r) => r.name)).toEqual(["Account", "Cloud vault", "Knap dashboard"]);
+		expect(rows.map((r) => r.name)).toEqual(["Account", "Cloud vault", "Pantalytics dashboard"]);
 		// Inside the vault's own block rather than beside it: one border round
 		// both, so the strip cannot be read as a third subject.
 		const block = find(container, "knap-vault");
@@ -400,7 +400,7 @@ describe("the screen, signed in", () => {
 			expect(rows.map((r) => r.name)).toEqual([
 				"Account",
 				"Cloud vault",
-				"Knap dashboard",
+				"Pantalytics dashboard",
 			]);
 		}
 	});
@@ -783,7 +783,7 @@ describe("the breakdown behind the fold", () => {
 describe("the dashboard row", () => {
 	it("is one name, one button, and nothing else out loud", () => {
 		const { rows } = drawFor({ signedIn: true, linked: { id: "v1", name: "Work" } });
-		const row = rows.find((r) => r.name === "Knap dashboard");
+		const row = rows.find((r) => r.name === "Pantalytics dashboard");
 		expect(row?.desc).toBe("");
 		expect(row?.buttons).toEqual(["Open"]);
 		expect(row?.extras).toEqual(["info"]);
@@ -797,9 +797,9 @@ describe("the dashboard row", () => {
 		const help = find(container, "knap-dash-help");
 		expect(help?.hidden).toBe(true);
 		expect(help?.text).toBe(
-			"Opens next.knap.test in your browser. Invite your team, connect your AI over MCP.",
+			"Opens next.knap.test in your browser. Add people to your workspace, connect your AI over MCP.",
 		);
-		rows.find((r) => r.name === "Knap dashboard")?.pressExtra?.();
+		rows.find((r) => r.name === "Pantalytics dashboard")?.pressExtra?.();
 		expect(help?.hidden).toBe(false);
 	});
 
@@ -808,24 +808,19 @@ describe("the dashboard row", () => {
 			signedIn: true,
 			linked: { id: "v1", name: "Work" },
 		});
-		rows.find((r) => r.name === "Knap dashboard")?.pressExtra?.();
+		rows.find((r) => r.name === "Pantalytics dashboard")?.pressExtra?.();
 		tab.display();
 		expect(find(container, "knap-dash-help")?.hidden).toBe(false);
 	});
 
-	it("opens the linked vault's own page, which is where the invite field is", () => {
-		const { rows, opened } = drawFor({
-			signedIn: true,
-			linked: { id: "v 1", name: "Work" },
-		});
-		rows.find((r) => r.name === "Knap dashboard")?.press?.();
-		expect(opened).toEqual(["https://next.knap.test/vaults/v%201"]);
-	});
+	it("opens the Vaults page, linked or not, because a vault has no page of its own", () => {
+		const linked = drawFor({ signedIn: true, linked: { id: "v 1", name: "Work" } });
+		linked.rows.find((r) => r.name === "Pantalytics dashboard")?.press?.();
+		expect(linked.opened).toEqual(["https://next.knap.test/admin/vaults"]);
 
-	it("opens the front door when there is no vault to open", () => {
-		const { rows, opened } = drawFor({ signedIn: true, linked: null });
-		rows.find((r) => r.name === "Knap dashboard")?.press?.();
-		expect(opened).toEqual(["https://next.knap.test/"]);
+		const unlinked = drawFor({ signedIn: true, linked: null });
+		unlinked.rows.find((r) => r.name === "Pantalytics dashboard")?.press?.();
+		expect(unlinked.opened).toEqual(["https://next.knap.test/admin/vaults"]);
 	});
 
 	it("names the host it is about to open, and never a note or a path", () => {
@@ -833,13 +828,13 @@ describe("the dashboard row", () => {
 		// else: no vault name, no folder (ADR-0003 is about telemetry, and the
 		// same discipline is why this sentence is fixed).
 		expect(dashboardHelp("https://next.knap.test/")).toBe(
-			"Opens next.knap.test in your browser. Invite your team, connect your AI over MCP.",
+			"Opens next.knap.test in your browser. Add people to your workspace, connect your AI over MCP.",
 		);
 	});
 
 	it("does not double the slash a server address may come with", () => {
-		expect(dashboardUrl("https://next.knap.test/", "v1")).toBe(
-			"https://next.knap.test/vaults/v1",
+		expect(dashboardUrl("https://next.knap.test/")).toBe(
+			"https://next.knap.test/admin/vaults",
 		);
 	});
 });

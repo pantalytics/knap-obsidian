@@ -93,9 +93,10 @@ const authUrl = "";
 //
 // KNAP_SERVER_URL doubles as the rebuild's beta switch below, so it stays
 // empty in an ordinary build. The fallback here is the address a release
-// carries. The bare domain is the marketing site on another box, so it is
-// app.knap.pantalytics.com and not knap.pantalytics.com.
-const knapUrl = process.env.KNAP_SERVER_URL || "https://app.knap.pantalytics.com";
+// carries. Since the cutover of 2026-10-13 (odoo-mcp-pro-admin's
+// docs/plans/knap-merge.md) the vault lives on the Pantalytics host; the old
+// app.knap.pantalytics.com stays as an alias for builds released before it.
+const knapUrl = process.env.KNAP_SERVER_URL || "https://mcp.pantalytics.com";
 const controlPlaneUrl = process.env.KNAP_CONTROL_PLANE_URL || knapUrl;
 const panelUrl = process.env.KNAP_PANEL_URL || `${knapUrl}/sync`;
 console.log("knap:", knapUrl);

@@ -51,7 +51,7 @@ either side of it rather than like a panel we built.
   │ │ Total                       2,979 notes, 148 attachments │ │
   │ └──────────────────────────────────────────────────────────┘ │
   │                                                              │
-  │ Knap dashboard                            (i)  [ Open ]      │  ← the way out
+  │ Pantalytics dashboard                            (i)  [ Open ]      │  ← the way out
   │ Opens next.knap.pantalytics.com in your browser. Invite      │    (i) pressed
   │ your team, connect your AI over MCP.                         │
   └──────────────────────────────────────────────────────────────┘
@@ -69,7 +69,7 @@ Each of the four parts earns its place, and they are in the order they depend
 on each other. **Account** is who. **Cloud vault** is what this vault syncs
 with. **The strip** under it is how that vault is going, and it is inside that
 row's block rather than beside it: one border round both, a hairline between.
-**Knap dashboard** is last, because it is the only control here that leaves
+**Pantalytics dashboard** is last, because it is the only control here that leaves
 Obsidian.
 
 **The strip belonged to nothing until 2026-09-02.** It sat above both rows, the
@@ -90,7 +90,7 @@ is going to until somebody picks a cloud vault.
 **The dashboard row is a name, a button and an (i).** What is on the other side
 of it is two sentences, and two sentences under a row somebody reads every week
 is two sentences they read every week, so they sit behind the (i): *Opens
-next.knap.pantalytics.com in your browser. Invite your team, connect your AI
+mcp.pantalytics.com in your browser. Add people to your workspace, connect your AI
 over MCP.* Those are the two things this side deliberately cannot do, which is
 the whole reason to leave for a browser. The (i) toggles rather than hovers,
 because settings get touched on a phone, and Open lands on the linked vault's
@@ -319,8 +319,8 @@ button, no polling, and no message telling them to reopen it.
   └───────────────────────────────────────────────────────┘     survives every query
 ```
 
-The state of the fetch goes in the placeholder (*Asking Knap...*, *Could not
-reach Knap. Your notes are safe here.*), never into the list, so there is never
+The state of the fetch goes in the placeholder (*Asking Pantalytics...*, *Could not
+reach Pantalytics. Your notes are safe here.*), never into the list, so there is never
 a row somebody can select that is not a thing they can choose.
 
 **The way out is in the list rather than beside it**, because it answers the same
