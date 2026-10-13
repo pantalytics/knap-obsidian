@@ -67,12 +67,12 @@ describe("what the picker offers", () => {
 
 describe("the line above the list", () => {
 	it("says what the fetch is doing, so no row has to", () => {
-		expect(pickerPlaceholder("loading")).toContain("Asking Knap");
+		expect(pickerPlaceholder("loading")).toContain("Asking Pantalytics");
 		expect(pickerPlaceholder("ready")).toContain("Search");
 	});
 
 	it("says the notes are safe when Knap cannot be reached", () => {
-		expect(pickerPlaceholder("failed")).toContain("Could not reach Knap");
+		expect(pickerPlaceholder("failed")).toContain("Could not reach Pantalytics");
 		expect(pickerPlaceholder("failed")).toContain("safe here");
 	});
 
