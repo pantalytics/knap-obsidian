@@ -1,45 +1,23 @@
-# A merge to main publishes the plugin.
+# A merge to main that bumps the version publishes the plugin.
 #
-# This is the plugin half of knap-mcp-admin's ADR-0075 ("a push to main deploys
-# the server"): the same event that puts a commit on main puts a release where
-# BRAT looks. Before 2026-09-01 the real channel was a hand-dispatched beta
-# workflow that asked for the server URL every time, while this file released
-# builds with the URL empty, which register nothing against the Knap server.
-# Every install since 1.13.5 came from that dispatch; nobody wanted the empty
-# build, so now there is one channel and it is this one.
+# The community catalog is the only way the plugin is installed (vault
+# ADR-0104 in odoo-mcp-pro-admin). It reads manifest.json off main to decide
+# which version is the latest and installs the files from the release tagged
+# exactly that, so the version lives in git: `npm version patch`, merge, and
+# this publishes a release for the version in manifest.json when it has none
+# yet. A merge that does not bump the version publishes nothing.
 #
 # The server URL is baked in at build time from the repository variable
 # KNAP_SERVER_URL, because no screen offers a server field and never will
 # (ADR-0033: one server, and the plugin knows only that one).
-#
-# The version is one patch above the highest release ever published, read from
-# the releases rather than from manifest.json. The bump lives only in the
-# published assets; the version files in git stay put. That is the established
-# shape (BRAT reads the manifest out of the release it downloads), and its
-# price is named: the community catalog wants manifest.json on the default
-# branch to equal the release tag, so IF the plugin is ever submitted, the
-# version files must be brought back in step first (docs/catalog-submission.md).
-# Not in the catalog today, not marketed, so the simpler shape wins.
-#
-# Rolling back is this workflow by hand: Actions, CD, Run workflow, and paste
-# an older sha. That commit becomes the newest release, one patch up, and BRAT
-# followers move to it on their next check.
 name: CD
 
 on:
   push:
-    # Every push, prose included, same argument as the server's deploy: a push
-    # that deliberately did not release would make "the latest release is
-    # main's tip" quietly false.
     branches: [main]
   workflow_dispatch:
-    inputs:
-      ref:
-        description: 'The commit to build and publish. Empty means the tip of main. An older sha is how you roll back.'
-        required: false
 
-# Never two releases at once: both would read the same "highest release" and
-# hand out the same version number. Queue instead.
+# Never two releases at once: both would try to publish the same tag.
 concurrency:
   group: cd
   cancel-in-progress: false
@@ -73,8 +51,6 @@ jobs:
           echo "Building against $URL"
 
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
@@ -122,35 +98,24 @@ jobs:
             exit 1
           fi
 
-      # One patch above the highest version that has ever been released, so
-      # BRAT sees an update whatever it last installed. Read from the releases
-      # rather than from manifest.json, because the bump deliberately never
-      # lands in git and the file would hand out the same number twice.
-      - name: Work out the next version
+      # The version is manifest.json's. A release that already exists means
+      # this push did not bump it, and there is nothing to publish.
+      - name: Work out the version
         id: tag
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          LATEST=$(gh release list --limit 100 --json tagName --jq '.[].tagName' \
-            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
-          LATEST=${LATEST:-$(node -p "require('./manifest.json').version")}
-          NEXT=$(node -p "const [a,b,c]='$LATEST'.split('.').map(Number); [a,b,c+1].join('.')")
-          echo "Latest released: $LATEST -> publishing $NEXT"
-          echo "tag=$NEXT" >> "$GITHUB_OUTPUT"
-
-      # BRAT reads the version out of the manifest it downloads, so it has to
-      # match the tag. Only in the published asset: the file in git is left
-      # exactly as it is.
-      - name: Stamp the version into the published manifest
-        run: |
-          node -e '
-            const fs = require("fs");
-            const m = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
-            m.version = process.argv[1];
-            fs.writeFileSync("manifest.json", JSON.stringify(m, null, "\t") + "\n");
-          ' "${{ steps.tag.outputs.tag }}"
+          TAG=$(node -p "require('./manifest.json').version")
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists already; nothing to publish."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Publishing $TAG"
+          fi
 
       - name: Attest build provenance
+        if: steps.tag.outputs.skip != 'true'
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
@@ -158,6 +123,7 @@ jobs:
             styles.css
 
       - name: Publish the release
+        if: steps.tag.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           URL: ${{ vars.KNAP_SERVER_URL }}
@@ -169,6 +135,6 @@ jobs:
           # built, which on a dispatch is not the tip of main.
           gh release create "$TAG" $ASSETS \
             --title "$TAG" \
-            --notes "Built from $(git rev-parse --short HEAD), pointing at $URL. BRAT picks this up on its usual setting." \
+            --notes "Built from $(git rev-parse --short HEAD), pointing at $URL." \
             --target "$(git rev-parse HEAD)"
           echo "### Published: \`$TAG\`" >> "$GITHUB_STEP_SUMMARY"

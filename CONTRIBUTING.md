@@ -47,22 +47,13 @@ A vault you do not mind breaking is the right vault for this.
 
 ## Versioning and releases
 
-A merge to `main` publishes a release. The CD workflow builds with the
-production server baked in, numbers it one patch above the highest release ever
-published, attests provenance and attaches `main.js`, `manifest.json` and
-`styles.css`. BRAT picks it up on its usual setting; nobody types a tag.
-
-The version files in git (`manifest.json`, `package.json`, `versions.json`,
-`manifest-beta.json`) stay put: the bump lives only in the published assets.
-CI still fails if they disagree with each other. If the plugin is ever
-submitted to the community catalog they must be brought back in step with the
-releases first, see `docs/catalog-submission.md`.
-
-Rolling back is the CD workflow by hand: Actions, CD, Run workflow, paste an
-older sha. That commit becomes the newest release, one patch up.
-
-A build pointed at another server, staging or a laptop, is the **Beta build
-(Knap server)** workflow, which asks for the URL.
+The community catalog reads `manifest.json` off `main` to decide which
+version is the latest, and installs the files from the release with that tag.
+So a release is a version bump: run `npm version patch` (it updates
+`manifest.json`, `package.json` and `versions.json`), and merge. The CD
+workflow publishes a release for the version in `manifest.json` when it has
+none yet, with the production server baked in and provenance attested. A merge
+that does not bump the version publishes nothing.
 
 Tags stay bare semver, so `1.2.5` and never `v1.2.5`: Obsidian looks for a
 release tagged the same as the manifest version inside it, and a `v` prefix

@@ -40,8 +40,6 @@
 		ANOTHER_DEVICE_NOTE,
 		ANOTHER_DEVICE_STEPS,
 		ANOTHER_DEVICE_TITLE,
-		KNAP_PLUGIN_REPO,
-		PASTE_LABEL,
 	} from "../anotherDevice";
 
 	// One button, because there is one server and one account (ADR-0030,
@@ -582,31 +580,6 @@
 		window.open(KNAP_PANEL_URL);
 	}
 
-	/**
-	 * Put the repository on the clipboard, because it is going to be typed on
-	 * a phone otherwise.
-	 *
-	 * The label goes back after a couple of seconds rather than staying on
-	 * Copied, so a second device later gets the same button it had the first
-	 * time.
-	 */
-	let copied = false;
-	function copyRepo() {
-		void navigator.clipboard
-			?.writeText(KNAP_PLUGIN_REPO)
-			.then(() => {
-				copied = true;
-				window.setTimeout(() => {
-					copied = false;
-				}, 2000);
-			})
-			.catch(() => {
-				// No clipboard, which a phone webview is allowed not to have.
-				// The address is on the screen either way.
-				new Notice("Copy it from the line above.");
-			});
-	}
-
 	// The fault-reporting switch (ADR-0071). The plugin reports that it
 	// failed, never what it held, and this is the way out of even that. The
 	// row is here for everybody, signed in or not: faults do not wait for an
@@ -795,9 +768,7 @@
 	{/if}
 
 	<!-- The end of the flow, and the only place it makes sense: a vault that is
-	     syncing is when somebody wants their phone on it as well. The address
-	     is a row of its own because BRAT asks for a repository and people
-	     paste a URL into it. -->
+	     syncing is when somebody wants their phone on it as well. -->
 	{#if syncingWith}
 		<div class="knap-another">
 			<p class="knap-another-title">{ANOTHER_DEVICE_TITLE}</p>
@@ -806,13 +777,6 @@
 					<li>{step}</li>
 				{/each}
 			</ol>
-			<div class="knap-paste">
-				<span class="knap-paste-label">{PASTE_LABEL}</span>
-				<code class="knap-paste-value">{KNAP_PLUGIN_REPO}</code>
-				<button class="knap-btn knap-btn-quiet" on:click={copyRepo}>
-					{copied ? "Copied" : "Copy"}
-				</button>
-			</div>
 			<p class="knap-note">{ANOTHER_DEVICE_NOTE}</p>
 		</div>
 	{/if}
@@ -1137,32 +1101,6 @@
 
 	.knap-another-steps li {
 		margin: 4px 0;
-	}
-
-	/* The string itself, on its own line with a button beside it. It wraps
-	   rather than scrolling: an address cut off at the edge of a settings pane
-	   on a phone is an address somebody types wrong. */
-	.knap-paste {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 8px;
-		margin-top: 10px;
-	}
-
-	.knap-paste-label {
-		color: var(--text-faint);
-		font-size: 12px;
-	}
-
-	.knap-paste-value {
-		padding: 2px 6px;
-		background: var(--background-modifier-form-field, var(--background-secondary));
-		border-radius: var(--radius-s, 4px);
-		color: var(--text-normal);
-		font-family: var(--font-monospace);
-		font-size: 12px;
-		overflow-wrap: anywhere;
 	}
 
 	/* The one permanent line, at caption weight: it is worth saying and it is

@@ -70,7 +70,7 @@ describe("the plugin id", () => {
 	it("is the one the manifests carry", () => {
 		// eslint-disable-next-line @typescript-eslint/no-require-imports
 		const { PLUGIN_ID } = require("../src/pluginId");
-		for (const file of ["../manifest.json", "../manifest-beta.json"]) {
+		for (const file of ["../manifest.json"]) {
 			// eslint-disable-next-line @typescript-eslint/no-require-imports
 			expect(require(file).id).toBe(PLUGIN_ID);
 		}
