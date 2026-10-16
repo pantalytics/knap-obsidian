@@ -30,9 +30,9 @@ npm test
 
 1. Build the plugin: `npm run build`
 2. Copy `main.js`, `manifest.json` and `styles.css` into your vault's
-   `.obsidian/plugins/synced-vaults/`
+   `.obsidian/plugins/pantalytics/`
 3. Enable the plugin in *Settings → Community plugins*
-4. Point it at your relay in *Settings → Knap → Relay Servers*
+4. Point it at your relay in *Settings → Pantalytics → Relay Servers*
 
 A vault you do not mind breaking is the right vault for this.
 
@@ -76,12 +76,12 @@ escape hatch rather than the normal state.
 
 ## Reporting Bugs
 
-Use the [bug report](https://github.com/pantalytics/knap-obsidian/issues/new?template=bug-report.yml)
+Use the [bug report](https://github.com/pantalytics/pantalytics-obsidian/issues/new?template=bug-report.yml)
 template.
 
 ## Requesting Features
 
-Use the [feature request](https://github.com/pantalytics/knap-obsidian/issues/new?template=feature-request.yml)
+Use the [feature request](https://github.com/pantalytics/pantalytics-obsidian/issues/new?template=feature-request.yml)
 template.
 
 ## Code Style

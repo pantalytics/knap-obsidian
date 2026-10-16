@@ -117,19 +117,20 @@ real engine.
 ```
   Settings → Sign in
         │
-        ├─▶ window.open(  <server>/auth/plugin/start  )
+        ├─▶ window.open(  <server>/auth/plugin/start?plugin=pantalytics  )
         │        the browser does the OAuth. The plugin holds no client id,
         │        no secret, and never talks to the issuer itself.
         │
-        └─◀ obsidian://synced-vaults/signin?code=…
+        └─◀ obsidian://pantalytics/signin?code=…
                  │  a one-time handoff code, never a credential:
                  │  a deep-link URL survives in browser history
                  ▼
              POST /auth/plugin/exchange  ──▶  this device's token
 ```
 
-The identifier in that URL stays `synced-vaults` whatever the plugin is called,
-rebuild or no rebuild. A callback whose state did not start here is dropped and
+The identifier in that URL is the plugin's id, `pantalytics` since ADR-0103
+(it was `synced-vaults`); the server sends the deep link back to the id the
+sign-in started from, so builds on the old id keep signing in. A callback whose state did not start here is dropped and
 said out loud, because anything on the machine can invoke a URL scheme.
 
 ### Linking, and the reconcile that follows

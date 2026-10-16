@@ -16,7 +16,7 @@
 </script>
 
 <div class="knap-settings">
-	<div class="knap-settings-header">Knap</div>
+	<div class="knap-settings-header">Pantalytics</div>
 
 	<div class="knap-settings-content">
 		<SignIn {plugin} />

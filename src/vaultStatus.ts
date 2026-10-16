@@ -241,7 +241,7 @@ export function statusBarPaint(reading: VaultReading, burst: Burst): StatusBarPa
 		return {
 			dot: "ok",
 			count: "",
-			label: `Knap: ${UP_TO_DATE.toLowerCase()}`,
+			label: `Pantalytics: ${UP_TO_DATE.toLowerCase()}`,
 			percent: undefined,
 		};
 	}
@@ -253,7 +253,7 @@ export function statusBarPaint(reading: VaultReading, burst: Burst): StatusBarPa
 	return {
 		dot: reading.dot,
 		count,
-		label: said ? `Knap: ${word}, ${said}` : `Knap: ${word}`,
+		label: said ? `Pantalytics: ${word}, ${said}` : `Pantalytics: ${word}`,
 		percent: progress === undefined ? undefined : Math.round(progress * 100),
 	};
 }

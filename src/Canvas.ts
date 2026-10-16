@@ -1,3 +1,4 @@
+import { STORAGE_PREFIX } from "./pluginId";
 import type { TFile, Vault } from "obsidian";
 import { HasProvider } from "./HasProvider";
 import type { HasMimeType, IFile } from "./IFile";
@@ -75,7 +76,7 @@ export class Canvas extends HasProvider implements IFile, HasMimeType {
 
 		this.setLoggers(`[Canvas](${this.path})`);
 		try {
-			const key = `${this.sharedFolder.appId}-synced-vaults-canvas-${this.guid}`;
+			const key = `${this.sharedFolder.appId}-${STORAGE_PREFIX}-canvas-${this.guid}`;
 			this._persistence = new IndexeddbPersistence(key, this.ydoc);
 		} catch (e: unknown) {
 			this.warn("Unable to open persistence.", this.guid);

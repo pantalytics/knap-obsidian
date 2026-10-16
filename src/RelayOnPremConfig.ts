@@ -16,11 +16,15 @@
 declare const CONTROL_PLANE_URL: string;
 declare const PANEL_URL: string;
 
-/** The id every share, folder record and stored credential is keyed by. */
+/**
+ * The id every share, folder record and stored credential is keyed by. It is
+ * data in every device's settings, not the plugin's id, so it kept the old
+ * word when the plugin became `pantalytics` (ADR-0103).
+ */
 export const KNAP_SERVER_ID = "synced-vaults";
 
 /** What the server is called on screen, the rare times it is named at all. */
-export const KNAP_SERVER_NAME = "Knap";
+export const KNAP_SERVER_NAME = "Pantalytics";
 
 /** Where the plugin talks, fixed at build time. */
 export const KNAP_CONTROL_PLANE_URL = CONTROL_PLANE_URL;
@@ -47,10 +51,10 @@ export const KNAP_PANEL_URL = PANEL_URL;
  * Not build-time configuration either, unlike the two above: the plugin is
  * installed from a public repository whatever server it points at.
  */
-export const KNAP_PLUGIN_REPO = "pantalytics/knap-obsidian";
+export const KNAP_PLUGIN_REPO = "pantalytics/pantalytics-obsidian";
 
 /** The same repository, for a browser. */
-export const KNAP_PLUGIN_REPO_URL = "https://github.com/pantalytics/knap-obsidian";
+export const KNAP_PLUGIN_REPO_URL = "https://github.com/pantalytics/pantalytics-obsidian";
 
 /**
  * A configured server. Only one is ever built, by knapServer() below.
@@ -288,10 +292,10 @@ export function isServerVersionSupported(serverVersion: string | undefined | nul
  */
 export function serverCompatMessage(serverVersion: string | undefined | null): string {
 	if (!serverVersion) {
-		return "The server did not say which version it is running, and Knap needs " +
+		return "The server did not say which version it is running, and Pantalytics needs " +
 			`${MIN_SUPPORTED_SERVER_VERSION} or newer. Nothing to fix on your side.`;
 	}
-	return `The server is on version ${serverVersion} and Knap needs ` +
+	return `The server is on version ${serverVersion} and Pantalytics needs ` +
 		`${MIN_SUPPORTED_SERVER_VERSION} or newer. Nothing to fix on your side, it will ` +
 		"work once the server catches up.";
 }

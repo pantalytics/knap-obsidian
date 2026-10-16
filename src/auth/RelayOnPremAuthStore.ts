@@ -9,6 +9,7 @@
  * providers access storage simultaneously.
  */
 
+import { STORAGE_PREFIX } from "../pluginId";
 import { curryLog } from "../debug";
 import type { AuthUser } from "./IAuthProvider";
 
@@ -52,14 +53,14 @@ export class RelayOnPremAuthStore {
 	 * Get storage key for a specific server
 	 */
 	private getStorageKey(serverId: string): string {
-		return `synced-vaults_onprem_auth_${this.appId}_${serverId}`;
+		return `${STORAGE_PREFIX}_onprem_auth_${this.appId}_${serverId}`;
 	}
 
 	/**
 	 * Get storage key prefix for listing all server keys
 	 */
 	private getStorageKeyPrefix(): string {
-		return `synced-vaults_onprem_auth_${this.appId}_`;
+		return `${STORAGE_PREFIX}_onprem_auth_${this.appId}_`;
 	}
 
 	/**

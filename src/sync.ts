@@ -1,3 +1,5 @@
+import { STORAGE_PREFIX } from "./pluginId";
+
 type FileInfo = {
 	ctime: number;
 	folder: string;
@@ -14,7 +16,7 @@ export async function getSyncInfo(
 	appId: string,
 	filePath: string,
 ): Promise<FileInfo | null> {
-	const dbName = `${appId}-synced-vaults-sync`;
+	const dbName = `${appId}-${STORAGE_PREFIX}-sync`;
 	const objectStoreName = "data";
 
 	// First, check if the database exists

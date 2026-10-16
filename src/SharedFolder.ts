@@ -1,4 +1,5 @@
 "use strict";
+import { STORAGE_PREFIX } from "./pluginId";
 import {
 	App,
 	FileManager,
@@ -241,7 +242,7 @@ export class SharedFolder extends HasProvider {
 		this.files = new Map();
 		this.fset = new Files();
 		this.pendingUpload = new LocalStorage<string>(
-			`${appId}-synced-vaults/folders/${this.guid}/pendingUploads`,
+			`${appId}-${STORAGE_PREFIX}/folders/${this.guid}/pendingUploads`,
 			this.obsidianApp,
 		);
 		this.pendingUpload.forEach((guid, vpath) => {
@@ -316,7 +317,7 @@ export class SharedFolder extends HasProvider {
 		});
 
 		try {
-			this._persistence = new IndexeddbPersistence(`synced-vaults-folder-${this.guid}`, this.ydoc);
+			this._persistence = new IndexeddbPersistence(`${STORAGE_PREFIX}-folder-${this.guid}`, this.ydoc);
 		} catch (e: unknown) {
 			this.warn("Unable to open persistence.", this.guid);
 			console.error(e);
@@ -2876,7 +2877,7 @@ export class SharedFolders extends ObservableSet<SharedFolder> {
 		const skipVaultShares = link.link === "conflict";
 		if (skipVaultShares) {
 			this.warn(
-				`This local vault has ${link.guids.length} cloud vaults linked to it and cannot tell which one is meant, so none of them is syncing. Link it again on the Knap settings screen. (${link.guids.join(", ")})`,
+				`This local vault has ${link.guids.length} cloud vaults linked to it and cannot tell which one is meant, so none of them is syncing. Link it again on the Pantalytics settings screen. (${link.guids.join(", ")})`,
 			);
 		}
 

@@ -1,5 +1,11 @@
 # Submitting Knap to the community catalog
 
+> **Superseded on 2026-10-16.** The plugin is now *Pantalytics*, id
+> `pantalytics` (ADR-0103 in odoo-mcp-pro-admin), which the catalog treats as
+> a new plugin: it is submitted again under that id and `synced-vaults` is
+> withdrawn once the new listing is live. Below is the history of the first
+> submission; the scan and the release mechanics still hold.
+
 What the Obsidian community directory asks for, what this repo already has, and
 what is genuinely left. Everything here was read off
 [docs.obsidian.md, *Submit your plugin*](https://docs.obsidian.md/Plugins/Releasing/Submit+your+plugin),
@@ -176,7 +182,7 @@ parked with the measurement, because fixing it breaks something else.
    Obsidian wire end to end then times out driving the app, because the harness
    has only ever exercised a build with `src/knap` off. ADR-0068 says that job
    decides, so the default stays empty until the harness copes. Tracked in
-   [#167](https://github.com/pantalytics/knap-obsidian/issues/167).
+   [#167](https://github.com/pantalytics/pantalytics-obsidian/issues/167).
 
    What this means for the next scorecard: the build script now runs to
    completion, so verification gets an artifact to compare rather than a crash.
@@ -248,7 +254,7 @@ and a push to `refs/tags/*` comes back 403.
 ### 3. Submit at community.obsidian.md
 
 Sign in with an Obsidian account, link the GitHub account that owns
-`pantalytics/knap-obsidian`, pick the repo, complete the form. The dashboard
+`pantalytics/pantalytics-obsidian`, pick the repo, complete the form. The dashboard
 also offers a preview scan, which is worth running even after all of the above.
 
 Only the first version is submitted by hand. After that Obsidian picks up new

@@ -340,7 +340,7 @@ describe("the corner of the window", () => {
 		);
 		expect(paint.dot).toBe("working");
 		expect(paint.count).toBe("412 of 1,202");
-		expect(paint.label).toBe("Knap: syncing, 412 of 1,202");
+		expect(paint.label).toBe("Pantalytics: syncing, 412 of 1,202");
 		expect(paint.percent).toBe(34);
 	});
 
@@ -354,7 +354,7 @@ describe("the corner of the window", () => {
 		const paint = statusBarPaint(vaultReading(true, [synced]), RUNNING);
 		expect(paint.percent).toBeUndefined();
 		expect(paint.count).toBe("");
-		expect(paint.label).toBe("Knap: up to date");
+		expect(paint.label).toBe("Pantalytics: up to date");
 	});
 
 	test("signed out has no bar, whatever the folders were carrying", () => {
@@ -363,7 +363,7 @@ describe("the corner of the window", () => {
 			RUNNING,
 		);
 		expect(paint.percent).toBeUndefined();
-		expect(paint.label).toBe("Knap: signed out");
+		expect(paint.label).toBe("Pantalytics: signed out");
 	});
 
 	test("the percent never runs past the end of the track", () => {
@@ -392,7 +392,7 @@ describe("the corner, split by direction", () => {
 	test("both numbers, and the tooltip says which is which", () => {
 		const paint = statusBarPaint(syncing, { moving: true, since: null, peak: 3000 });
 		expect(paint.count).toBe("\u2191 412 \u2193 2,567");
-		expect(paint.label).toBe("Knap: syncing, 412 to the cloud vault, 2,567 to this device");
+		expect(paint.label).toBe("Pantalytics: syncing, 412 to the cloud vault, 2,567 to this device");
 		// 3,000 to start with, 2,979 still to go.
 		expect(paint.percent).toBe(1);
 	});
@@ -409,7 +409,7 @@ describe("the corner, split by direction", () => {
 		const paint = statusBarPaint(syncing, STILL);
 		expect(paint.dot).toBe("ok");
 		expect(paint.count).toBe("");
-		expect(paint.label).toBe("Knap: up to date");
+		expect(paint.label).toBe("Pantalytics: up to date");
 		expect(paint.percent).toBeUndefined();
 	});
 
@@ -436,23 +436,23 @@ describe("the word the corner says out loud", () => {
 	test("one direction names itself in the tooltip", () => {
 		expect(
 			statusBarPaint({ ...moving, word: UPLOADING, up: 412, down: 0 }, running).label,
-		).toBe("Knap: uploading, 412 to the cloud vault");
+		).toBe("Pantalytics: uploading, 412 to the cloud vault");
 		expect(
 			statusBarPaint({ ...moving, word: DOWNLOADING, up: 0, down: 2567 }, running).label,
-		).toBe("Knap: downloading, 2,567 to this device");
+		).toBe("Pantalytics: downloading, 2,567 to this device");
 	});
 
 	test("both directions keep the word they had", () => {
 		expect(
 			statusBarPaint({ ...moving, word: SYNCING, up: 412, down: 2567 }, running).label,
-		).toBe("Knap: syncing, 412 to the cloud vault, 2,567 to this device");
+		).toBe("Pantalytics: syncing, 412 to the cloud vault, 2,567 to this device");
 	});
 
 	test("the delay holds all three back, not only the one it was written for", () => {
 		for (const word of [SYNCING, UPLOADING, DOWNLOADING] as const) {
 			const paint = statusBarPaint({ ...moving, word, up: 412, down: 0 }, STILL);
 			expect(paint.dot).toBe("ok");
-			expect(paint.label).toBe("Knap: up to date");
+			expect(paint.label).toBe("Pantalytics: up to date");
 		}
 	});
 });

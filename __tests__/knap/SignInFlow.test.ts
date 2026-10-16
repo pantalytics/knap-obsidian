@@ -20,8 +20,8 @@ function serverWhereCode(valid: string): KnapServer {
 }
 
 describe("SignInFlow", () => {
-	it("keeps the synced-vaults identifier in the deep link action", () => {
-		expect(SIGNIN_ACTION).toBe("synced-vaults/signin");
+	it("comes back on the plugin's own id", () => {
+		expect(SIGNIN_ACTION).toBe("pantalytics/signin");
 	});
 
 	it("opens the browser, takes the deep link, and lands the token", async () => {
@@ -29,7 +29,7 @@ describe("SignInFlow", () => {
 		const opened: string[] = [];
 
 		const tokenPromise = flow.begin((url) => opened.push(url));
-		expect(opened).toEqual(["https://knap.test/auth/plugin/start"]);
+		expect(opened).toEqual(["https://knap.test/auth/plugin/start?plugin=pantalytics"]);
 
 		expect(flow.handleDeepLink({ code: "c-1" })).toBe(true);
 		expect(await tokenPromise).toBe("knap_tok");

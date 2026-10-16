@@ -33,6 +33,7 @@
  * somebody else's session could be fed into our flow.
  */
 
+import { PLUGIN_ID } from "../pluginId";
 import { curryLog } from "../debug";
 
 const log = curryLog("[OAuthDeepLinkReceiver]", "log");
@@ -66,7 +67,7 @@ interface Pending {
  * control plane's allowlist has to carry the same prefix, so this is the one
  * place it is spelled.
  */
-export const OAUTH_CALLBACK_ACTION = "synced-vaults/oauth-callback";
+export const OAUTH_CALLBACK_ACTION = `${PLUGIN_ID}/oauth-callback`;
 
 /**
  * The full return URL. Never registered at the IdP, which refuses custom

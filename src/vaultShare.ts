@@ -158,7 +158,7 @@ export function vaultRowLines(vault: ShareLike): string[] {
 	const lines: string[] = [];
 	const made = formatDay(vault.created_at);
 	if (made) {
-		lines.push(`Added to Knap on ${made}`);
+		lines.push(`Added to Pantalytics on ${made}`);
 	}
 	if (vault.is_owner === false) {
 		// Not "shared with you". Share is the control plane's noun and stays
@@ -272,7 +272,7 @@ export function replaceFoldersLine(count: number): string {
 	const folders = count === 1 ? "one folder" : `${count} folders`;
 	return (
 		`This vault syncs ${folders} rather than the whole thing. ` +
-		"Knap syncs whole vaults now, so the folders come off and everything syncs instead."
+		"Pantalytics syncs whole vaults now, so the folders come off and everything syncs instead."
 	);
 }
 
@@ -290,8 +290,8 @@ export function replaceFoldersLine(count: number): string {
 export function replaceFoldersConfirmation(removing: number): string {
 	const folders =
 		removing === 1
-			? "Your synced folder stops syncing and comes off Knap. "
-			: `Your ${removing} synced folders stop syncing and come off Knap. `;
+			? "Your synced folder stops syncing and comes off Pantalytics. "
+			: `Your ${removing} synced folders stop syncing and come off Pantalytics. `;
 	return (
 		folders +
 		"The whole vault then uploads from scratch, which takes a while on a big vault. " +
@@ -308,7 +308,7 @@ export function replaceFoldersConfirmation(removing: number): string {
  */
 export function replaceFoldersFailedLine(reason: string): string {
 	return (
-		`Knap could not stop syncing a folder: ${reason}. ` +
+		`Pantalytics could not stop syncing a folder: ${reason}. ` +
 		"Nothing else has changed. Try again in a moment."
 	);
 }

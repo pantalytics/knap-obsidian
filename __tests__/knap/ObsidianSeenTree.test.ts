@@ -27,7 +27,7 @@ class FakeAdapter {
 	}
 }
 
-const PATH = ".obsidian/plugins/synced-vaults/knap-seen.json";
+const PATH = ".obsidian/plugins/pantalytics/knap-seen.json";
 
 function treeFor(adapter: FakeAdapter, vaultId = "cloud-1") {
 	return new ObsidianSeenTree(adapter as never, PATH, vaultId);

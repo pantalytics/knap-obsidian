@@ -1,4 +1,5 @@
 "use strict";
+import { STORAGE_PREFIX } from "./pluginId";
 import { IndexeddbPersistence } from "./storage/y-indexeddb";
 import * as Y from "yjs";
 import { HasProvider } from "./HasProvider";
@@ -317,7 +318,7 @@ export class Document extends HasProvider implements IFile, HasMimeType {
 			return this._persistence;
 		}
 		try {
-			const key = `${this.sharedFolder.appId}-synced-vaults-doc-${this.guid}`;
+			const key = `${this.sharedFolder.appId}-${STORAGE_PREFIX}-doc-${this.guid}`;
 			this._persistence = new IndexeddbPersistence(key, this.ydoc);
 		} catch (e: unknown) {
 			this.warn("Unable to open persistence.", this.guid);

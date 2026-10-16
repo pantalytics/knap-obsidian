@@ -1,5 +1,7 @@
 "use strict";
 
+import { PLUGIN_ID, STORAGE_PREFIX } from "./pluginId";
+import { adoptLegacyPlugin } from "./legacyPlugin";
 import {
 	TFolder,
 	Notice,
@@ -34,6 +36,8 @@ interface ObsidianApp {
 		enabledPlugins?: unknown;
 		/** One entry per plugin installed, keyed by id. Undocumented too. */
 		manifests?: unknown;
+		/** Turns a plugin off and remembers it. Undocumented too. */
+		disablePluginAndSave?(id: string): Promise<void>;
 	};
 	setting: {
 		open(): Promise<void>;
@@ -408,10 +412,24 @@ export default class Live extends Plugin {
 		);
 		this.notifier = new ObsidianNotifier();
 
-		this.debug = curryLog("[Knap]", "debug");
-		this.log = curryLog("[Knap]", "log");
-		this.warn = curryLog("[Knap]", "warn");
-		this.error = curryLog("[Knap]", "error");
+		this.debug = curryLog("[Pantalytics]", "debug");
+		this.log = curryLog("[Pantalytics]", "log");
+		this.warn = curryLog("[Pantalytics]", "warn");
+		this.error = curryLog("[Pantalytics]", "error");
+
+		// Before the settings load, so a device moving from the old id
+		// starts with its own token and link (ADR-0103).
+		const adopted = await adoptLegacyPlugin(
+			this.app.vault.adapter,
+			(this.app as unknown as ObsidianApp).plugins,
+			this.app.vault.configDir,
+		);
+		if (adopted.disabled) {
+			new Notice(
+				"Pantalytics Knap is now Pantalytics. Your settings came along and the old plugin is off, so you can uninstall it.",
+				0,
+			);
+		}
 
 		this.settings = new Settings<RelaySettings>(this, DEFAULT_SETTINGS);
 		await this.settings.load();
@@ -428,8 +446,8 @@ export default class Live extends Plugin {
 			this.knapSync = registerKnapBeta(this);
 		} catch (error) {
 			this.knapSync = null;
-			console.error("[Knap] the beta layer failed to start", error);
-			new Notice("Knap: the beta layer failed to start. The rest of the plugin is fine.");
+			console.error("[Pantalytics] the beta layer failed to start", error);
+			new Notice("Pantalytics: the beta layer failed to start. The rest of the plugin is fine.");
 		}
 
 		// Migrate relay-onprem settings from legacy single-server format to multi-server
@@ -448,7 +466,7 @@ export default class Live extends Plugin {
 			const oldId = migration.renamedServerId;
 			// Must match RelayOnPremAuthStore.getStorageKey()'s format, which is
 			// keyed by appId (stable across vault renames), not vault display name.
-			const prefix = "synced-vaults_onprem_auth_";
+			const prefix = `${STORAGE_PREFIX}_onprem_auth_`;
 			// The prefix was part of the rename, so a key written before it says
 			// knap-sync on both halves. Read the old shape as well as the old id,
 			// or the one device that has been signed in the longest is the one
@@ -515,8 +533,8 @@ export default class Live extends Plugin {
 		this.settingsTab = new LiveSettingsTab(this.app, this);
 
 		// Our own ribbon icon: a note kept in step with a server
-		addIcon("synced-vaults", `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"><path d="M18.5 44.4a32 32 0 0 1 63 0"/><path d="M87.3 31.2 81.5 44.4 71.5 34"/><path d="M81.5 55.6a32 32 0 0 1-63 0"/><path d="M12.7 68.8 18.5 55.6 28.5 66"/><circle cx="50" cy="50" r="7" fill="currentColor" stroke="none"/></svg>`);
-		this.addRibbonIcon("synced-vaults", "Knap", () => {
+		addIcon(PLUGIN_ID, `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"><path d="M18.5 44.4a32 32 0 0 1 63 0"/><path d="M87.3 31.2 81.5 44.4 71.5 34"/><path d="M81.5 55.6a32 32 0 0 1-63 0"/><path d="M12.7 68.8 18.5 55.6 28.5 66"/><circle cx="50" cy="50" r="7" fill="currentColor" stroke="none"/></svg>`);
+		this.addRibbonIcon(PLUGIN_ID, "Pantalytics", () => {
 			void this.openSettings();
 		});
 
@@ -579,8 +597,8 @@ export default class Live extends Plugin {
 		// Store app reference for reload function (avoid window.app per Obsidian guidelines)
 		const appRef = this.app as unknown as ObsidianApp;
 		appRef.reloadRelay = async () => {
-			await appRef.plugins.disablePlugin("synced-vaults");
-			await appRef.plugins.enablePlugin("synced-vaults");
+			await appRef.plugins.disablePlugin(PLUGIN_ID);
+			await appRef.plugins.enablePlugin(PLUGIN_ID);
 		};
 
 		this.addCommand({
@@ -924,7 +942,7 @@ export default class Live extends Plugin {
 							// server and nothing to configure about it (ADR-0033).
 							menu.addItem((item) => {
 								item
-									.setTitle("Knap: folder settings")
+									.setTitle("Pantalytics: folder settings")
 									.setIcon("settings")
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
@@ -937,7 +955,7 @@ export default class Live extends Plugin {
 							menu.addItem((item) => {
 								item
 									.setTitle(
-										folder.connected ? "Knap: disconnect" : "Knap: connect",
+										folder.connected ? "Pantalytics: disconnect" : "Pantalytics: connect",
 									)
 									.setIcon("satellite")
 									.onClick(() => {
@@ -954,7 +972,7 @@ export default class Live extends Plugin {
 						} else {
 							menu.addItem((item) => {
 								item
-									.setTitle("Knap: folder settings")
+									.setTitle("Pantalytics: folder settings")
 									.setIcon("settings")
 									.onClick(() => {
 										if (folder.settings?.onpremServerId && this.loginManager.isRelayOnPremMode()) {
@@ -968,7 +986,7 @@ export default class Live extends Plugin {
 						if (folder.relayId && folder.connected) {
 							menu.addItem((item) => {
 								item
-									.setTitle("Knap: sync")
+									.setTitle("Pantalytics: sync")
 									.setIcon("folder-sync")
 									.onClick(async () => {
 										void folder.netSync();
@@ -997,7 +1015,7 @@ export default class Live extends Plugin {
 						if (ifile && isSyncFile(ifile)) {
 							menu.addItem((item) => {
 								item
-									.setTitle("Knap: download")
+									.setTitle("Pantalytics: download")
 									.setIcon("cloud-download")
 									.onClick(async () => {
 										await ifile.pull();
@@ -1007,7 +1025,7 @@ export default class Live extends Plugin {
 							if (this.debugSettings.get().debugging) {
 								menu.addItem((item) => {
 									item
-										.setTitle("Knap: verify upload")
+										.setTitle("Pantalytics: verify upload")
 										.setIcon("search-check")
 										.onClick(async () => {
 											const present = await ifile.verifyUpload();
@@ -1019,7 +1037,7 @@ export default class Live extends Plugin {
 							}
 							menu.addItem((item) => {
 								item
-									.setTitle("Knap: upload")
+									.setTitle("Pantalytics: upload")
 									.setIcon("cloud-upload")
 									.onClick(async () => {
 										await ifile.push(true);
@@ -1044,7 +1062,7 @@ export default class Live extends Plugin {
 				this.error("setup failed", e);
 				reportFault("startup", e);
 				new Notice(
-					"Knap could not finish starting, so sync may not be running. Restart Obsidian to try again. The log in the plugin folder has the details.",
+					"Pantalytics could not finish starting, so sync may not be running. Restart Obsidian to try again. The log in the plugin folder has the details.",
 					15000,
 				);
 				return;
@@ -1100,9 +1118,9 @@ export default class Live extends Plugin {
 				[PAUSED]: "Sync is paused on this device.",
 				[OFFLINE]: "Pantalytics is out of reach. Your notes are safe here.",
 				[SIGNED_OUT]: "Sign in to resume sync.",
-				[PROBLEM]: "Something could not sync. Open Knap in settings.",
+				[PROBLEM]: "Something could not sync. Open Pantalytics in settings.",
 			};
-			new Notice(`Knap updated to ${current}. ${lines[reading.word]}`);
+			new Notice(`Pantalytics updated to ${current}. ${lines[reading.word]}`);
 		}, 3000);
 	}
 
@@ -1433,9 +1451,9 @@ export default class Live extends Plugin {
 	private addRelayStatusBarItem() {
 		const statusBarItem = this.addStatusBarItem();
 		statusBarItem.addClass("relay-onprem-statusbar");
-		// Use the same registered synced-vaults icon as ribbon
+		// Use the same registered icon as the ribbon
 		const iconEl = statusBarItem.createSpan({ cls: "relay-status-icon" });
-		setIcon(iconEl, "synced-vaults");
+		setIcon(iconEl, PLUGIN_ID);
 		const countEl = statusBarItem.createSpan({ cls: "relay-status-count" });
 		// The bar, and nothing for a screen reader to read: the tooltip on the
 		// item already says the word and the count, and a second voice for the
@@ -1814,7 +1832,7 @@ export default class Live extends Plugin {
 	async openSettings(path: string = "/") {
 		const setting = (this.app as unknown as ObsidianApp).setting;
 		await setting.open();
-		await setting.openTabById("synced-vaults");
+		await setting.openTabById(PLUGIN_ID);
 		this.settingsTab.navigateTo(path);
 	}
 
@@ -1939,7 +1957,7 @@ export default class Live extends Plugin {
 			}),
 		);
 
-		const vaultLog = curryLog("[Knap][Vault]", "log");
+		const vaultLog = curryLog("[Pantalytics][Vault]", "log");
 
 		const handlePromiseRejection = (event: PromiseRejectionEvent): void => {
 			//event.preventDefault();
@@ -2193,7 +2211,7 @@ export default class Live extends Plugin {
 			oauthDeepLinkReceiver.handleCallback(e as unknown as Record<string, string>);
 		});
 
-		this.registerObsidianProtocolHandler("synced-vaults/settings/relays", (e) => {
+		this.registerObsidianProtocolHandler(`${PLUGIN_ID}/settings/relays`, (e) => {
 			const parameters = e as unknown as Parameters;
 			const query = new URLSearchParams({ ...parameters }).toString();
 			const path = `/${parameters.action.split("/").slice(-1).join("")}?${query}`;
@@ -2201,7 +2219,7 @@ export default class Live extends Plugin {
 		});
 
 		this.registerObsidianProtocolHandler(
-			"synced-vaults/settings/shared-folders",
+			`${PLUGIN_ID}/settings/shared-folders`,
 			(e) => {
 				const parameters = e as unknown as Parameters;
 				const query = new URLSearchParams({ ...parameters }).toString();
@@ -2210,7 +2228,7 @@ export default class Live extends Plugin {
 			},
 		);
 
-		this.registerObsidianProtocolHandler("synced-vaults/billing-ok", (e) => {
+		this.registerObsidianProtocolHandler(`${PLUGIN_ID}/billing-ok`, (e) => {
 			new Notice("Payment successful! Refreshing billing data...");
 			// Clear billing cache by refreshing settings
 			void this.openSettings();
@@ -2231,7 +2249,7 @@ export default class Live extends Plugin {
 		} else {
 			const appAny = this.app as unknown as ObsidianApp;
 			const appCommands = appAny.commands;
-			const qualifiedCommand = `synced-vaults:${command}`;
+			const qualifiedCommand = `${PLUGIN_ID}:${command}`;
 			if (
 				Object.prototype.hasOwnProperty.call(appCommands.commands, qualifiedCommand) ||
 				appAny.hotkeyManager.removeDefaultHotkeys(qualifiedCommand)
@@ -2269,7 +2287,7 @@ export default class Live extends Plugin {
 			try {
 				fn();
 			} catch (e) {
-				console.warn(`[Knap] teardown of ${label} failed`, e);
+				console.warn(`[Pantalytics] teardown of ${label} failed`, e);
 			}
 		};
 

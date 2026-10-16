@@ -187,7 +187,7 @@ const context = await esbuild.context({
 		// src/knap off. ADR-0068 says that job decides, so the default stays
 		// empty until the harness copes. See issue #167.
 		KNAP_SERVER_URL: JSON.stringify(process.env.KNAP_SERVER_URL || ""),
-		REPOSITORY: `"pantalytics/knap-obsidian"`,
+		REPOSITORY: `"pantalytics/pantalytics-obsidian"`,
 	},
 	treeShaking: true,
 	loader: {

@@ -23,7 +23,7 @@ name: Beta build (Knap server)
 # alone: the bump lives only in the published asset. CI cross-checks those
 # three for agreement, and editing one here would break the next real release.
 #
-# On a phone: BRAT, add `pantalytics/knap-obsidian`, and it updates itself.
+# On a phone: BRAT, add `pantalytics/pantalytics-obsidian`, and it updates itself.
 on:
   workflow_dispatch:
     inputs:

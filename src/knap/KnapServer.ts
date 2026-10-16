@@ -20,6 +20,7 @@
  * own; the module never touches a global.
  */
 
+import { PLUGIN_ID } from "../pluginId";
 import type { AttachmentLimits } from "./AttachmentBinding";
 
 export interface CloudVault {
@@ -69,7 +70,7 @@ export class KnapServer {
 
 	/** Where the sign-in starts: the page the plugin opens in a browser. */
 	signInUrl(): string {
-		return `${this.baseUrl}/auth/plugin/start`;
+		return `${this.baseUrl}/auth/plugin/start?plugin=${PLUGIN_ID}`;
 	}
 
 	/** Trade the deep link's one-time code for this device's own token. */

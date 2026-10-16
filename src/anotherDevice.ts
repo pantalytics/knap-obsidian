@@ -8,8 +8,8 @@
  * page, which is a browser on the machine where the job is in another app.
  * The one they get stuck on is the second, because BRAT asks for a
  * "Repository" and the panel showed an address, so people paste
- * `https://github.com/pantalytics/knap-obsidian` into a field that wants
- * `pantalytics/knap-obsidian`.
+ * `https://github.com/pantalytics/pantalytics-obsidian` into a field that wants
+ * `pantalytics/pantalytics-obsidian`.
  *
  * So the string to paste is its own thing here, not a sentence with a
  * repository somewhere inside it. `KNAP_PLUGIN_REPO` is the one form that
@@ -38,8 +38,8 @@ export const PASTE_LABEL = "Paste this into BRAT";
  */
 export const ANOTHER_DEVICE_STEPS: readonly string[] = [
 	"On the other device: Settings, Community plugins, Browse, and install BRAT.",
-	"Settings, BRAT, Add beta plugin. Paste the line below, then enable Knap.",
-	"Settings, Knap, Sign in with the same account, then pick this vault from the list.",
+	"Settings, BRAT, Add beta plugin. Paste the line below, then enable Pantalytics.",
+	"Settings, Pantalytics, Sign in with the same account, then pick this vault from the list.",
 ];
 
 /** The one line about what does not travel with the notes. */

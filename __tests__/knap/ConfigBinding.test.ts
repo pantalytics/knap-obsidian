@@ -262,8 +262,8 @@ describe("two devices, one cloud vault", () => {
 		const hub = new Hub();
 		const transport = new MemoryTransport();
 		const seeded = new MemoryConfig();
-		await seeded.put(".obsidian/plugins/synced-vaults/data.json", '{"token":"knap_secret"}');
-		await seeded.put(".obsidian/plugins/synced-vaults/knap-seen.json", "{}");
+		await seeded.put(".obsidian/plugins/pantalytics/data.json", '{"token":"knap_secret"}');
+		await seeded.put(".obsidian/plugins/pantalytics/knap-seen.json", "{}");
 		await seeded.put(".obsidian/workspace.json", '{"panes":1}');
 		await seeded.put(".obsidian/workspace-mobile.json", '{"panes":2}');
 		await seeded.put(".obsidian/appearance.json", "{}");
@@ -278,7 +278,7 @@ describe("two devices, one cloud vault", () => {
 		const phone = await device(hub, transport);
 		keep(phone);
 		await settle(phone);
-		expect(phone.config.files.has(".obsidian/plugins/synced-vaults/data.json")).toBe(false);
+		expect(phone.config.files.has(".obsidian/plugins/pantalytics/data.json")).toBe(false);
 		expect(phone.config.files.has(".obsidian/workspace.json")).toBe(false);
 	});
 

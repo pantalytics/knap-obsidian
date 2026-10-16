@@ -120,7 +120,7 @@ describe("KnapServer", () => {
 	it("builds the socket and file addresses the server serves", () => {
 		const server = new KnapServer("https://knap.example", async () => new Response(""));
 		expect(server.syncUrl("v1")).toBe("wss://knap.example/sync/v1");
-		expect(server.signInUrl()).toBe("https://knap.example/auth/plugin/start");
+		expect(server.signInUrl()).toBe("https://knap.example/auth/plugin/start?plugin=pantalytics");
 	});
 
 	it("round-trips an attachment and verifies nothing itself", async () => {
