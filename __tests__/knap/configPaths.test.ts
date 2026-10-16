@@ -26,11 +26,14 @@ describe("what settings sync carries", () => {
 		[".obsidian/plugins/dataview/main.js", true],
 		[".obsidian/plugins/dataview/data.json", true],
 		// Ours, permanently: the account token and this vault's link.
+		[".obsidian/plugins/pantalytics/data.json", false],
+		[".obsidian/plugins/pantalytics/knap-seen.json", false],
+		[".obsidian/plugins/pantalytics", false],
+		// The id before ADR-0103: its folder stays on disk with the old token.
 		[".obsidian/plugins/synced-vaults/data.json", false],
-		[".obsidian/plugins/synced-vaults/knap-seen.json", false],
 		[".obsidian/plugins/synced-vaults", false],
 		// A plugin whose name merely starts the same way is not ours.
-		[".obsidian/plugins/synced-vaults-extra/main.js", true],
+		[".obsidian/plugins/pantalytics-extra/main.js", true],
 		// Which panes are open, on either kind of device.
 		[".obsidian/workspace.json", false],
 		[".obsidian/workspace-mobile.json", false],
@@ -67,7 +70,7 @@ describe("what settings sync carries", () => {
 		// carve-out has to survive one. `normalize` runs first, inside.
 		for (const spelling of [
 			".obsidian/plugins/./synced-vaults/data.json",
-			".obsidian\\plugins\\synced-vaults\\data.json",
+			".obsidian\\plugins\\pantalytics\\data.json",
 			"./.obsidian/workspace.json",
 		]) {
 			expect(isSyncedConfig(spelling)).toBe(false);
@@ -80,7 +83,7 @@ describe("what settings sync carries", () => {
 
 	it("knows the whole directory, carve-outs included", () => {
 		expect(isUnderConfigDir(`${CONFIG_DIR}/workspace.json`)).toBe(true);
-		expect(isUnderConfigDir(`${CONFIG_DIR}/plugins/synced-vaults/data.json`)).toBe(true);
+		expect(isUnderConfigDir(`${CONFIG_DIR}/plugins/pantalytics/data.json`)).toBe(true);
 		expect(isUnderConfigDir("Areas/Work/note.md")).toBe(false);
 	});
 });

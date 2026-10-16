@@ -1,5 +1,6 @@
 "use strict";
 
+import { STORAGE_PREFIX } from "./pluginId";
 import { Notice, requestUrl, type RequestUrlResponsePromise } from "obsidian";
 import { User } from "./User";
 import PocketBase, {
@@ -211,7 +212,7 @@ export class LoginManager extends Observable<LoginManager> {
 		super();
 		const pbLog = curryLog("[Pocketbase]", "debug");
 		// Use plugin-specific localStorage key to avoid conflicts with other plugins
-		this.authStore = new LocalAuthStore(`synced-vaults_pocketbase_auth_${vaultName}`);
+		this.authStore = new LocalAuthStore(`${STORAGE_PREFIX}_pocketbase_auth_${vaultName}`);
 		this.endpointManager = endpointManager;
 
 		// Initialize relay-onprem if enabled
@@ -274,7 +275,7 @@ export class LoginManager extends Observable<LoginManager> {
 		const authUrl = this.endpointManager.getAuthUrl();
 		if (!authUrl) {
 			new Notice(
-				"Knap: relay-onprem mode is disabled and no server is configured. " +
+				"Pantalytics: relay-onprem mode is disabled and no server is configured. " +
 					"Re-enable relay-onprem mode in plugin settings, or configure a server URL.",
 				10000
 			);

@@ -157,7 +157,7 @@ describe("clearing folder shares out of the way", () => {
 describe("what a row says about a vault", () => {
 	test("the day it was made, which is what tells two apart", () => {
 		expect(vaultRowLines(folderShare("V", "1", { created_at: "2026-08-11T09:14:00Z" }))).toEqual(
-			["Added to Knap on 11 August 2026"],
+			["Added to Pantalytics on 11 August 2026"],
 		);
 	});
 

@@ -46,7 +46,7 @@ describe("the list somebody reads before starting", () => {
 
 describe("the next device", () => {
 	test("the repository is what BRAT's field takes, not an address", () => {
-		expect(KNAP_PLUGIN_REPO).toBe("pantalytics/knap-obsidian");
+		expect(KNAP_PLUGIN_REPO).toBe("pantalytics/pantalytics-obsidian");
 		expect(KNAP_PLUGIN_REPO).not.toContain("http");
 		expect(KNAP_PLUGIN_REPO).not.toContain("github.com");
 	});

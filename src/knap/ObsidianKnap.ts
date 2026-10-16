@@ -135,7 +135,7 @@ class CloudVaultPickModal extends SuggestModal<VaultChoice> {
 		if (choice.kind === "new") {
 			el.addClass("knap-pick-new");
 			el.createDiv({ text: "New cloud vault" });
-			el.createDiv({ cls: "knap-pick-aside", text: "opens Knap in your browser" });
+			el.createDiv({ cls: "knap-pick-aside", text: "opens Pantalytics in your browser" });
 			return;
 		}
 		// The name and nothing else. There is one kind of person in a vault,
@@ -353,7 +353,7 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 	host.app.workspace.onLayoutReady(() => {
 		void sync.start().catch(() => {
 			new Notice(
-				"Knap could not bring your cloud vault up. Your notes are safe here; " +
+				"Pantalytics could not bring your cloud vault up. Your notes are safe here; " +
 					"open Settings and press Try again.",
 			);
 		});

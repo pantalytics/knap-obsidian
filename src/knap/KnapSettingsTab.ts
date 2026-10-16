@@ -62,7 +62,7 @@ import {
 export function signOutNotice(endedRemotely: boolean): string {
 	return endedRemotely
 		? "Signed out. Nothing was deleted, anywhere."
-		: "Signed out here only. Knap could not be reached, so it may still count this device as signed in.";
+		: "Signed out here only. Pantalytics could not be reached, so it may still count this device as signed in.";
 }
 
 /** The last row, and the only one that is there whatever the vault is doing. */

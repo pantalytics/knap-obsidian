@@ -47,7 +47,7 @@
 	// One button, because there is one server and one account (ADR-0030,
 	// ADR-0033). No address to type, nothing to choose, and no code to paste:
 	// pressing Sign in opens a browser, and the callback comes back through
-	// obsidian://synced-vaults/oauth-callback.
+	// obsidian://pantalytics/oauth-callback.
 	//
 	// There is one way in and this is it. The email and password form that used
 	// to sit behind "Other ways to sign in" is gone: an account made through the
@@ -128,7 +128,7 @@
 	// leaving Obsidian open: that sentence was on screen twice at once, once
 	// here and once as the first line of the first sync.
 	$: statusNote = !(auth.isSignedIn || returning)
-		? "Sign in with your Knap account, then pick the vault this one syncs with."
+		? "Sign in with your Pantalytics account, then pick the vault this one syncs with."
 		: counts
 			? ""
 			: syncInstruction(word);
@@ -471,7 +471,7 @@
 				} catch (e: unknown) {
 					if (!alreadyGone(e)) {
 						error = replaceFoldersFailedLine(
-							e instanceof Error ? e.message : "Knap did not answer",
+							e instanceof Error ? e.message : "Pantalytics did not answer",
 						);
 						return;
 					}
@@ -855,7 +855,7 @@
 		<div class="setting-item-info">
 			<div class="setting-item-name">Send error reports</div>
 			<div class="setting-item-description">
-				When something breaks, Knap sends the kind of error, where in the
+				When something breaks, Pantalytics sends the kind of error, where in the
 				plugin it happened, the plugin version and your platform. While you
 				are signed in it also sends what the error said, which can name a
 				note. It goes to the server your vault is already on, and nowhere

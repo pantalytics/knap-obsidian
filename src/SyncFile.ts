@@ -1,4 +1,5 @@
 "use strict";
+import { STORAGE_PREFIX } from "./pluginId";
 import {
 	S3File,
 	S3RemoteFile,
@@ -28,7 +29,7 @@ export class ContentAddressedFileStore extends HasLogging {
 	constructor(appId: string) {
 		super();
 		this.setLoggers("[ContentAddressedFileStore]");
-		this.dbName = `${appId}-synced-vaults-hashes`;
+		this.dbName = `${appId}-${STORAGE_PREFIX}-hashes`;
 		this.ready = this.openDB();
 	}
 

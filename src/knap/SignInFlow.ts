@@ -3,18 +3,19 @@
  * trade the code, hold a token.
  *
  * The server does the OAuth (it is the client at the issuer); what comes
- * back through `obsidian://synced-vaults/signin` is a one-time handoff
+ * back through `obsidian://pantalytics/signin` is a one-time handoff
  * code, never a credential, because a deep-link URL survives in browser
  * history. The exchange for the real token happens over TLS, exactly once.
  *
- * The action string keeps the `synced-vaults` identifier: the plugin's id
- * moved once and is staying (ADR-0042), rebuild or no rebuild.
+ * The action carries the plugin's id, and the server sends the deep link
+ * back to the id the sign-in started from (ADR-0103).
  */
 
+import { PLUGIN_ID } from "../pluginId";
 import type { KnapServer } from "./KnapServer";
 
 /** Registered with registerObsidianProtocolHandler at plugin load. */
-export const SIGNIN_ACTION = "synced-vaults/signin";
+export const SIGNIN_ACTION = `${PLUGIN_ID}/signin`;
 
 /** How long a person gets to finish signing in before the flow gives up. */
 const SIGNIN_TIMEOUT_MS = 10 * 60 * 1000;

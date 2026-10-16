@@ -147,11 +147,11 @@ wait_for "typeof app === 'object' && !!app.vault" "the vault reopening"
 "$HARNESS" eval "(async () => {
 	await app.plugins.setEnable(true);
 	await app.plugins.loadManifests();
-	await app.plugins.enablePluginAndSave('synced-vaults');
+	await app.plugins.enablePluginAndSave('pantalytics');
 	document.querySelectorAll('.modal-close-button').forEach((b) => b.click());
-	return !!app.plugins.plugins['synced-vaults'];
+	return !!app.plugins.plugins['pantalytics'];
 })()" >/dev/null
-wait_for "!!app.plugins.plugins['synced-vaults']" "the plugin loading again" 60
+wait_for "!!app.plugins.plugins['pantalytics']" "the plugin loading again" 60
 printf '\n'
 
 # The proxy runs inside the container, so it starts after the restart rather
@@ -198,14 +198,14 @@ run_scope() {
 REMOTE_LINE=$'\nDeze regel is van een ander apparaat.\n'
 
 # The plugin object existing is not the plugin being ready. The wait after the
-# restart above stops at `app.plugins.plugins['synced-vaults']`, which appears
+# restart above stops at `app.plugins.plugins['pantalytics']`, which appears
 # as soon as onload starts; sharedFolders, tokenStore and folderSettings are
 # assigned partway through it, and every phase below reaches straight for all
 # three. So wait for what the phases actually use.
 wait_for "(() => {
-	const p = app.plugins.plugins['synced-vaults'];
+	const p = app.plugins.plugins['pantalytics'];
 	return !!(p && p.sharedFolders && p.tokenStore && p.folderSettings);
-})()" "synced-vaults finishing its load" 60
+})()" "pantalytics finishing its load" 60
 printf '\n'
 
 echo "relay, tls proxy and trust are up; driving Obsidian..."

@@ -23,13 +23,14 @@ export default [
             },
         },
         rules: {
-            // "Knap" is the product's name, so sentence case does not apply
-            // to it. Declaring the brand once beats an eslint-disable at every
+            // "Pantalytics" is the product's name, and "Knap" its old one
+            // that the upgrade notice still quotes, so sentence case does not
+            // apply to them. Declaring the brand once beats an eslint-disable at every
             // mention, which the ruleset now rejects outright anyway.
             "obsidianmd/ui/sentence-case": [
                 "error",
                 {
-                    brands: ["Knap", "Obsidian", "GitHub", "Google", "Microsoft", "Discord"],
+                    brands: ["Pantalytics", "Knap", "Obsidian", "GitHub", "Google", "Microsoft", "Discord"],
                     // Strings that open with a number: the rule reads the word
                     // after the digits as the first word of the sentence and
                     // asks for "30 Days", which is title case, not sentence

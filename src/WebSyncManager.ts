@@ -513,7 +513,7 @@ export class WebSyncManager {
 			});
 			this.unregisterAutoSyncShare(filePath);
 			new Notice(
-				`Knap: "${filePath}" was deleted, but its web share is still ` +
+				`Pantalytics: "${filePath}" was deleted, but its web share is still ` +
 					`published. Unpublish it manually if it should no longer be public.`,
 				0,
 			);

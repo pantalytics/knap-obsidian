@@ -63,7 +63,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: jest-coverage-synced-vaults
+          name: jest-coverage-pantalytics
           path: coverage/
 
   # ── Build smoke ─────────────────────────────────────────────────────────────
@@ -86,7 +86,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: synced-vaults-dist
+          name: pantalytics-dist
           path: main.js
 
   # ── Lint ────────────────────────────────────────────────────────────────────

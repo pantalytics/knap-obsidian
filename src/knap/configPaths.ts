@@ -16,6 +16,7 @@
  * Pure, no Obsidian imports, so jest reaches every branch.
  */
 
+import { LEGACY_PLUGIN_ID, PLUGIN_ID } from "../pluginId";
 import { normalize } from "./TreeDoc";
 
 /**
@@ -36,20 +37,18 @@ import { normalize } from "./TreeDoc";
  */
 export const CONFIG_DIR = ".obsidian";
 
-/** Our own plugin's id, and the folder that must never travel. */
-export const OUR_PLUGIN_ID = "synced-vaults";
 
 /**
  * Folders inside the config directory that stay on the device, whatever the
  * switch says.
  *
- * Ours is the only one. `data.json` holds the account token and which cloud
+ * Ours are the only ones, under the id it has and the one it had (ADR-0103). `data.json` holds the account token and which cloud
  * vault this local vault is linked to, and `knap-seen.json` holds what this
  * device last agreed with. A device that received another device's copy would
  * be signed in as somebody else and would then argue with it about which notes
  * were deleted, so this is not a preference somebody can turn on.
  */
-const REFUSED_PREFIXES = [`plugins/${OUR_PLUGIN_ID}`];
+const REFUSED_PREFIXES = [`plugins/${PLUGIN_ID}`, `plugins/${LEGACY_PLUGIN_ID}`];
 
 /**
  * The workspace family, matched on how the name starts rather than listed.
@@ -87,7 +86,7 @@ const REFUSED_NAMES = [".ds_store", "thumbs.db", "desktop.ini"];
  * Is this path one settings sync carries?
  *
  * Takes a vault path. Normalizes first, because every escape this codebase has
- * seen has been a spelling: `.obsidian/plugins/./synced-vaults/data.json` is
+ * seen has been a spelling: `.obsidian/plugins/./pantalytics/data.json` is
  * our own folder however it is written.
  */
 export function isSyncedConfig(vaultPath: string): boolean {

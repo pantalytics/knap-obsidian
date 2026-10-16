@@ -3,12 +3,12 @@
 	let fontSize = size / 3;
 </script>
 
-<div class="synced-vaults-text" style="font-size: {fontSize}px;">
-	<span class="knap-text">Knap</span>
+<div class="pantalytics-text" style="font-size: {fontSize}px;">
+	<span class="knap-text">Pantalytics</span>
 </div>
 
 <style>
-	.synced-vaults-text {
+	.pantalytics-text {
 		display: flex;
 		align-items: center;
 		justify-content: center;

@@ -22,6 +22,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+import { PLUGIN_ID } from "src/pluginId";
 import { structuredPatch, diffWords } from "diff";
 import {
 	Workspace,
@@ -42,7 +43,7 @@ import { ActionLineDivider } from "./actionLineDivider";
 import { flags } from "src/flagManager";
 import { curryLog } from "src/debug";
 
-export const VIEW_TYPE_DIFFERENCES = "synced-vaults-differences-view";
+export const VIEW_TYPE_DIFFERENCES = `${PLUGIN_ID}-differences-view`;
 
 export interface ViewState {
 	file1: TFile;

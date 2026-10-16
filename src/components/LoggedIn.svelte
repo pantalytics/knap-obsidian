@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { STORAGE_PREFIX } from "../pluginId";
 	import { debounce, Notice, Platform } from "obsidian";
 	import type Live from "../main";
 	import GetInTouch from "./GetInTouch.svelte";
@@ -44,7 +45,7 @@
 	// Load cached providers from localStorage, keyed by auth URL
 	let cachedProviders = writable<string[]>([]);
 	let shouldAnimate = writable<boolean>(false);
-	const PROVIDERS_CACHE_PREFIX = "synced-vaults-auth-providers-";
+	const PROVIDERS_CACHE_PREFIX = `${STORAGE_PREFIX}-auth-providers-`;
 
 	function getCacheKey(): string {
 		// Use the PocketBase URL as the cache key
