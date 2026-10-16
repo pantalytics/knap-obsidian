@@ -84,10 +84,29 @@ describe("KnapServer", () => {
 		const server = new KnapServer("https://knap.test/", fetchFn);
 
 		const vaults = await server.listVaults("knap_abc");
-		expect(vaults).toEqual([{ id: "v1", name: "Demo" }]);
+		// A server older than the Sync settings switch says nothing, and
+		// settings travelled everywhere before it existed.
+		expect(vaults).toEqual([{ id: "v1", name: "Demo", syncSettings: true }]);
 		expect((calls[0].init?.headers as Record<string, string>).Authorization).toBe(
 			"Bearer knap_abc",
 		);
+	});
+
+	it("carries the vault's Sync settings switch from the panel", async () => {
+		const { fetchFn } = fakeFetch({
+			"/api/vaults": () =>
+				new Response(
+					JSON.stringify({
+						vaults: [
+							{ id: "v1", name: "Work", syncSettings: false },
+							{ id: "v2", name: "Home", syncSettings: true },
+						],
+					}),
+					{ status: 200 },
+				),
+		});
+		const vaults = await new KnapServer("https://knap.test", fetchFn).listVaults("knap_abc");
+		expect(vaults.map((v) => v.syncSettings)).toEqual([false, true]);
 	});
 
 	it("says sign in again on a dead token", async () => {

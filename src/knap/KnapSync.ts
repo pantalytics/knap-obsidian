@@ -547,11 +547,15 @@ export class KnapSync {
 			this.options.onRefused,
 			() => conflictLabelFor(this.person, this.options.deviceName, new Date()),
 		);
-		// No condition beyond whether this host can carry settings at all.
-		// A vault is its notes and how it is set up, and a device that had
-		// one without the other was a device somebody had to be told about.
+		// Two conditions: whether this host can carry settings at all, and
+		// the vault's own Sync settings switch, which is set on its page in
+		// the panel and nowhere here. Asked once per start, so turning it off
+		// reaches a device at its next start.
+		const settingsTravel = this.options.config
+			? await this.settingsTravel(stored.token, stored.cloudVaultId)
+			: false;
 		this.settings =
-			this.options.config
+			this.options.config && settingsTravel
 				? new ConfigBinding(
 						this.options.config,
 						this.client,
@@ -589,8 +593,13 @@ export class KnapSync {
 			// the note they opened Obsidian to read.
 			await this.settings?.start();
 			// The settings half is over, whichever way it ran, so every later
-			// start over this link is an ordinary one.
-			await this.rememberSettingsInitialized();
+			// start over this link is an ordinary one. Not while the vault
+			// has the switch off: the pass has not happened, and a device
+			// that joined then still adopts the vault's settings the first
+			// time they travel, rather than pushing its own over everybody's.
+			if (this.settings || !this.options.config) {
+				await this.rememberSettingsInitialized();
+			}
 		} finally {
 			this.filling = false;
 		}
@@ -635,6 +644,25 @@ export class KnapSync {
 			}
 		} catch {
 			// See above.
+		}
+	}
+
+	/**
+	 * Whether the linked vault's settings travel, by its switch in the panel.
+	 *
+	 * Off when the answer cannot be had. Settings are last-write-wins across
+	 * everybody in the vault, so a device that guessed on would push its
+	 * theme over theirs; a device that guessed off syncs its settings one
+	 * start later. A vault missing from the list is one this account can no
+	 * longer open, and the socket says so in its own words.
+	 */
+	private async settingsTravel(token: string, vaultId: string): Promise<boolean> {
+		try {
+			const vaults = await this.server.listVaults(token);
+			return vaults.find((v) => v.id === vaultId)?.syncSettings === true;
+		} catch (error) {
+			knapFault("link", error);
+			return false;
 		}
 	}
 

@@ -427,6 +427,15 @@ notes were not touched:
 > Your notes were not touched. Plugins that arrived start the next time you open
 > Obsidian.
 
+**Whether settings travel at all is the vault's, not this screen's.** The
+switch is *Sync settings* on the vault's page in the Pantalytics panel, on by
+default, and the plugin reads it from `/api/vaults` once per start
+(odoo-mcp-pro-admin ADR-0102). Off, nothing of `.obsidian` goes up or comes
+down, and the first settings pass above stays owed until it is turned on. An
+answer the plugin cannot get reads as off: settings are last write wins
+across everybody in the vault, so guessing on could push one device's theme
+over everybody's.
+
 ## The commands
 
 Four, all still labelled *(beta)*, which is a name that has outlived its

@@ -25,7 +25,13 @@ import type { AttachmentLimits } from "./AttachmentBinding";
 export interface CloudVault {
 	id: string;
 	name: string;
-
+	/**
+	 * Whether this vault's Obsidian settings travel with it. The vault's own
+	 * switch, set on its page in the Pantalytics panel, on unless somebody
+	 * turned it off. Absent from a server older than the switch, which read
+	 * as on: settings travelled everywhere before it existed.
+	 */
+	syncSettings?: boolean;
 }
 
 /** Who the token belongs to. The address is empty when we have none. */
@@ -143,9 +149,13 @@ export class KnapServer {
 			throw new KnapServerError("The server did not answer.", response.status);
 		}
 		const body = (await response.json()) as {
-			vaults: { id: string; name: string }[];
+			vaults: { id: string; name: string; syncSettings?: boolean }[];
 		};
-		return body.vaults.map((v) => ({ id: v.id, name: v.name }));
+		return body.vaults.map((v) => ({
+			id: v.id,
+			name: v.name,
+			syncSettings: v.syncSettings !== false,
+		}));
 	}
 
 	/**
