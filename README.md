@@ -32,45 +32,16 @@ half: sign in, and the plugin syncs.
 
 ## Install
 
-Search for **Pantalytics** in *Settings → Community plugins → Browse*, or use one of the two ways below.
+In Obsidian: *Settings → Community plugins → Browse*, search for
+**Pantalytics**, install it and enable it. That is the only way to install it.
 
-### BRAT
+### Coming from Pantalytics Knap
 
-[BRAT](https://obsidian.md/plugins?id=obsidian42-brat) installs plugins straight
-from GitHub and keeps them updated.
-
-1. Install and enable **BRAT** from *Settings → Community plugins → Browse*
-2. *Settings → BRAT → Add beta plugin*
-3. Paste `pantalytics/pantalytics-obsidian`, pick the latest version, **Add plugin**
-4. Enable **Pantalytics** in *Settings → Community plugins*
-
-BRAT's updates replace `main.js`, `manifest.json` and `styles.css` and leave
-the rest of the plugin's folder alone, so an update keeps you signed in, keeps
-the cloud vault linked and does not sync the vault over again. The status word
-goes back to *Initializing* only when the update lands before the first sync
-has finished, because that pass really is unfinished.
-
-### Manual
-
-1. Download `main.js`, `manifest.json` and `styles.css` from the
-   [latest release](https://github.com/pantalytics/pantalytics-obsidian/releases/latest)
-2. Put all three in `<your vault>/.obsidian/plugins/pantalytics/`
-3. Reload Obsidian and enable **Pantalytics**
-
-### Coming from an older version
-
-Up to 1.13 the plugin had the id `synced-vaults` and was listed as
-**Pantalytics Knap**. From the next release it is **Pantalytics**, id `pantalytics`.
-Obsidian treats a new id as a new plugin, so install Pantalytics next to the
-old one. On first start it takes over your sign-in and the vault link, and
-turns Pantalytics Knap off. Then uninstall Pantalytics Knap. Let a device
-finish syncing before you switch.
-
-On BRAT, remove the old beta plugin and add `pantalytics/pantalytics-obsidian`
-again.
-
-Before that the plugin was called Knap Sync (up to 1.4.0, id `knap-sync`),
-Synced Vaults (1.5.0 to 1.7.0) and Knap (from 1.8.0).
+Pantalytics Knap (id `synced-vaults`) is retired and no longer signs in.
+Install **Pantalytics** from Community plugins. On first start it takes over
+your sign-in and the vault link from the old plugin and turns it off. Then
+uninstall Pantalytics Knap. If you installed it through BRAT, remove it from
+BRAT as well.
 
 ---
 

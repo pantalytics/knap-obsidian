@@ -218,9 +218,8 @@ const watchAndMove = (fnames, mapping) => {
 	});
 };
 
-const mapping = debug ? { "manifest-beta.json": "manifest.json" } : {};
-const manifest = debug ? "manifest-beta.json" : "manifest.json";
-const files = ["styles.css", manifest];
+const mapping = {};
+const files = ["styles.css", "manifest.json"];
 
 const updateManifest = (manifest) => {
 	const manifestPath = path.join(out, path.basename("manifest.json"));
