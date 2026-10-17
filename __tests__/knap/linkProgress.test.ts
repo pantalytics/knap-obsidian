@@ -16,6 +16,7 @@
 import { KnapSync, type KnapLink } from "../../src/knap/KnapSync";
 import type { LinkFacts, LinkStep } from "../../src/knap/linkSteps";
 import { TREE_DOC_ID, TreeDoc } from "../../src/knap/TreeDoc";
+import { generateHash } from "../../src/hashing";
 import { INITIALIZING, UP_TO_DATE } from "../../src/syncStatus";
 import { FakeNetwork, MemoryFiles } from "../mocks/fakeNetwork";
 
@@ -34,6 +35,10 @@ function fillCloud(network: FakeNetwork, vaultId: string, notes: string[], files
 	const tree = new TreeDoc(network.doc(`/sync/${vaultId}/${TREE_DOC_ID}`));
 	for (const path of notes) tree.ensureNote(path);
 	for (const path of files) tree.setAttachment(path, { hash: "abc", size: 1 });
+}
+
+function hashText(text: string): Promise<string> {
+	return generateHash(new TextEncoder().encode(text));
 }
 
 function syncOver(network: FakeNetwork, files: MemoryFiles, stored: KnapLink | null) {
@@ -158,6 +163,47 @@ describe("linking says what it is doing", () => {
 		expect(held()?.cloudVaultId).toBe("");
 		expect(held()?.token).toBe("knap_abc");
 
+		sync.stop();
+	});
+
+	// A device whose link was lost holds what the cloud vault holds. Refusing
+	// that as a merge left a fresh download as the only way back (ADR-0105).
+	it("links a device that already holds the cloud vault's notes", async () => {
+		const network = new FakeNetwork();
+		const vault = network.doc(`/sync/v1/${TREE_DOC_ID}`);
+		const tree = new TreeDoc(vault);
+		tree.ensureNote("Cloud/a.md");
+		const shared = tree.ensureNote("Shared/b.md");
+		vault.getMap<string>("hashes").set(shared, await hashText("# B\n"));
+		const files = new MemoryFiles();
+		files.map.set("Shared/b.md", "# B\n");
+		const { sync, held } = syncOver(network, files, {
+			token: "knap_abc",
+			cloudVaultId: "",
+			cloudVaultName: "",
+		});
+
+		await sync.link({ id: "v1", name: "Work notes" });
+
+		expect(held()?.cloudVaultId).toBe("v1");
+		sync.stop();
+	});
+
+	it("still refuses when a note on both sides differs", async () => {
+		const network = new FakeNetwork();
+		const vault = network.doc(`/sync/v1/${TREE_DOC_ID}`);
+		const shared = new TreeDoc(vault).ensureNote("Shared/b.md");
+		vault.getMap<string>("hashes").set(shared, await hashText("# B\n"));
+		const files = new MemoryFiles();
+		files.map.set("Shared/b.md", "# B, edited here\n");
+		const { sync } = syncOver(network, files, {
+			token: "knap_abc",
+			cloudVaultId: "",
+			cloudVaultName: "",
+		});
+
+		await expect(sync.link({ id: "v1", name: "Work notes" })).rejects.toThrow(/both hold notes/);
+		expect(files.map.get("Shared/b.md")).toBe("# B, edited here\n");
 		sync.stop();
 	});
 

@@ -11,6 +11,7 @@ import {
 	BOTH_WAYS,
 	LINK_STEPS,
 	linkCounts,
+	copyPaths,
 	isMerge,
 	linkRows,
 	mergeRefusal,
@@ -151,5 +152,16 @@ describe("a link with notes on both sides", () => {
 		expect(said).toContain("Work notes holds 318 notes");
 		expect(said).toContain("1,204 notes, 7 attachments");
 		expect(said).toContain("Make a new cloud vault");
+	});
+});
+
+describe("one side already a copy of the other", () => {
+	it("compares the smaller side's paths when the other holds them all", () => {
+		expect(copyPaths(["a.md", "b.md", "c.png"], ["a.md", "c.png"])).toEqual(["a.md", "c.png"]);
+		expect(copyPaths(["a.md"], ["a.md", "b.md"])).toEqual(["a.md"]);
+	});
+
+	it("is not a copy when each side has a path the other lacks", () => {
+		expect(copyPaths(["a.md", "b.md"], ["a.md", "c.md"])).toBeNull();
 	});
 });

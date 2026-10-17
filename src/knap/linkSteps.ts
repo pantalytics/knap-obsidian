@@ -203,6 +203,30 @@ export function isMerge(facts: LinkFacts): boolean {
 }
 
 /**
+ * Which paths to compare to tell whether one side is already a copy of the
+ * other, or null when neither side's paths all exist on the other.
+ *
+ * A device whose link was lost (a reinstall, the move from the old plugin)
+ * holds the same notes as its cloud vault, and refusing that as a merge
+ * leaves no way back short of downloading the whole vault again. When every
+ * path on one side is on the other with the same bytes, linking only fills
+ * in what the smaller side lacks: the same one arrow as an empty side, with
+ * nothing overwritten and no conflict copy possible (ADR-0105). Paths first
+ * because they cost nothing; only the smaller side's files are then hashed.
+ */
+export function copyPaths(cloud: Iterable<string>, local: Iterable<string>): string[] | null {
+	const cloudPaths = new Set(cloud);
+	const localPaths = new Set(local);
+	const within = (part: Set<string>, whole: Set<string>): boolean => {
+		for (const path of part) if (!whole.has(path)) return false;
+		return true;
+	};
+	if (within(localPaths, cloudPaths)) return [...localPaths];
+	if (within(cloudPaths, localPaths)) return [...cloudPaths];
+	return null;
+}
+
+/**
  * Why the link stopped, and what to do instead. Both counts, because what is
  * in the cloud vault is the one thing a person cannot see from Obsidian.
  */

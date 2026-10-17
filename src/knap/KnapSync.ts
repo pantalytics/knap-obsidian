@@ -29,13 +29,15 @@ import type { SyncDot, SyncWord } from "../syncStatus";
 import { UP_TO_DATE, syncDot, syncWord } from "../syncStatus";
 import { TREE_SYNC_FAILED, TREE_SYNC_TIMEOUT_MS, withTimeout } from "./deadline";
 import type { LinkFacts, LinkReporter } from "./linkSteps";
-import { isMerge, linkCounts, mergeRefusal } from "./linkSteps";
+import { copyPaths, isMerge, linkCounts, mergeRefusal } from "./linkSteps";
 import type { AttachmentTransport, Refusal } from "./AttachmentBinding";
 import { AttachmentBinding } from "./AttachmentBinding";
 import type { ConfigStore } from "./ConfigBinding";
 import { ConfigBinding } from "./ConfigBinding";
 import type { LiveNoteHandle } from "./knapEditor";
 import { conflictLabelFor, personLabel } from "./person";
+import { generateHash } from "../hashing";
+import type { TreeDoc } from "./TreeDoc";
 import { normalize } from "./TreeDoc";
 import type { FileStore, Pass, SeenTree } from "./VaultBinding";
 import { VaultBinding } from "./VaultBinding";
@@ -442,6 +444,39 @@ export class KnapSync {
 	 * its own the whole time, so the honest thing is to wait on it, and the
 	 * word on screen says Offline while it does.
 	 */
+	/**
+	 * Whether one side already holds the other: every path on the smaller
+	 * side is on the bigger one with the same sha256. Notes compare against
+	 * the hash the server's mirror wrote into the tree, attachments against
+	 * their entry, and a note the server has not hashed yet counts as
+	 * different.
+	 */
+	private async alreadyACopy(
+		tree: TreeDoc,
+		localNotes: string[],
+		localAttachments: string[],
+	): Promise<boolean> {
+		const cloud = new Map<string, string | undefined>();
+		for (const [path, docId] of tree.entries()) cloud.set(normalize(path), tree.hashFor(docId));
+		for (const [path, entry] of tree.attachments()) cloud.set(normalize(path), entry.hash);
+		const paths = copyPaths(cloud.keys(), [...localNotes, ...localAttachments]);
+		if (paths === null) return false;
+		const notes = new Set(localNotes);
+		const { files } = this.options;
+		for (const path of paths) {
+			let hash: string | null = null;
+			if (notes.has(path)) {
+				const text = await files.read(path);
+				if (text !== null) hash = await generateHash(new TextEncoder().encode(text));
+			} else {
+				const bytes = await files.readBinary(path);
+				if (bytes !== null) hash = await generateHash(bytes);
+			}
+			if (hash === null || hash !== cloud.get(path)) return false;
+		}
+		return true;
+	}
+
 	async start(report?: LinkReporter, linking = false): Promise<void> {
 		const stored = this.linked;
 		if (!stored || this.binding) {
@@ -519,8 +554,14 @@ export class KnapSync {
 		// written. A link with notes on both sides is refused here rather than
 		// merged (ADR-0098): the link comes off again, every file on this disk
 		// is untouched, and the modal keeps the counts on screen with the
-		// reason under them.
-		if (linking && isMerge(facts)) {
+		// reason under them. Unless one side is already a copy of the other,
+		// which is a device whose link was lost rather than the wrong pair
+		// (ADR-0105).
+		if (
+			linking &&
+			isMerge(facts) &&
+			!(await this.alreadyACopy(tree, localNotes, localAttachments))
+		) {
 			await this.unlink();
 			throw new Error(mergeRefusal(stored.cloudVaultName, facts));
 		}
