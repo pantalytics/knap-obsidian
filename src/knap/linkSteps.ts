@@ -7,7 +7,7 @@
  * much is already up there, how much is on this device, how much of it has to
  * move, was known inside the plugin at that moment and never said.
  *
- * So the link reports itself. Eight steps, in the order the facts become
+ * So the link reports itself. Nine steps, in the order the facts become
  * true, and each one either a number or a phrase. Two of them are the ones
  * worth waiting for: what has to come down, and what has to go up.
  *
@@ -30,6 +30,7 @@ export const LINK_STEPS = [
 	"cloudAttachments",
 	"localNotes",
 	"localAttachments",
+	"different",
 	"toDownload",
 	"toUpload",
 	"linked",
@@ -43,6 +44,8 @@ export interface LinkFacts {
 	cloudAttachments?: number;
 	localNotes?: number;
 	localAttachments?: number;
+	differentNotes?: number;
+	differentAttachments?: number;
 	downloadNotes?: number;
 	downloadAttachments?: number;
 	uploadNotes?: number;
@@ -58,6 +61,7 @@ const LABELS: Record<LinkStep, string> = {
 	cloudAttachments: "Attachments in the cloud vault",
 	localNotes: "Notes on this device",
 	localAttachments: "Attachments on this device",
+	different: "Different on each side",
 	toDownload: "To download",
 	toUpload: "To upload",
 	linked: "Linked",
@@ -81,19 +85,25 @@ export interface LinkRow {
  * and the rest are waiting. A failure stops the run where it stood: the step
  * that was in flight is the one that failed, and nothing after it happens.
  */
-export function linkRows(done: LinkStep | null, facts: LinkFacts, failed = false): LinkRow[] {
+export function linkRows(
+	done: LinkStep | null,
+	facts: LinkFacts,
+	failed = false,
+	paused = false,
+): LinkRow[] {
 	const at = done === null ? -1 : LINK_STEPS.indexOf(done);
 	return LINK_STEPS.map((step, index) => ({
 		step,
 		label: LABELS[step],
 		value: valueOf(step, facts),
-		state: stateOf(index, at, failed),
+		state: stateOf(index, at, failed, paused),
 	}));
 }
 
-function stateOf(index: number, at: number, failed: boolean): StepState {
+function stateOf(index: number, at: number, failed: boolean, paused: boolean): StepState {
 	if (index <= at) return "done";
-	if (index === at + 1) return failed ? "failed" : "doing";
+	// Paused is waiting on the person, and a spinner would say the plugin is busy.
+	if (index === at + 1 && !paused) return failed ? "failed" : "doing";
 	return "waiting";
 }
 
@@ -107,6 +117,8 @@ function valueOf(step: LinkStep, facts: LinkFacts): string {
 			return number(facts.localNotes);
 		case "localAttachments":
 			return number(facts.localAttachments);
+		case "different":
+			return movePhrase(facts.differentNotes, facts.differentAttachments);
 		case "toDownload":
 			return movePhrase(facts.downloadNotes, facts.downloadAttachments);
 		case "toUpload":
@@ -200,6 +212,122 @@ export function isMerge(facts: LinkFacts): boolean {
 	const cloud = (facts.cloudNotes ?? 0) + (facts.cloudAttachments ?? 0);
 	const local = (facts.localNotes ?? 0) + (facts.localAttachments ?? 0);
 	return cloud > 0 && local > 0;
+}
+
+/**
+ * How the two sides of a link compare, path by path. `different` is a path
+ * on both sides whose contents do not match; `notes` says which paths are
+ * notes, so the counts can keep notes and attachments apart.
+ */
+export interface LinkDiff {
+	onlyCloud: string[];
+	onlyLocal: string[];
+	different: string[];
+	notes: ReadonlySet<string>;
+}
+
+/**
+ * What to do when both sides hold notes and they are not the same (ADR-0105).
+ * `both` keeps everything on both sides, and a note that differs is kept in
+ * both versions (the cloud's at the path, this device's as a conflict copy).
+ * `cloud` and `device` make one side the same as the other.
+ */
+export type LinkChoice = "both" | "cloud" | "device";
+
+/** Asked once a link needs a choice. Null is a cancel. */
+export type LinkChooser = (diff: LinkDiff) => Promise<LinkChoice | null>;
+
+/**
+ * Compare the two sides. `cloud` maps a path to its sha256 (undefined for a
+ * note the server has not hashed yet, which counts as different); `localHash`
+ * is asked only for paths on both sides, so a vault that shares nothing
+ * costs no reads.
+ */
+export async function diffSides(
+	cloud: Map<string, string | undefined>,
+	local: string[],
+	notes: ReadonlySet<string>,
+	localHash: (path: string) => Promise<string | null>,
+): Promise<LinkDiff> {
+	const here = new Set(local);
+	const diff: LinkDiff = { onlyCloud: [], onlyLocal: [], different: [], notes };
+	for (const path of cloud.keys()) if (!here.has(path)) diff.onlyCloud.push(path);
+	for (const path of here) {
+		if (!cloud.has(path)) {
+			diff.onlyLocal.push(path);
+			continue;
+		}
+		const theirs = cloud.get(path);
+		const ours = await localHash(path);
+		if (theirs === undefined || ours === null || ours !== theirs) diff.different.push(path);
+	}
+	return diff;
+}
+
+/**
+ * Whether a link with notes on both sides needs a choice. It does not when
+ * one side is already a copy of part of the other: nothing differs and only
+ * one side has anything the other lacks, so the link only fills that side in.
+ * That is a device whose link was lost, not two vaults (ADR-0105).
+ */
+export function needsChoice(diff: LinkDiff): boolean {
+	if (diff.different.length > 0) return true;
+	return diff.onlyCloud.length > 0 && diff.onlyLocal.length > 0;
+}
+
+/** What a choice removes, before the bindings fill in the rest. */
+export function removalsFor(
+	choice: LinkChoice,
+	diff: LinkDiff,
+): { local: string[]; cloud: string[] } {
+	if (choice === "cloud") return { local: [...diff.onlyLocal, ...diff.different], cloud: [] };
+	if (choice === "device") return { local: [], cloud: [...diff.onlyCloud, ...diff.different] };
+	return { local: [], cloud: [] };
+}
+
+/** "12 notes, 3 attachments" for a list of paths. */
+export function pathsPhrase(paths: string[], notes: ReadonlySet<string>): string {
+	const noteCount = paths.filter((path) => notes.has(path)).length;
+	return movePhrase(noteCount, paths.length - noteCount);
+}
+
+/**
+ * The one sentence over the choice. How far apart the two sides are is
+ * already on the rows above it: Different, To download, To upload.
+ */
+export function choiceSay(vaultName: string): string {
+	return `This device and ${vaultName} hold different notes.`;
+}
+
+/** Help under Keep both, the choice that deletes nothing. */
+export const KEEP_BOTH_SAY =
+	"Both sides get everything, and a note that differs is kept in both versions.";
+
+/**
+ * The confirmation for a choice that deletes, or null for one that does not.
+ * The title asks the question with the thing, the body says the consequence.
+ */
+export function replaceConfirm(
+	choice: LinkChoice,
+	vaultName: string,
+	diff: LinkDiff,
+): { title: string; body: string } | null {
+	const gone = removalsFor(choice, diff);
+	if (choice === "cloud") {
+		const what = pathsPhrase(gone.local, diff.notes);
+		return {
+			title: "Replace the notes on this device?",
+			body: `This device becomes the same as ${vaultName}. ${what} on this device are deleted.`,
+		};
+	}
+	if (choice === "device") {
+		const what = pathsPhrase(gone.cloud, diff.notes);
+		return {
+			title: `Replace the notes in ${vaultName}?`,
+			body: `${vaultName} becomes the same as this device. ${what} in it are deleted, for everyone in the vault.`,
+		};
+	}
+	return null;
 }
 
 /**

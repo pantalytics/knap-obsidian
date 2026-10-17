@@ -1,7 +1,7 @@
 /**
  * What the linking screen says, as a rule rather than a rendering.
  *
- * The modal is eight rows and a spinner, and none of that is worth pinning.
+ * The modal is nine rows and a spinner, and none of that is worth pinning.
  * What is worth pinning is that a step is only ever done, running, waiting or
  * failed; that a failure stops the list where it stood; and that the two rows
  * a person actually waits on say *Nothing* rather than a zero.
@@ -11,6 +11,11 @@ import {
 	BOTH_WAYS,
 	LINK_STEPS,
 	linkCounts,
+	choiceSay,
+	diffSides,
+	needsChoice,
+	removalsFor,
+	replaceConfirm,
 	isMerge,
 	linkRows,
 	mergeRefusal,
@@ -34,6 +39,7 @@ describe("the steps", () => {
 		const rows = linkRows(null, {});
 		expect(rows.map((row) => row.state)).toEqual([
 			"doing",
+			"waiting",
 			"waiting",
 			"waiting",
 			"waiting",
@@ -151,5 +157,65 @@ describe("a link with notes on both sides", () => {
 		expect(said).toContain("Work notes holds 318 notes");
 		expect(said).toContain("1,204 notes, 7 attachments");
 		expect(said).toContain("Make a new cloud vault");
+	});
+});
+
+describe("comparing both sides", () => {
+	const notes = new Set(["a.md", "b.md", "c.md"]);
+	const hashes: Record<string, string> = { "a.md": "h1", "b.md": "mine", "p.png": "hp" };
+	const local = async (path: string) => hashes[path] ?? null;
+
+	it("sorts every path into the same, only one side, or different", async () => {
+		const cloud = new Map<string, string | undefined>([
+			["a.md", "h1"],
+			["b.md", "theirs"],
+			["c.md", "h3"],
+		]);
+		const diff = await diffSides(cloud, ["a.md", "b.md", "p.png"], notes, local);
+		expect(diff.different).toEqual(["b.md"]);
+		expect(diff.onlyCloud).toEqual(["c.md"]);
+		expect(diff.onlyLocal).toEqual(["p.png"]);
+	});
+
+	// The server has not mirrored it yet, so nobody can say it is the same.
+	it("counts a note without a cloud hash as different", async () => {
+		const diff = await diffSides(new Map([["a.md", undefined]]), ["a.md"], notes, local);
+		expect(diff.different).toEqual(["a.md"]);
+	});
+
+	// A device whose link was lost: everything here is up there already.
+	it("needs no choice when one side is a copy of part of the other", () => {
+		const base = { different: [], notes };
+		expect(needsChoice({ ...base, onlyCloud: ["c.md"], onlyLocal: [] })).toBe(false);
+		expect(needsChoice({ ...base, onlyCloud: [], onlyLocal: ["c.md"] })).toBe(false);
+		expect(needsChoice({ ...base, onlyCloud: ["c.md"], onlyLocal: ["d.md"] })).toBe(true);
+		expect(needsChoice({ ...base, onlyCloud: [], onlyLocal: [], different: ["a.md"] })).toBe(true);
+	});
+});
+
+describe("the choice", () => {
+	const diff = {
+		onlyCloud: ["c.md", "p.png"],
+		onlyLocal: ["d.md"],
+		different: ["b.md"],
+		notes: new Set(["b.md", "c.md", "d.md"]),
+	};
+
+	it("removes only from the side that is replaced", () => {
+		expect(removalsFor("both", diff)).toEqual({ local: [], cloud: [] });
+		expect(removalsFor("cloud", diff)).toEqual({ local: ["d.md", "b.md"], cloud: [] });
+		expect(removalsFor("device", diff)).toEqual({ local: [], cloud: ["c.md", "p.png", "b.md"] });
+	});
+
+	it("says how far apart the two sides are", () => {
+		expect(choiceSay("Work notes")).toBe("This device and Work notes hold different notes.");
+	});
+
+	it("asks before deleting, and names what goes", () => {
+		expect(replaceConfirm("both", "Work notes", diff)).toBeNull();
+		expect(replaceConfirm("cloud", "Work notes", diff)?.body).toContain("2 notes on this device");
+		expect(replaceConfirm("device", "Work notes", diff)?.body).toContain(
+			"for everyone in the vault",
+		);
 	});
 });

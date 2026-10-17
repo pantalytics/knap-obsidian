@@ -29,13 +29,16 @@ import type { SyncDot, SyncWord } from "../syncStatus";
 import { UP_TO_DATE, syncDot, syncWord } from "../syncStatus";
 import { TREE_SYNC_FAILED, TREE_SYNC_TIMEOUT_MS, withTimeout } from "./deadline";
 import type { LinkFacts, LinkReporter } from "./linkSteps";
-import { isMerge, linkCounts, mergeRefusal } from "./linkSteps";
+import type { LinkChooser, LinkDiff } from "./linkSteps";
+import { diffSides, isMerge, linkCounts, mergeRefusal, needsChoice, removalsFor } from "./linkSteps";
 import type { AttachmentTransport, Refusal } from "./AttachmentBinding";
 import { AttachmentBinding } from "./AttachmentBinding";
 import type { ConfigStore } from "./ConfigBinding";
 import { ConfigBinding } from "./ConfigBinding";
 import type { LiveNoteHandle } from "./knapEditor";
 import { conflictLabelFor, personLabel } from "./person";
+import { generateHash } from "../hashing";
+import type { TreeDoc } from "./TreeDoc";
 import { normalize } from "./TreeDoc";
 import type { FileStore, Pass, SeenTree } from "./VaultBinding";
 import { VaultBinding } from "./VaultBinding";
@@ -46,6 +49,9 @@ import type { WebSocketImpl } from "./KnapVaultClient";
 import { knapCredential, knapFault } from "./faultSink";
 import type { ServerNotice } from "./notices";
 import { SignInFlow } from "./SignInFlow";
+
+/** What a link rejects with when the person cancelled the choice. */
+export const LINK_CANCELLED = "Nothing was linked.";
 
 export interface KnapLink {
 	token: string;
@@ -359,18 +365,26 @@ export class KnapSync {
 	/**
 	 * Link this local vault to one cloud vault. Replaces, never appends.
 	 *
-	 * `report` is told as each of the eight steps finishes, so the screen can
+	 * `report` is told as each of the nine steps finishes, so the screen can
 	 * say what is being counted and what it found rather than sitting on a
 	 * spinner for however long the tree takes (ADR-0090). It is optional
 	 * because the command palette links too, and a notice is all that entry
 	 * point has room for.
 	 */
-	async link(vault: CloudVault, report?: LinkReporter): Promise<void> {
+	async link(vault: CloudVault, report?: LinkReporter, choose?: LinkChooser): Promise<void> {
 		const stored = this.options.load();
 		if (!stored?.token) {
 			throw new Error("Sign in first.");
 		}
 		this.stop();
+		// A fresh link starts with no record of what this device last agreed
+		// with. A record left over would read a note the choice below just
+		// took off this disk as one deleted here, and delete it in the cloud.
+		try {
+			await this.options.makeSeen?.(vault.id).forget();
+		} catch {
+			// The same as forgetSeen: nothing to say and nothing to do.
+		}
 		await this.options.save({
 			token: stored.token,
 			cloudVaultId: vault.id,
@@ -384,7 +398,7 @@ export class KnapSync {
 		// this is the only moment comparing the two sides means anything.
 		// Every later start runs over a link that was already allowed, and
 		// by then both sides hold the same notes on purpose (ADR-0098).
-		await this.start(report, true);
+		await this.start(report, true, choose);
 	}
 
 	/** End the link. Stops the syncing, deletes nothing on either side. */
@@ -442,7 +456,43 @@ export class KnapSync {
 	 * its own the whole time, so the honest thing is to wait on it, and the
 	 * word on screen says Offline while it does.
 	 */
-	async start(report?: LinkReporter, linking = false): Promise<void> {
+	/**
+	 * Compare both sides path by path. Notes compare against the hash the
+	 * server's mirror wrote into the tree, attachments against their entry.
+	 */
+	private async compare(
+		tree: TreeDoc,
+		localNotes: string[],
+		localAttachments: string[],
+	): Promise<LinkDiff> {
+		const cloud = new Map<string, string | undefined>();
+		const notes = new Set(localNotes);
+		for (const [path, docId] of tree.entries()) {
+			cloud.set(normalize(path), tree.hashFor(docId));
+			notes.add(normalize(path));
+		}
+		for (const [path, entry] of tree.attachments()) cloud.set(normalize(path), entry.hash);
+		const { files } = this.options;
+		return diffSides(cloud, [...localNotes, ...localAttachments], notes, async (path) => {
+			if (notes.has(path)) {
+				const text = await files.read(path);
+				return text === null ? null : generateHash(new TextEncoder().encode(text));
+			}
+			const bytes = await files.readBinary(path);
+			return bytes === null ? null : generateHash(bytes);
+		});
+	}
+
+	private tellMoves(plan: ReturnType<typeof linkCounts>, facts: LinkFacts, tell: LinkReporter): void {
+		facts.downloadNotes = plan.downloadNotes;
+		facts.downloadAttachments = plan.downloadAttachments;
+		tell("toDownload", facts);
+		facts.uploadNotes = plan.uploadNotes;
+		facts.uploadAttachments = plan.uploadAttachments;
+		tell("toUpload", facts);
+	}
+
+	async start(report?: LinkReporter, linking = false, choose?: LinkChooser): Promise<void> {
 		const stored = this.linked;
 		if (!stored || this.binding) {
 			return;
@@ -516,24 +566,57 @@ export class KnapSync {
 		facts.localAttachments = localAttachments.length;
 		tell("localAttachments", facts);
 		// The four counts are in, and this is the last moment nothing has been
-		// written. A link with notes on both sides is refused here rather than
-		// merged (ADR-0098): the link comes off again, every file on this disk
-		// is untouched, and the modal keeps the counts on screen with the
-		// reason under them.
-		if (linking && isMerge(facts)) {
-			await this.unlink();
-			throw new Error(mergeRefusal(stored.cloudVaultName, facts));
+		// written. A link compares both sides first. When both hold notes and
+		// they are not the same, the person picks: keep both, or make one
+		// side the same as the other (ADR-0105). Without anybody to ask, it
+		// is refused as before (ADR-0098): the link comes off again and every
+		// file on this disk is untouched.
+		let cloudSide = { notes: [...cloudNotes.keys()], attachments: [...cloudAttachments.keys()] };
+		let localSide = { notes: localNotes, attachments: localAttachments };
+		if (linking) {
+			const diff = await this.compare(tree, localNotes, localAttachments);
+			if (this.client !== client) return;
+			const different = diff.different.filter((path) => diff.notes.has(path)).length;
+			facts.differentNotes = different;
+			facts.differentAttachments = diff.different.length - different;
+			tell("different", facts);
+			if (isMerge(facts) && needsChoice(diff)) {
+				// The rows are the scan: what differs, and what is on one side
+				// only, counted as Keep both would move it. The choice may
+				// change the two move rows, and they are told again below.
+				if (choose) this.tellMoves(linkCounts(cloudSide, localSide), facts, tell);
+				const choice = choose ? await choose(diff) : null;
+				if (choice === null) {
+					await this.unlink();
+					throw new Error(
+						choose ? LINK_CANCELLED : mergeRefusal(stored.cloudVaultName, facts),
+					);
+				}
+				if (this.client !== client) return;
+				const gone = removalsFor(choice, diff);
+				for (const path of gone.local) await this.options.files.remove(path);
+				if (gone.cloud.length > 0) {
+					tree.doc.transact(() => {
+						for (const path of gone.cloud) {
+							if (!tree.remove(path)) tree.removeAttachment(path);
+						}
+					});
+				}
+				const without = (paths: string[], drop: string[]) => {
+					const dropped = new Set(drop);
+					return paths.filter((path) => !dropped.has(normalize(path)));
+				};
+				cloudSide = {
+					notes: without(cloudSide.notes, gone.cloud),
+					attachments: without(cloudSide.attachments, gone.cloud),
+				};
+				localSide = {
+					notes: without(localNotes, gone.local),
+					attachments: without(localAttachments, gone.local),
+				};
+			}
 		}
-		const plan = linkCounts(
-			{ notes: cloudNotes.keys(), attachments: cloudAttachments.keys() },
-			{ notes: localNotes, attachments: localAttachments },
-		);
-		facts.downloadNotes = plan.downloadNotes;
-		facts.downloadAttachments = plan.downloadAttachments;
-		tell("toDownload", facts);
-		facts.uploadNotes = plan.uploadNotes;
-		facts.uploadAttachments = plan.uploadAttachments;
-		tell("toUpload", facts);
+		this.tellMoves(linkCounts(cloudSide, localSide), facts, tell);
 		this.binding = new VaultBinding(
 			this.options.files,
 			this.client,
