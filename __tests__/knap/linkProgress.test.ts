@@ -7,14 +7,14 @@
  * it had, so the notice saying it had worked arrived minutes after the person
  * had gone looking for what went wrong.
  *
- * Two claims, and they are the two halves of that. The eight steps arrive in
+ * Two claims, and they are the two halves of that. The nine steps arrive in
  * order with the right numbers on them, and *Link established* arrives before
  * the fill rather than after it. The third is the word that covers the fill:
  * a vault linked here reads Initializing, and says so until it falls quiet.
  */
 
-import { KnapSync, type KnapLink } from "../../src/knap/KnapSync";
-import type { LinkFacts, LinkStep } from "../../src/knap/linkSteps";
+import { KnapSync, LINK_CANCELLED, type KnapLink } from "../../src/knap/KnapSync";
+import type { LinkChoice, LinkDiff, LinkFacts, LinkStep } from "../../src/knap/linkSteps";
 import { TREE_DOC_ID, TreeDoc } from "../../src/knap/TreeDoc";
 import { generateHash } from "../../src/hashing";
 import { INITIALIZING, UP_TO_DATE } from "../../src/syncStatus";
@@ -61,7 +61,7 @@ describe("linking says what it is doing", () => {
 	jest.setTimeout(30_000);
 	process.setMaxListeners(0);
 
-	it("reports the eight steps in order, with what each one found", async () => {
+	it("reports the nine steps in order, with what each one found", async () => {
 		const network = new FakeNetwork();
 		fillCloud(network, "v1", ["Cloud/a.md", "Shared/b.md"], ["Cloud/photo.png"]);
 		// Empty on this side, which is joining a cloud vault somebody added
@@ -85,6 +85,7 @@ describe("linking says what it is doing", () => {
 			"cloudAttachments",
 			"localNotes",
 			"localAttachments",
+			"different",
 			"toDownload",
 			"toUpload",
 			"linked",
@@ -95,6 +96,8 @@ describe("linking says what it is doing", () => {
 			cloudAttachments: 1,
 			localNotes: 0,
 			localAttachments: 0,
+			differentNotes: 0,
+			differentAttachments: 0,
 			// Everything up there is up there and not here, the photo too.
 			downloadNotes: 2,
 			downloadAttachments: 1,
@@ -156,6 +159,7 @@ describe("linking says what it is doing", () => {
 			"cloudAttachments",
 			"localNotes",
 			"localAttachments",
+			"different",
 		]);
 		// Nothing moved, either way, and the link is off again. The sign-in
 		// is not: a refused link is not a reason to sign somebody out.
@@ -204,6 +208,94 @@ describe("linking says what it is doing", () => {
 
 		await expect(sync.link({ id: "v1", name: "Work notes" })).rejects.toThrow(/both hold notes/);
 		expect(files.map.get("Shared/b.md")).toBe("# B, edited here\n");
+		sync.stop();
+	});
+
+	// Two vaults that are not the same: the person picks (ADR-0105). One
+	// note differs, one is only in the cloud, one only on this device.
+	async function twoVaults() {
+		const network = new FakeNetwork();
+		const vault = network.doc(`/sync/v1/${TREE_DOC_ID}`);
+		const tree = new TreeDoc(vault);
+		tree.ensureNote("Cloud/a.md");
+		const shared = tree.ensureNote("Shared/b.md");
+		vault.getMap<string>("hashes").set(shared, await hashText("# B\n"));
+		const files = new MemoryFiles();
+		files.map.set("Shared/b.md", "# B, edited here\n");
+		files.map.set("Here/only.md", "# Only here\n");
+		const { sync, held } = syncOver(network, files, {
+			token: "knap_abc",
+			cloudVaultId: "",
+			cloudVaultName: "",
+		});
+		return { tree, files, sync, held };
+	}
+
+	function answering(choice: LinkChoice | null, asked: LinkDiff[]) {
+		return async (diff: LinkDiff) => {
+			asked.push(diff);
+			return choice;
+		};
+	}
+
+	it("asks once both sides hold notes that are not the same, with what differs", async () => {
+		const { sync, held } = await twoVaults();
+		const asked: LinkDiff[] = [];
+
+		await sync.link({ id: "v1", name: "Work notes" }, undefined, answering("both", asked));
+
+		expect(asked).toHaveLength(1);
+		expect(asked[0].different).toEqual(["Shared/b.md"]);
+		expect(asked[0].onlyCloud).toEqual(["Cloud/a.md"]);
+		expect(asked[0].onlyLocal).toEqual(["Here/only.md"]);
+		expect(held()?.cloudVaultId).toBe("v1");
+		sync.stop();
+	});
+
+	it("keeping both deletes nothing on either side", async () => {
+		const { tree, files, sync } = await twoVaults();
+
+		await sync.link({ id: "v1", name: "Work notes" }, undefined, answering("both", []));
+
+		expect(files.map.has("Here/only.md")).toBe(true);
+		expect(tree.entries().has("Cloud/a.md")).toBe(true);
+		sync.stop();
+	});
+
+	it("using the cloud vault deletes what differs and what is only on this device", async () => {
+		const { tree, files, sync } = await twoVaults();
+
+		await sync.link({ id: "v1", name: "Work notes" }, undefined, answering("cloud", []));
+
+		expect(files.map.has("Here/only.md")).toBe(false);
+		expect(files.map.get("Shared/b.md")).not.toBe("# B, edited here\n");
+		expect(tree.entries().has("Cloud/a.md")).toBe(true);
+		sync.stop();
+	});
+
+	it("using this device deletes what is only in the cloud vault", async () => {
+		const { tree, files, sync } = await twoVaults();
+		const before = tree.entries().get("Shared/b.md");
+
+		await sync.link({ id: "v1", name: "Work notes" }, undefined, answering("device", []));
+
+		expect(tree.entries().has("Cloud/a.md")).toBe(false);
+		// The note that differed is this device's now, as a new document.
+		expect(tree.entries().get("Shared/b.md")).not.toBe(before);
+		expect(files.map.get("Shared/b.md")).toBe("# B, edited here\n");
+		sync.stop();
+	});
+
+	it("a cancel changes nothing and leaves the link off", async () => {
+		const { tree, files, sync, held } = await twoVaults();
+
+		await expect(
+			sync.link({ id: "v1", name: "Work notes" }, undefined, answering(null, [])),
+		).rejects.toThrow(LINK_CANCELLED);
+
+		expect([...files.map.keys()].sort()).toEqual(["Here/only.md", "Shared/b.md"]);
+		expect(tree.entries().has("Cloud/a.md")).toBe(true);
+		expect(held()?.cloudVaultId).toBe("");
 		sync.stop();
 	});
 

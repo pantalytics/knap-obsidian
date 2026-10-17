@@ -242,22 +242,26 @@ export function registerKnapBeta(host: KnapHost): KnapSync | null {
 					progress.open();
 					let settled = false;
 					sync
-						.link(vault, (step, facts) => {
-							progress.step(step, facts);
-							// The link exists at this step and the first sync
-							// runs on behind it, so this is where the screen
-							// underneath is redrawn. Waiting for the whole
-							// fill would be a settings screen that still says
-							// Not linked over a vault that is filling up.
-							if (step === "linked" && !settled) {
-								settled = true;
-								new Notice(
-									`Linked. This vault now syncs with ${vault.name}. ` +
-										"Leave Obsidian open while it fills up.",
-								);
-								resolve();
-							}
-						})
+						.link(
+							vault,
+							(step, facts) => {
+								progress.step(step, facts);
+								// The link exists at this step and the first sync
+								// runs on behind it, so this is where the screen
+								// underneath is redrawn. Waiting for the whole
+								// fill would be a settings screen that still says
+								// Not linked over a vault that is filling up.
+								if (step === "linked" && !settled) {
+									settled = true;
+									new Notice(
+										`Linked. This vault now syncs with ${vault.name}. ` +
+											"Leave Obsidian open while it fills up.",
+									);
+									resolve();
+								}
+							},
+							(diff) => progress.choose(diff),
+						)
 						.catch((error: Error) => {
 							// The modal is where this is read, so it is not
 							// also thrown at whoever opened the picker: the
